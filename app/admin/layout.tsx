@@ -20,6 +20,8 @@ const ADMIN_LINKS = [
 function AdminChrome({ children }: { children: React.ReactNode }) {
   const { user, loading } = useDashboardUser();
   const router = useRouter();
+  const pathname = usePathname();
+  const isOverview = pathname === '/admin';
 
   useEffect(() => {
     if (!loading && user && user.role !== 'admin') {
@@ -39,8 +41,8 @@ function AdminChrome({ children }: { children: React.ReactNode }) {
     <>
       <DashboardHeader isAdmin />
       <section className="section-tight">
-        <div className="container dashboard-shell">
-          <Sidebar title="Admin" items={ADMIN_LINKS} />
+        <div className={`container ${isOverview ? 'admin-overview-shell' : 'dashboard-shell'}`}>
+          {!isOverview && <Sidebar title="Admin" items={ADMIN_LINKS} />}
           <div className="dashboard-content">{children}</div>
         </div>
       </section>
