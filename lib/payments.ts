@@ -87,6 +87,7 @@ export async function handleVerifiedWebhook(params: {
   status: 'success' | 'failed';
   amountPaid: number;
   currencyPaid: string;
+  customerEmail?: string | null;
   rawPayload: unknown;
   /** Reusable authorization code / card token, if the provider returned one on this charge. */
   renewalToken?: string | null;
@@ -108,18 +109,17 @@ export async function handleVerifiedWebhook(params: {
 
   const now = new Date();
 
-  // Validate expected user
+  // Validate amount, currency, and customer email match expected transaction record
   const payloadEmail = (params.rawPayload as any)?.data?.customer?.email;
-  const expectedEmail = params.expectedEmail || payloadEmail;
-  if (params.expectedUserId && tx.userId !== params.expectedUserId) {
-    throw new ApiError(400, 'User mismatch');
-  }
-  if (expectedEmail && tx.user?.email && tx.user.email.toLowerCase() !== expectedEmail.toLowerCase()) {
-    throw new ApiError(400, 'User mismatch');
-  }
+  const targetCustomerEmail = params.customerEmail ?? params.expectedEmail ?? payloadEmail;
 
-  // Validate amount and currency match expected transaction record
-  if (Number(tx.amount).toFixed(2) !== params.amountPaid.toFixed(2) || tx.currency !== params.currencyPaid) {
+  const amountMatches = Number(tx.amount).toFixed(2) === params.amountPaid.toFixed(2);
+  const currencyMatches = tx.currency === params.currencyPaid;
+  const userMatches =
+    (!params.expectedUserId || tx.userId === params.expectedUserId) &&
+    (!targetCustomerEmail || !tx.user?.email || targetCustomerEmail.toLowerCase().trim() === tx.user.email.toLowerCase().trim());
+
+  if (!amountMatches || !currencyMatches || !userMatches) {
     await prisma.transaction.updateMany({
       where: {
         id: tx.id,
@@ -131,7 +131,7 @@ export async function handleVerifiedWebhook(params: {
         rawPayload: params.rawPayload as any,
       },
     });
-    throw new ApiError(400, 'Amount/currency mismatch — possible tampering');
+    throw new ApiError(400, 'Transaction verification mismatch (amount, currency, or customer email)');
   }
 
   return prisma.$transaction(async (db) => {

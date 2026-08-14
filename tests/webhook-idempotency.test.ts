@@ -194,7 +194,19 @@ describe('handleVerifiedWebhook idempotency & atomic state transitions', () => {
         rawPayload: {},
         expectedUserId: 'wrong-user-id',
       }),
-    ).rejects.toThrow(/User mismatch/i);
+    ).rejects.toThrow(/Transaction verification mismatch/i);
+
+    // Reset tx-1 status back to pending for the next check
+    fakeDb._seed({
+      id: 'tx-1',
+      userId: 'user-1',
+      planId: 'plan-1',
+      provider: 'paystack',
+      providerReference: 'ref-abc',
+      amount: 4500,
+      currency: 'NGN',
+      status: 'pending',
+    });
 
     await expect(
       handleVerifiedWebhook({
@@ -202,8 +214,9 @@ describe('handleVerifiedWebhook idempotency & atomic state transitions', () => {
         status: 'success',
         amountPaid: 4500,
         currencyPaid: 'NGN',
+        customerEmail: 'wrong@example.com',
         rawPayload: { data: { customer: { email: 'wrong@example.com' } } },
       }),
-    ).rejects.toThrow(/User mismatch/i);
+    ).rejects.toThrow(/Transaction verification mismatch/i);
   });
 });

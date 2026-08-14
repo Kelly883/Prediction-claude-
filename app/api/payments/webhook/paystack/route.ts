@@ -26,6 +26,7 @@ export async function POST(req: NextRequest) {
       status: body.data.status === 'success' ? 'success' : 'failed',
       amountPaid: body.data.amount / 100, // Paystack sends kobo
       currencyPaid: body.data.currency,
+      customerEmail: body.data.customer?.email ?? null,
       rawPayload: body,
       renewalToken: extractReusableAuthorization(body),
     });

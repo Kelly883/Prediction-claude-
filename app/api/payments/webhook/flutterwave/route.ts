@@ -20,6 +20,7 @@ export async function POST(req: NextRequest) {
       status: body.data.status === 'successful' ? 'success' : 'failed',
       amountPaid: body.data.amount,
       currencyPaid: body.data.currency,
+      customerEmail: body.data.customer?.email ?? null,
       rawPayload: body,
       renewalToken: extractReusableToken(body),
     });
