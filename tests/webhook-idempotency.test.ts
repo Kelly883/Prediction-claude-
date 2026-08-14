@@ -58,10 +58,11 @@ function makeFakeDb() {
       }),
     },
     $transaction: vi.fn(async (fn: any) => fn(db)),
-    _seed(tx: any) {
-      transactions.set(tx.id, tx);
+    _seed(tx: any, user?: any) {
+      transactions.set(tx.id, { ...tx, user: user ?? { id: tx.userId, email: 'user@example.com' } });
     },
     _subscriptionCount: () => subscriptions.size,
+    _getSub: (id: string) => subscriptions.get(id),
     _transactionStatus: (id: string) => transactions.get(id)?.status,
     _transactionCompletedAt: (id: string) => transactions.get(id)?.completedAt,
   };
@@ -107,7 +108,7 @@ describe('handleVerifiedWebhook idempotency & atomic state transitions', () => {
     expect(fakeDb._subscriptionCount()).toBe(1);
   });
 
-  it('no-ops on a replayed webhook for the same reference (provider retries)', async () => {
+  it('no-ops on a replayed webhook for the same reference (provider retries) and does not extend subscription again', async () => {
     const { handleVerifiedWebhook } = await import('@/lib/payments');
 
     await handleVerifiedWebhook({
@@ -118,6 +119,7 @@ describe('handleVerifiedWebhook idempotency & atomic state transitions', () => {
       rawPayload: {},
     });
     expect(fakeDb._subscriptionCount()).toBe(1);
+    const subAfterFirst = (fakeDb as any)._getSub('sub-1');
 
     // Same reference again — simulates Paystack/Flutterwave retrying delivery
     await handleVerifiedWebhook({
@@ -130,6 +132,9 @@ describe('handleVerifiedWebhook idempotency & atomic state transitions', () => {
 
     expect(fakeDb._subscriptionCount()).toBe(1);
     expect(fakeDb.subscription.create).toHaveBeenCalledTimes(1);
+    expect(fakeDb.subscription.update).not.toHaveBeenCalled();
+    const subAfterSecond = (fakeDb as any)._getSub('sub-1');
+    expect(subAfterSecond.endAt.getTime()).toBe(subAfterFirst.endAt.getTime());
   });
 
   it('atomically handles simultaneous concurrent webhook deliveries without duplicate activation', async () => {
@@ -175,5 +180,30 @@ describe('handleVerifiedWebhook idempotency & atomic state transitions', () => {
     expect(fakeDb._transactionStatus('tx-1')).toBe('failed');
     expect(fakeDb._transactionCompletedAt('tx-1')).toBeInstanceOf(Date);
     expect(fakeDb._subscriptionCount()).toBe(0);
+  });
+
+  it('validates expected user / email mismatch and rejects', async () => {
+    const { handleVerifiedWebhook } = await import('@/lib/payments');
+
+    await expect(
+      handleVerifiedWebhook({
+        providerReference: 'ref-abc',
+        status: 'success',
+        amountPaid: 4500,
+        currencyPaid: 'NGN',
+        rawPayload: {},
+        expectedUserId: 'wrong-user-id',
+      }),
+    ).rejects.toThrow(/User mismatch/i);
+
+    await expect(
+      handleVerifiedWebhook({
+        providerReference: 'ref-abc',
+        status: 'success',
+        amountPaid: 4500,
+        currencyPaid: 'NGN',
+        rawPayload: { data: { customer: { email: 'wrong@example.com' } } },
+      }),
+    ).rejects.toThrow(/User mismatch/i);
   });
 });

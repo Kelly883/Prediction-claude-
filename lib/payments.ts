@@ -90,8 +90,13 @@ export async function handleVerifiedWebhook(params: {
   rawPayload: unknown;
   /** Reusable authorization code / card token, if the provider returned one on this charge. */
   renewalToken?: string | null;
+  expectedUserId?: string;
+  expectedEmail?: string;
 }) {
-  const tx = await prisma.transaction.findUnique({ where: { providerReference: params.providerReference } });
+  const tx = await prisma.transaction.findUnique({
+    where: { providerReference: params.providerReference },
+    include: { user: true },
+  });
   if (!tx) throw new ApiError(400, 'Unknown transaction reference');
 
   // Idempotency: webhooks can and will be retried by the provider. If this
@@ -102,6 +107,16 @@ export async function handleVerifiedWebhook(params: {
   }
 
   const now = new Date();
+
+  // Validate expected user
+  const payloadEmail = (params.rawPayload as any)?.data?.customer?.email;
+  const expectedEmail = params.expectedEmail || payloadEmail;
+  if (params.expectedUserId && tx.userId !== params.expectedUserId) {
+    throw new ApiError(400, 'User mismatch');
+  }
+  if (expectedEmail && tx.user?.email && tx.user.email.toLowerCase() !== expectedEmail.toLowerCase()) {
+    throw new ApiError(400, 'User mismatch');
+  }
 
   // Validate amount and currency match expected transaction record
   if (Number(tx.amount).toFixed(2) !== params.amountPaid.toFixed(2) || tx.currency !== params.currencyPaid) {
