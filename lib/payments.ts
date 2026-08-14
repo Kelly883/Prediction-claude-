@@ -95,24 +95,53 @@ export async function handleVerifiedWebhook(params: {
   if (!tx) throw new ApiError(400, 'Unknown transaction reference');
 
   // Idempotency: webhooks can and will be retried by the provider. If this
-  // reference was already processed, no-op regardless of how many times
-  // the handler fires — this is what makes it safe to run on a stateless
-  // serverless function with no queue/dedup layer in front of it.
-  if (tx.status !== 'pending') return tx;
+  // reference was already processed (status is in a terminal state: success, failed, cancelled),
+  // return immediately with no-op.
+  if (tx.status === 'success' || tx.status === 'failed' || tx.status === 'cancelled') {
+    return tx;
+  }
 
+  const now = new Date();
+
+  // Validate amount and currency match expected transaction record
   if (Number(tx.amount).toFixed(2) !== params.amountPaid.toFixed(2) || tx.currency !== params.currencyPaid) {
-    await prisma.transaction.update({
-      where: { id: tx.id },
-      data: { status: 'failed', rawPayload: params.rawPayload as any },
+    await prisma.transaction.updateMany({
+      where: {
+        id: tx.id,
+        status: { in: ['pending', 'processing'] },
+      },
+      data: {
+        status: 'failed',
+        completedAt: now,
+        rawPayload: params.rawPayload as any,
+      },
     });
     throw new ApiError(400, 'Amount/currency mismatch — possible tampering');
   }
 
   return prisma.$transaction(async (db) => {
-    const updated = await db.transaction.update({
-      where: { id: tx.id },
-      data: { status: params.status, rawPayload: params.rawPayload as any },
+    // ATOMIC STATE TRANSITION:
+    // Only transition if the transaction is still pending or processing.
+    // This strictly enforces that pending -> success is executed exactly once,
+    // even under concurrent webhook deliveries.
+    const result = await db.transaction.updateMany({
+      where: {
+        id: tx.id,
+        status: { in: ['pending', 'processing'] },
+      },
+      data: {
+        status: params.status,
+        completedAt: now,
+        rawPayload: params.rawPayload as any,
+      },
     });
+
+    if (result.count === 0) {
+      // Another concurrent worker/webhook already transitioned this transaction
+      return db.transaction.findUniqueOrThrow({ where: { id: tx.id } });
+    }
+
+    const updated = await db.transaction.findUniqueOrThrow({ where: { id: tx.id } });
 
     if (params.status === 'success') {
       await activateOrRenewSubscription(db, tx.userId, updated.id, tx.provider, params.renewalToken ?? null);

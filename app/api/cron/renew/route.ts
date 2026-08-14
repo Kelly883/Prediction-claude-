@@ -201,6 +201,7 @@ export async function GET(req: NextRequest) {
             currency,
             fxRateUsed,
             status: 'success',
+            completedAt: now,
             rawPayload: chargeResult.raw as any,
           },
         });

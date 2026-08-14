@@ -1,9 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// A minimal in-memory fake standing in for Prisma — enough to exercise the
-// actual idempotency branch in handleVerifiedWebhook (the part that matters:
-// "already processed" short-circuits before any subscription math runs)
-// without mocking every individual Prisma call shape.
+// A minimal in-memory fake standing in for Prisma — exercising
+// atomic state transitions and idempotency in handleVerifiedWebhook
 function makeFakeDb() {
   const transactions = new Map<string, any>();
   const subscriptions = new Map<string, any>();
@@ -18,6 +16,23 @@ function makeFakeDb() {
           return [...transactions.values()].find((t) => t.providerReference === where.providerReference) ?? null;
         }
         return transactions.get(where.id) ?? null;
+      }),
+      findUniqueOrThrow: vi.fn(async ({ where }: any) => {
+        const found = where.providerReference
+          ? [...transactions.values()].find((t) => t.providerReference === where.providerReference)
+          : transactions.get(where.id);
+        if (!found) throw new Error('Transaction not found');
+        return found;
+      }),
+      updateMany: vi.fn(async ({ where, data }: any) => {
+        const existing = transactions.get(where.id);
+        if (!existing) return { count: 0 };
+        if (where.status?.in && !where.status.in.includes(existing.status)) {
+          return { count: 0 };
+        }
+        const updated = { ...existing, ...data };
+        transactions.set(where.id, updated);
+        return { count: 1 };
       }),
       update: vi.fn(async ({ where, data }: any) => {
         const existing = transactions.get(where.id);
@@ -48,6 +63,7 @@ function makeFakeDb() {
     },
     _subscriptionCount: () => subscriptions.size,
     _transactionStatus: (id: string) => transactions.get(id)?.status,
+    _transactionCompletedAt: (id: string) => transactions.get(id)?.completedAt,
   };
   return db;
 }
@@ -60,7 +76,7 @@ vi.mock('@/lib/prisma', () => ({
   },
 }));
 
-describe('handleVerifiedWebhook idempotency', () => {
+describe('handleVerifiedWebhook idempotency & atomic state transitions', () => {
   beforeEach(() => {
     fakeDb = makeFakeDb();
     fakeDb._seed({
@@ -75,7 +91,7 @@ describe('handleVerifiedWebhook idempotency', () => {
     });
   });
 
-  it('processes a first-time webhook and activates a subscription', async () => {
+  it('processes a first-time webhook, transitions pending -> success atomically, and sets completedAt', async () => {
     const { handleVerifiedWebhook } = await import('@/lib/payments');
 
     await handleVerifiedWebhook({
@@ -87,6 +103,7 @@ describe('handleVerifiedWebhook idempotency', () => {
     });
 
     expect(fakeDb._transactionStatus('tx-1')).toBe('success');
+    expect(fakeDb._transactionCompletedAt('tx-1')).toBeInstanceOf(Date);
     expect(fakeDb._subscriptionCount()).toBe(1);
   });
 
@@ -102,8 +119,7 @@ describe('handleVerifiedWebhook idempotency', () => {
     });
     expect(fakeDb._subscriptionCount()).toBe(1);
 
-    // Same reference again — simulates Paystack/Flutterwave retrying
-    // delivery. Must NOT create a second subscription or re-process.
+    // Same reference again — simulates Paystack/Flutterwave retrying delivery
     await handleVerifiedWebhook({
       providerReference: 'ref-abc',
       status: 'success',
@@ -113,7 +129,33 @@ describe('handleVerifiedWebhook idempotency', () => {
     });
 
     expect(fakeDb._subscriptionCount()).toBe(1);
-    // subscription.create should have been called exactly once across both webhook calls
+    expect(fakeDb.subscription.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('atomically handles simultaneous concurrent webhook deliveries without duplicate activation', async () => {
+    const { handleVerifiedWebhook } = await import('@/lib/payments');
+
+    // Simulate 2 parallel webhook deliveries hitting at the exact same millisecond
+    const [res1, res2] = await Promise.all([
+      handleVerifiedWebhook({
+        providerReference: 'ref-abc',
+        status: 'success',
+        amountPaid: 4500,
+        currencyPaid: 'NGN',
+        rawPayload: { event: 'delivery_1' },
+      }),
+      handleVerifiedWebhook({
+        providerReference: 'ref-abc',
+        status: 'success',
+        amountPaid: 4500,
+        currencyPaid: 'NGN',
+        rawPayload: { event: 'delivery_2' },
+      }),
+    ]);
+
+    expect(res1.status).toBe('success');
+    expect(res2.status).toBe('success');
+    expect(fakeDb._subscriptionCount()).toBe(1);
     expect(fakeDb.subscription.create).toHaveBeenCalledTimes(1);
   });
 
@@ -131,6 +173,7 @@ describe('handleVerifiedWebhook idempotency', () => {
     ).rejects.toThrow(/mismatch/i);
 
     expect(fakeDb._transactionStatus('tx-1')).toBe('failed');
+    expect(fakeDb._transactionCompletedAt('tx-1')).toBeInstanceOf(Date);
     expect(fakeDb._subscriptionCount()).toBe(0);
   });
 });

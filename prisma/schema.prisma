@@ -43,8 +43,10 @@ enum Currency {
 
 enum TransactionStatus {
   pending
+  processing
   success
   failed
+  cancelled
 }
 
 enum AccessScope {
@@ -165,8 +167,11 @@ model Transaction {
   idempotencyKey    String            @unique
   rawPayload        Json?
   createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  completedAt       DateTime?
 
   @@index([status])
+  @@index([userId, createdAt])
 }
 
 model PredictionPost {
