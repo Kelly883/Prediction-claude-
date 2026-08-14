@@ -143,10 +143,15 @@ async function activateOrRenewSubscription(
 
   // Any successful charge — first payment or renewal — resets the retry
   // counter and (if the provider gave us one) refreshes the stored payment
-  // method for future auto-renewals.
-  const renewalFields = renewalToken
-    ? { renewalProvider: provider, renewalAuthCode: renewalToken, renewalAttempts: 0, lastRenewalError: null }
-    : { renewalAttempts: 0, lastRenewalError: null };
+  // method for future auto-renewals, as well as releasing any renewal lock.
+  const renewalFields = {
+    renewalAttempts: 0,
+    lastRenewalError: null,
+    renewalStatus: 'idle' as const,
+    renewalLockedAt: null,
+    renewalReference: null,
+    ...(renewalToken ? { renewalProvider: provider, renewalAuthCode: renewalToken } : {}),
+  };
 
   if (existing) {
     const newEnd = new Date(Math.max(existing.endAt.getTime(), now.getTime()) + durationMs);

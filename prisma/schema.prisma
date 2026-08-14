@@ -25,6 +25,12 @@ enum SubscriptionStatus {
   expired
 }
 
+enum RenewalStatus {
+  idle
+  processing
+  failed
+}
+
 enum PaymentProvider {
   paystack
   flutterwave
@@ -131,9 +137,15 @@ model Subscription {
   lastRenewalError String?
   renewalReminderSentAt DateTime?
 
+  // Atomic renewal locking and idempotency tracking
+  renewalStatus    RenewalStatus    @default(idle)
+  renewalLockedAt  DateTime?
+  renewalReference String?
+
   transactions Transaction[]
 
   @@index([userId, status, endAt])
+  @@index([status, autoRenew, endAt, renewalStatus])
 }
 
 model Transaction {
