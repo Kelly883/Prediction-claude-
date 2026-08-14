@@ -3,25 +3,12 @@
 import { useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import DashboardHeader from '@/components/DashboardHeader';
-import Sidebar from '@/components/Sidebar';
+import AdminNavTabs from '@/components/AdminNavTabs';
 import { DashboardUserProvider, useDashboardUser } from '@/lib/dashboard-user-context';
-
-const ADMIN_LINKS = [
-  { href: '/admin', label: 'Overview', exact: true },
-  { href: '/admin/plans', label: 'Plans' },
-  { href: '/admin/predictions', label: 'Predictions' },
-  { href: '/admin/free-access', label: 'Free access' },
-  { href: '/admin/users', label: 'Users' },
-  { href: '/admin/transactions', label: 'Transactions' },
-  { href: '/admin/audit-logs', label: 'Audit log' },
-  { href: '/admin/cms', label: 'CMS' },
-];
 
 function AdminChrome({ children }: { children: React.ReactNode }) {
   const { user, loading } = useDashboardUser();
   const router = useRouter();
-  const pathname = usePathname();
-  const isOverview = pathname === '/admin';
 
   useEffect(() => {
     if (!loading && user && user.role !== 'admin') {
@@ -41,8 +28,10 @@ function AdminChrome({ children }: { children: React.ReactNode }) {
     <>
       <DashboardHeader isAdmin />
       <section className="section-tight">
-        <div className={`container ${isOverview ? 'admin-overview-shell' : 'dashboard-shell'}`}>
-          {!isOverview && <Sidebar title="Admin" items={ADMIN_LINKS} />}
+        <div className="container admin-overview-shell">
+          <div className="admin-nav-tabs-wrapper mb-5">
+            <AdminNavTabs />
+          </div>
           <div className="dashboard-content">{children}</div>
         </div>
       </section>

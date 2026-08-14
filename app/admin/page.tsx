@@ -71,34 +71,6 @@ export default function AdminOverviewPage() {
 
   return (
     <div className="admin-dash-wrap">
-      {/* Top Navigation Tabs */}
-      <nav className="admin-dash-tabs" aria-label="Admin Navigation">
-        <Link
-          href="/admin"
-          className="admin-dash-tab admin-dash-tab-active"
-        >
-          Overview
-        </Link>
-        <Link
-          href="/admin/plans"
-          className="admin-dash-tab"
-        >
-          Plans
-        </Link>
-        <Link
-          href="/admin/predictions"
-          className="admin-dash-tab"
-        >
-          Predictions
-        </Link>
-        <Link
-          href="/admin/free-access"
-          className="admin-dash-tab"
-        >
-          Free acc
-        </Link>
-      </nav>
-
       {/* Title & Supertitle Header */}
       <header className="admin-dash-header">
         <div className="admin-dash-supertitle">
