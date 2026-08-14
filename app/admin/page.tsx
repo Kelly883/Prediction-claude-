@@ -48,15 +48,6 @@ export default function AdminOverviewPage() {
       {/* Header Banner */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-[rgba(243,245,236,0.1)]">
         <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="px-2 py-0.5 text-[10px] font-bold tracking-wider uppercase rounded bg-[rgba(245,179,53,0.16)] text-[#F5B335] border border-[rgba(245,179,53,0.3)]">
-              Admin Portal
-            </span>
-            <span className="text-xs text-[var(--chalk-muted)] flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              Live Console
-            </span>
-          </div>
           <h1 className="font-bold text-2xl sm:text-3xl text-white">System Overview</h1>
         </div>
 
