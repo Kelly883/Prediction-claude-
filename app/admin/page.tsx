@@ -6,12 +6,10 @@ import { apiJson } from '@/lib/api-client';
 import { 
   Zap, 
   CreditCard, 
-  Users, 
   Sparkles, 
   Activity, 
   FileText, 
   ArrowRight,
-  ShieldCheck,
   CheckCircle2,
   AlertTriangle
 } from 'lucide-react';
@@ -128,95 +126,6 @@ export default function AdminOverviewPage() {
               <ArrowRight size={11} />
             </Link>
           </div>
-        </div>
-      </div>
-
-      {/* Quick Actions & Navigation Hub */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Link
-          href="/admin/plans"
-          className="card p-5 hover:border-[var(--floodlight)] transition-colors group cursor-pointer block no-underline"
-        >
-          <div className="w-10 h-10 rounded-lg bg-[rgba(245,179,53,0.12)] border border-[rgba(245,179,53,0.3)] flex items-center justify-center text-[var(--floodlight)] mb-3">
-            <Zap size={20} />
-          </div>
-          <h3 className="font-semibold text-base text-white group-hover:text-[var(--floodlight)] transition-colors flex items-center justify-between">
-            <span>Membership Plans</span>
-            <ArrowRight size={16} className="opacity-60 group-hover:translate-x-1 transition-transform" />
-          </h3>
-          <p className="text-xs text-[var(--chalk-muted)] mt-1.5 leading-relaxed">
-            Configure daily, weekly, or VIP passes, set NGN pricing, and automated FX markups.
-          </p>
-        </Link>
-
-        <Link
-          href="/admin/predictions"
-          className="card p-5 hover:border-[var(--floodlight)] transition-colors group cursor-pointer block no-underline"
-        >
-          <div className="w-10 h-10 rounded-lg bg-[rgba(245,179,53,0.12)] border border-[rgba(245,179,53,0.3)] flex items-center justify-center text-[var(--floodlight)] mb-3">
-            <Sparkles size={20} />
-          </div>
-          <h3 className="font-semibold text-base text-white group-hover:text-[var(--floodlight)] transition-colors flex items-center justify-between">
-            <span>Matchday Tips & Slips</span>
-            <ArrowRight size={16} className="opacity-60 group-hover:translate-x-1 transition-transform" />
-          </h3>
-          <p className="text-xs text-[var(--chalk-muted)] mt-1.5 leading-relaxed">
-            Publish fixtures, booking codes, high-confidence picks, and batch CSV imports.
-          </p>
-        </Link>
-
-        <Link
-          href="/admin/users"
-          className="card p-5 hover:border-[var(--floodlight)] transition-colors group cursor-pointer block no-underline"
-        >
-          <div className="w-10 h-10 rounded-lg bg-[rgba(245,179,53,0.12)] border border-[rgba(245,179,53,0.3)] flex items-center justify-center text-[var(--floodlight)] mb-3">
-            <Users size={20} />
-          </div>
-          <h3 className="font-semibold text-base text-white group-hover:text-[var(--floodlight)] transition-colors flex items-center justify-between">
-            <span>User Directory & Grants</span>
-            <ArrowRight size={16} className="opacity-60 group-hover:translate-x-1 transition-transform" />
-          </h3>
-          <p className="text-xs text-[var(--chalk-muted)] mt-1.5 leading-relaxed">
-            Track registered users, active subscriptions, export CSV logs, and grant complimentary VIP access.
-          </p>
-        </Link>
-      </div>
-
-      {/* Operations Quick Links */}
-      <div className="card p-5">
-        <h3 className="text-sm font-semibold text-white mb-3 uppercase tracking-wider font-mono flex items-center gap-2">
-          <ShieldCheck size={16} className="text-[var(--floodlight)]" />
-          <span>Operations & Content</span>
-        </h3>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-          <Link
-            href="/admin/free-access"
-            className="p-3 rounded bg-[var(--pitch)] border border-[rgba(243,245,236,0.08)] hover:border-[var(--floodlight)] transition-colors text-[var(--chalk)] hover:text-white"
-          >
-            <div className="font-semibold mb-0.5">Free Access</div>
-            <div className="text-[11px] text-[var(--chalk-muted)]">Global trial & promo windows</div>
-          </Link>
-          <Link
-            href="/admin/transactions"
-            className="p-3 rounded bg-[var(--pitch)] border border-[rgba(243,245,236,0.08)] hover:border-[var(--floodlight)] transition-colors text-[var(--chalk)] hover:text-white"
-          >
-            <div className="font-semibold mb-0.5">Transactions</div>
-            <div className="text-[11px] text-[var(--chalk-muted)]">Paystack / Korapay logs</div>
-          </Link>
-          <Link
-            href="/admin/cms"
-            className="p-3 rounded bg-[var(--pitch)] border border-[rgba(243,245,236,0.08)] hover:border-[var(--floodlight)] transition-colors text-[var(--chalk)] hover:text-white"
-          >
-            <div className="font-semibold mb-0.5">CMS Copy</div>
-            <div className="text-[11px] text-[var(--chalk-muted)]">Homepage banner & FAQ text</div>
-          </Link>
-          <Link
-            href="/admin/audit-logs"
-            className="p-3 rounded bg-[var(--pitch)] border border-[rgba(243,245,236,0.08)] hover:border-[var(--floodlight)] transition-colors text-[var(--chalk)] hover:text-white"
-          >
-            <div className="font-semibold mb-0.5">Audit Log</div>
-            <div className="text-[11px] text-[var(--chalk-muted)]">Administrative action trail</div>
-          </Link>
         </div>
       </div>
     </div>
