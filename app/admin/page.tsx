@@ -68,13 +68,6 @@ export default function AdminOverviewPage() {
             <Sparkles size={14} />
             <span>New Prediction</span>
           </Link>
-          <Link
-            href="/admin/plans"
-            className="btn btn-ghost text-xs sm:text-sm py-2 px-3 sm:px-4 inline-flex items-center gap-1.5"
-          >
-            <Zap size={14} />
-            <span>Manage Plans</span>
-          </Link>
         </div>
       </div>
 
