@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { issueAccessToken, issueRefreshToken, issueTwoFactorChallengeToken, cookieOptions } from '@/lib/auth';
 import { verifyPassword } from '@/lib/password';
-import { checkRateLimit, authLimiter } from '@/lib/ratelimit';
+import { checkRateLimit, authLimiter, getClientIp, normalizeIdentifier } from '@/lib/ratelimit';
 import { errorResponse, ApiError } from '@/lib/rbac';
 import { touchSession } from '@/lib/sessions';
 import { LoginSchema } from '@/lib/schemas';
@@ -11,12 +11,20 @@ export const runtime = 'nodejs';
 
 export async function POST(req: NextRequest) {
   try {
-    const ip = req.headers.get('x-forwarded-for') ?? 'unknown';
-    if (!(await checkRateLimit(authLimiter, ip))) {
+    const rawBody = await req.json();
+    const { email, password } = LoginSchema.parse(rawBody);
+
+    const ip = getClientIp(req);
+    const emailIdentifier = normalizeIdentifier('email', email);
+
+    // Dual rate-limiting: Rate limits both the client IP and the normalized email/account
+    // to prevent distributed credential stuffing and IP rotation attacks.
+    // Auth limiter is strictly fail-closed (returns 503 if Redis is unreachable).
+    const allowed = await checkRateLimit(authLimiter, [ip, emailIdentifier]);
+    if (!allowed) {
       return NextResponse.json({ error: 'Too many attempts, try again shortly' }, { status: 429 });
     }
 
-    const { email, password } = LoginSchema.parse(await req.json());
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user || !(await verifyPassword(password, user.passwordHash))) {
       throw new ApiError(401, 'Invalid credentials');

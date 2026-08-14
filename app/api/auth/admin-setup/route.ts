@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { hashPassword } from '@/lib/password';
-import { checkRateLimit, authLimiter } from '@/lib/ratelimit';
+import { checkRateLimit, adminLimiter, getClientIp } from '@/lib/ratelimit';
 import { errorResponse, ApiError } from '@/lib/rbac';
 import { RegisterSchema } from '@/lib/schemas';
 import { issueAccessToken, issueRefreshToken, cookieOptions } from '@/lib/auth';
@@ -24,8 +24,9 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    const ip = req.headers.get('x-forwarded-for') ?? 'unknown';
-    if (!(await checkRateLimit(authLimiter, ip))) {
+    const ip = getClientIp(req);
+    const allowed = await checkRateLimit(adminLimiter, ip);
+    if (!allowed) {
       return NextResponse.json({ error: 'Too many attempts, try again shortly' }, { status: 429 });
     }
 

@@ -228,8 +228,8 @@ export function verifyPaystackSignature(rawBody: string, signature: string | nul
   // Verified against Paystack's current docs (paystack.com/docs/payments/webhooks):
   // x-paystack-signature header, HMAC-SHA512 of the raw body, keyed with the
   // secret key. Note it's SHA-512, not the SHA-256 most other providers use.
-  if (!signature) return false;
-  const expected = crypto.createHmac('sha512', process.env.PAYSTACK_SECRET_KEY!).update(rawBody).digest('hex');
+  if (!signature || !process.env.PAYSTACK_SECRET_KEY) return false;
+  const expected = crypto.createHmac('sha512', process.env.PAYSTACK_SECRET_KEY).update(rawBody).digest('hex');
   return timingSafeStringEqual(expected, signature);
 }
 
@@ -243,18 +243,4 @@ export function verifyFlutterwaveSignature(hash: string | null): boolean {
   // if signature checks start failing — providers do change these schemes.)
   if (!hash || !process.env.FLUTTERWAVE_WEBHOOK_SECRET_HASH) return false;
   return timingSafeStringEqual(hash, process.env.FLUTTERWAVE_WEBHOOK_SECRET_HASH);
-}
-
-/**
- * Plain `===` on secrets leaks timing information an attacker can use to
- * guess the value byte-by-byte over enough requests — crypto.timingSafeEqual
- * takes constant time regardless of where the strings first differ. Requires
- * equal-length buffers, so length-mismatch is checked (and short-circuits
- * safely) before calling it.
- */
-function timingSafeEqual(a: string, b: string): boolean {
-  const bufA = Buffer.from(a);
-  const bufB = Buffer.from(b);
-  if (bufA.length !== bufB.length) return false;
-  return crypto.timingSafeEqual(bufA, bufB);
 }

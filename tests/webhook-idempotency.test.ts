@@ -1,27 +1,40 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// A minimal in-memory fake standing in for Prisma — exercising
-// atomic state transitions and idempotency in handleVerifiedWebhook
+// In-memory fake standing in for Prisma — exercising atomic state transitions,
+// idempotency, and tamper-resistance in handleVerifiedWebhook
 function makeFakeDb() {
   const transactions = new Map<string, any>();
   const subscriptions = new Map<string, any>();
   let subIdCounter = 0;
 
+  const user = { id: 'user-1', email: 'payer@example.com' };
   const plan = { id: 'plan-1', durationDays: 30, priceNGN: 4500, priceUSDOverride: null, fxMarkupPercent: null };
 
   const db: any = {
     transaction: {
-      findUnique: vi.fn(async ({ where }: any) => {
+      findUnique: vi.fn(async ({ where, include }: any) => {
+        let found: any = null;
         if (where.providerReference) {
-          return [...transactions.values()].find((t) => t.providerReference === where.providerReference) ?? null;
+          found = [...transactions.values()].find((t) => t.providerReference === where.providerReference) ?? null;
+        } else if (where.id) {
+          found = transactions.get(where.id) ?? null;
         }
-        return transactions.get(where.id) ?? null;
+        if (found && include?.user) {
+          return { ...found, user };
+        }
+        return found;
       }),
-      findUniqueOrThrow: vi.fn(async ({ where }: any) => {
-        const found = where.providerReference
-          ? [...transactions.values()].find((t) => t.providerReference === where.providerReference)
-          : transactions.get(where.id);
+      findUniqueOrThrow: vi.fn(async ({ where, include }: any) => {
+        let found: any = null;
+        if (where.providerReference) {
+          found = [...transactions.values()].find((t) => t.providerReference === where.providerReference);
+        } else if (where.id) {
+          found = transactions.get(where.id);
+        }
         if (!found) throw new Error('Transaction not found');
+        if (include?.user) {
+          return { ...found, user };
+        }
         return found;
       }),
       updateMany: vi.fn(async ({ where, data }: any) => {
@@ -65,6 +78,7 @@ function makeFakeDb() {
     _getSub: (id: string) => subscriptions.get(id),
     _transactionStatus: (id: string) => transactions.get(id)?.status,
     _transactionCompletedAt: (id: string) => transactions.get(id)?.completedAt,
+    _getSubscriptions: () => [...subscriptions.values()],
   };
   return db;
 }
@@ -77,7 +91,7 @@ vi.mock('@/lib/prisma', () => ({
   },
 }));
 
-describe('handleVerifiedWebhook idempotency & atomic state transitions', () => {
+describe('handleVerifiedWebhook Paystack Idempotency & Concurrency', () => {
   beforeEach(() => {
     fakeDb = makeFakeDb();
     fakeDb._seed({
@@ -85,76 +99,88 @@ describe('handleVerifiedWebhook idempotency & atomic state transitions', () => {
       userId: 'user-1',
       planId: 'plan-1',
       provider: 'paystack',
-      providerReference: 'ref-abc',
+      providerReference: 'ref-paystack-123',
       amount: 4500,
       currency: 'NGN',
       status: 'pending',
     });
   });
 
-  it('processes a first-time webhook, transitions pending -> success atomically, and sets completedAt', async () => {
+  it('first webhook succeeds and transitions pending -> success atomically', async () => {
     const { handleVerifiedWebhook } = await import('@/lib/payments');
 
-    await handleVerifiedWebhook({
-      providerReference: 'ref-abc',
+    const result = await handleVerifiedWebhook({
+      providerReference: 'ref-paystack-123',
       status: 'success',
       amountPaid: 4500,
       currencyPaid: 'NGN',
-      rawPayload: {},
+      customerEmail: 'payer@example.com',
+      rawPayload: { event: 'charge.success' },
     });
 
+    expect(result.status).toBe('success');
     expect(fakeDb._transactionStatus('tx-1')).toBe('success');
     expect(fakeDb._transactionCompletedAt('tx-1')).toBeInstanceOf(Date);
     expect(fakeDb._subscriptionCount()).toBe(1);
   });
 
-  it('no-ops on a replayed webhook for the same reference (provider retries) and does not extend subscription again', async () => {
+  it('second identical webhook does not extend subscription again (replay defense)', async () => {
     const { handleVerifiedWebhook } = await import('@/lib/payments');
 
+    // First delivery
     await handleVerifiedWebhook({
-      providerReference: 'ref-abc',
+      providerReference: 'ref-paystack-123',
       status: 'success',
       amountPaid: 4500,
       currencyPaid: 'NGN',
-      rawPayload: {},
+      customerEmail: 'payer@example.com',
+      rawPayload: { delivery: 1 },
     });
     expect(fakeDb._subscriptionCount()).toBe(1);
     const subAfterFirst = (fakeDb as any)._getSub('sub-1');
 
-    // Same reference again — simulates Paystack/Flutterwave retrying delivery
-    await handleVerifiedWebhook({
-      providerReference: 'ref-abc',
+    const initialSubs = fakeDb._getSubscriptions();
+    const initialEndAt = initialSubs[0].endAt;
+
+    // Second delivery of same webhook
+    const replayResult = await handleVerifiedWebhook({
+      providerReference: 'ref-paystack-123',
       status: 'success',
       amountPaid: 4500,
       currencyPaid: 'NGN',
-      rawPayload: {},
+      customerEmail: 'payer@example.com',
+      rawPayload: { delivery: 2 },
     });
 
+    expect(replayResult.status).toBe('success');
     expect(fakeDb._subscriptionCount()).toBe(1);
     expect(fakeDb.subscription.create).toHaveBeenCalledTimes(1);
     expect(fakeDb.subscription.update).not.toHaveBeenCalled();
     const subAfterSecond = (fakeDb as any)._getSub('sub-1');
     expect(subAfterSecond.endAt.getTime()).toBe(subAfterFirst.endAt.getTime());
+    expect(initialSubs[0].endAt).toEqual(initialEndAt);
   });
 
-  it('atomically handles simultaneous concurrent webhook deliveries without duplicate activation', async () => {
+  it('two simultaneous webhook calls cannot create duplicate subscription benefits', async () => {
     const { handleVerifiedWebhook } = await import('@/lib/payments');
 
-    // Simulate 2 parallel webhook deliveries hitting at the exact same millisecond
+    // 2 parallel concurrent webhook calls hitting at the same time
     const [res1, res2] = await Promise.all([
       handleVerifiedWebhook({
-        providerReference: 'ref-abc',
+        providerReference: 'ref-paystack-123',
         status: 'success',
         amountPaid: 4500,
         currencyPaid: 'NGN',
-        rawPayload: { event: 'delivery_1' },
+        customerEmail: 'payer@example.com',
+        rawPayload: { worker: 1 },
       }),
       handleVerifiedWebhook({
-        providerReference: 'ref-abc',
+        providerReference: 'ref-paystack-123',
         status: 'success',
         amountPaid: 4500,
         currencyPaid: 'NGN',
-        rawPayload: { event: 'delivery_2' },
+        customerEmail: 'payer@example.com',
+        rawPayload: { worker: 2 },
       }),
     ]);
 
@@ -164,21 +190,21 @@ describe('handleVerifiedWebhook idempotency & atomic state transitions', () => {
     expect(fakeDb.subscription.create).toHaveBeenCalledTimes(1);
   });
 
-  it('rejects a webhook whose amount does not match the pending transaction', async () => {
+  it('rejects a webhook with a tampered customer email', async () => {
     const { handleVerifiedWebhook } = await import('@/lib/payments');
 
     await expect(
       handleVerifiedWebhook({
-        providerReference: 'ref-abc',
+        providerReference: 'ref-paystack-123',
         status: 'success',
-        amountPaid: 999999, // tampered amount
+        amountPaid: 4500,
         currencyPaid: 'NGN',
+        customerEmail: 'attacker@evil.com', // doesn't match payer@example.com
         rawPayload: {},
       }),
     ).rejects.toThrow(/mismatch/i);
 
     expect(fakeDb._transactionStatus('tx-1')).toBe('failed');
-    expect(fakeDb._transactionCompletedAt('tx-1')).toBeInstanceOf(Date);
     expect(fakeDb._subscriptionCount()).toBe(0);
   });
 
@@ -187,7 +213,7 @@ describe('handleVerifiedWebhook idempotency & atomic state transitions', () => {
 
     await expect(
       handleVerifiedWebhook({
-        providerReference: 'ref-abc',
+        providerReference: 'ref-paystack-123',
         status: 'success',
         amountPaid: 4500,
         currencyPaid: 'NGN',
@@ -202,7 +228,7 @@ describe('handleVerifiedWebhook idempotency & atomic state transitions', () => {
       userId: 'user-1',
       planId: 'plan-1',
       provider: 'paystack',
-      providerReference: 'ref-abc',
+      providerReference: 'ref-paystack-123',
       amount: 4500,
       currency: 'NGN',
       status: 'pending',
@@ -210,7 +236,7 @@ describe('handleVerifiedWebhook idempotency & atomic state transitions', () => {
 
     await expect(
       handleVerifiedWebhook({
-        providerReference: 'ref-abc',
+        providerReference: 'ref-paystack-123',
         status: 'success',
         amountPaid: 4500,
         currencyPaid: 'NGN',

@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { sendEmail } from '@/lib/email';
-import { checkRateLimit, authLimiter } from '@/lib/ratelimit';
+import { checkRateLimit, authLimiter, getClientIp, normalizeIdentifier } from '@/lib/ratelimit';
 import { errorResponse } from '@/lib/rbac';
 
 export const runtime = 'nodejs';
@@ -10,13 +10,18 @@ const TOKEN_TTL_MINUTES = 30;
 
 export async function POST(req: NextRequest) {
   try {
-    const ip = req.headers.get('x-forwarded-for') ?? 'unknown';
-    if (!(await checkRateLimit(authLimiter, ip))) {
+    const { email } = await req.json();
+
+    const ip = getClientIp(req);
+    const emailIdentifier = email ? normalizeIdentifier('email', email) : `ip:${ip}`;
+
+    // Fail-closed dual rate limiting on password reset request
+    const allowed = await checkRateLimit(authLimiter, [ip, emailIdentifier]);
+    if (!allowed) {
       return NextResponse.json({ error: 'Too many attempts, try again shortly' }, { status: 429 });
     }
 
-    const { email } = await req.json();
-    const user = await prisma.user.findUnique({ where: { email } });
+    const user = email ? await prisma.user.findUnique({ where: { email } }) : null;
 
     // Always return the same generic response whether or not the account
     // exists — a different response here is a classic account-enumeration leak.
