@@ -2,7 +2,23 @@
 
 import { useEffect, useState } from 'react';
 import { apiJson } from '@/lib/api-client';
-import { Zap, Plus, Edit2, Check, X, ShieldAlert, Sparkles } from 'lucide-react';
+import { 
+  Crown, 
+  Sparkles, 
+  Pencil, 
+  X, 
+  Check, 
+  Calendar, 
+  Banknote, 
+  DollarSign, 
+  Lock, 
+  ChevronDown, 
+  Clock, 
+  MoreVertical,
+  Plus,
+  ShieldAlert,
+  Zap
+} from 'lucide-react';
 
 type Plan = {
   id: string;
@@ -47,8 +63,11 @@ export default function AdminPlansPage() {
       priceUSDOverride: plan.priceUSDOverride ?? '',
       accessScope: plan.accessScope,
     });
-    // Scroll form into view on mobile
-    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+    // Scroll form into view
+    const formEl = document.getElementById('plan-form-section');
+    if (formEl) {
+      formEl.scrollIntoView({ behavior: 'smooth' });
+    }
   }
 
   function cancelEdit() {
@@ -101,230 +120,263 @@ export default function AdminPlansPage() {
     load();
   }
 
+  const activeCount = plans.filter((p) => p.isActive).length;
+
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-4 pb-2 border-b border-[rgba(243,245,236,0.1)]">
-        <div>
-          <h1 className="font-bold text-2xl sm:text-3xl text-white">Membership Plans</h1>
-          <p className="text-xs sm:text-sm text-[var(--chalk-muted)] mt-1">
-            Configure subscriber pass durations, pricing in NGN, and optional USD rates.
-          </p>
+    <div className="admin-plans-wrap">
+      {/* Page Header */}
+      <header className="admin-plans-header">
+        <h1 className="admin-plans-title">Membership Plans</h1>
+        <p className="admin-plans-subtitle">
+          Configure subscriber pass durations, pricing in NGN, and optional USD rates.
+        </p>
+      </header>
+
+      {/* Configured Plans Section */}
+      <section className="admin-plans-section">
+        <div className="admin-plans-section-top">
+          <h2 className="admin-plans-section-heading">Configured Plans</h2>
+          <span className="admin-plans-active-badge">
+            {activeCount} Active
+          </span>
         </div>
-      </div>
 
-      <div className="admin-grid-2col">
-        {/* Plans List Column */}
-        <div className="space-y-4">
-          <div className="card p-4 sm:p-5">
-            <h2 className="text-base font-semibold text-white mb-4 flex items-center justify-between">
-              <span>Configured Plans ({plans.length})</span>
-              <span className="text-xs text-[var(--chalk-muted)] font-normal">Auto-synced with checkout</span>
-            </h2>
-
-            {loading ? (
-              <div className="p-8 text-center text-sm text-[var(--chalk-muted)]">
-                Loading membership plans…
-              </div>
-            ) : plans.length === 0 ? (
-              <div className="p-8 text-center border border-dashed border-[rgba(243,245,236,0.14)] rounded-lg">
-                <Zap size={28} className="mx-auto mb-2 text-[var(--floodlight)] opacity-80" />
-                <p className="text-sm text-white font-medium">No plans created yet</p>
-                <p className="text-xs text-[var(--chalk-muted)] mt-1 max-w-sm mx-auto">
-                  Create your first plan using the form on the right so visitors can subscribe.
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {/* Mobile Cards / Desktop Rows */}
-                {plans.map((p) => (
-                  <div
-                    key={p.id}
-                    className={`p-4 rounded-lg border transition-all ${
-                      editingId === p.id
-                        ? 'border-[var(--floodlight)] bg-[rgba(245,179,53,0.06)]'
-                        : 'border-[rgba(243,245,236,0.1)] bg-[var(--pitch)]'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-3 flex-wrap">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-semibold text-base text-white">{p.name}</span>
-                          <span
-                            className={`px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded ${
-                              p.isActive
-                                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                                : 'bg-zinc-700/40 text-zinc-400 border border-zinc-700'
-                            }`}
-                          >
-                            {p.isActive ? 'Active' : 'Inactive'}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-3 text-xs text-[var(--chalk-muted)] mt-1.5 flex-wrap font-mono">
-                          <span>⏱ {p.durationDays} Days</span>
-                          <span>•</span>
-                          <span>Scope: {p.accessScope === 'all' ? 'All Predictions' : 'Category Only'}</span>
-                        </div>
+        {loading ? (
+          <div className="p-8 text-center text-sm text-[#85a694]">
+            Loading membership plans…
+          </div>
+        ) : plans.length === 0 ? (
+          <div className="p-8 text-center border border-dashed border-[rgba(243,245,236,0.14)] rounded-2xl bg-[#102e20]/40">
+            <Zap size={28} className="mx-auto mb-2 text-[#f5b335] opacity-80" />
+            <p className="text-sm text-white font-medium">No plans configured yet</p>
+            <p className="text-xs text-[#85a694] mt-1 max-w-sm mx-auto">
+              Create your first plan below so visitors can purchase subscriptions.
+            </p>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-4">
+            {plans.map((p) => (
+              <div key={p.id} className="admin-plan-card">
+                <div className="admin-plan-card-main">
+                  <div className="admin-plan-crown-box">
+                    <Crown size={24} />
+                  </div>
+                  <div className="admin-plan-body">
+                    <div className="admin-plan-title-row">
+                      <div className="admin-plan-title-left">
+                        <span className="admin-plan-name">{p.name}</span>
+                        <span
+                          className={`admin-plan-status-pill ${
+                            !p.isActive ? 'admin-plan-status-pill-inactive' : ''
+                          }`}
+                        >
+                          {p.isActive ? 'Active' : 'Inactive'}
+                        </span>
                       </div>
-
-                      <div className="text-right">
-                        <div className="font-mono text-lg font-bold text-[var(--floodlight)]">
-                          ₦{Number(p.priceNGN).toLocaleString()}
-                        </div>
-                        {p.priceUSDOverride && (
-                          <div className="font-mono text-xs text-[var(--chalk-muted)]">
-                            ${Number(p.priceUSDOverride).toFixed(2)} USD
-                          </div>
-                        )}
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => startEdit(p)}
+                        className="text-[#85a694] hover:text-white p-1 rounded transition-colors"
+                        title="Options"
+                      >
+                        <MoreVertical size={18} />
+                      </button>
                     </div>
 
-                    <div className="flex items-center justify-end gap-2 mt-4 pt-3 border-t border-[rgba(243,245,236,0.06)]">
-                      <button
-                        onClick={() => startEdit(p)}
-                        className="btn btn-ghost text-xs py-1.5 px-3 inline-flex items-center gap-1.5"
-                      >
-                        <Edit2 size={12} />
-                        <span>Edit</span>
-                      </button>
-                      <button
-                        onClick={() => toggleActive(p)}
-                        className={`btn btn-ghost text-xs py-1.5 px-3 inline-flex items-center gap-1.5 ${
-                          p.isActive ? 'text-amber-300 hover:text-amber-200' : 'text-emerald-400 hover:text-emerald-300'
-                        }`}
-                      >
-                        {p.isActive ? <X size={12} /> : <Check size={12} />}
-                        <span>{p.isActive ? 'Deactivate' : 'Activate'}</span>
-                      </button>
+                    <div className="admin-plan-meta">
+                      <Clock size={14} className="text-[#85a694] shrink-0" />
+                      <span>
+                        {p.durationDays} Days • Scope: {p.accessScope === 'all' ? 'All VIP Predictions' : 'Category Only'}
+                      </span>
+                    </div>
+
+                    <div className="admin-plan-price-val">
+                      ₦{Number(p.priceNGN).toLocaleString()}
                     </div>
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Plan Form Column */}
-        <div>
-          <form onSubmit={submit} className="card p-4 sm:p-5 sticky top-24">
-            <h2 className="text-base font-semibold text-white mb-4 flex items-center gap-2">
-              <Sparkles size={16} className="text-[var(--floodlight)]" />
-              <span>{editingId ? 'Edit Membership Plan' : 'Create New Plan'}</span>
-            </h2>
-
-            <div className="space-y-4">
-              <div className="field mb-0">
-                <label htmlFor="name" className="text-xs text-[var(--chalk-muted)] font-medium">Plan Name</label>
-                <input
-                  id="name"
-                  required
-                  value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  placeholder="e.g. Daily VIP Pass, Weekend Banker"
-                  className="w-full"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="field mb-0">
-                  <label htmlFor="duration" className="text-xs text-[var(--chalk-muted)] font-medium">Duration (Days)</label>
-                  <input
-                    id="duration"
-                    type="number"
-                    min={1}
-                    required
-                    value={form.durationDays}
-                    onChange={(e) => setForm({ ...form, durationDays: Number(e.target.value) })}
-                    className="w-full"
-                  />
                 </div>
 
-                <div className="field mb-0">
-                  <label htmlFor="price" className="text-xs text-[var(--chalk-muted)] font-medium">Price (NGN ₦)</label>
-                  <input
-                    id="price"
-                    type="number"
-                    min={100}
-                    required
-                    value={form.priceNGN}
-                    onChange={(e) => setForm({ ...form, priceNGN: e.target.value })}
-                    placeholder="e.g. 5000"
-                    className="w-full"
-                  />
-                </div>
-              </div>
-
-              <div className="field mb-0">
-                <label htmlFor="usdOverride" className="text-xs text-[var(--chalk-muted)] font-medium">
-                  Fixed USD Price ($) (Optional)
-                </label>
-                <input
-                  id="usdOverride"
-                  type="number"
-                  step="0.01"
-                  min={0.5}
-                  value={form.priceUSDOverride}
-                  onChange={(e) => setForm({ ...form, priceUSDOverride: e.target.value })}
-                  placeholder="Leave blank to auto-convert NGN at live FX rate"
-                  className="w-full"
-                />
-              </div>
-
-              <div className="field mb-0">
-                <label htmlFor="scope" className="text-xs text-[var(--chalk-muted)] font-medium">Access Scope</label>
-                <select
-                  id="scope"
-                  value={form.accessScope}
-                  onChange={(e) => setForm({ ...form, accessScope: e.target.value as 'all' | 'category' })}
-                  className="w-full bg-[var(--pitch)] border border-[rgba(243,245,236,0.14)] rounded-md p-3 text-sm text-[var(--chalk)]"
-                >
-                  <option value="all">All VIP Predictions & Booking Codes</option>
-                  <option value="category">Category-specific Only</option>
-                </select>
-              </div>
-
-              {error && (
-                <div className="p-3 rounded bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center gap-2">
-                  <ShieldAlert size={14} className="shrink-0" />
-                  <span>{error}</span>
-                </div>
-              )}
-
-              <div className="flex items-center gap-3 pt-2">
-                <button
-                  type="submit"
-                  className="btn btn-primary flex-1 py-2.5 text-sm font-semibold inline-flex items-center justify-center gap-2"
-                  disabled={saving}
-                >
-                  {saving ? (
-                    'Saving…'
-                  ) : editingId ? (
-                    <>
-                      <Check size={14} />
-                      <span>Save Changes</span>
-                    </>
-                  ) : (
-                    <>
-                      <Plus size={14} />
-                      <span>Create Plan</span>
-                    </>
-                  )}
-                </button>
-                {editingId && (
+                {/* Bottom Action Buttons */}
+                <div className="admin-plan-actions-grid">
                   <button
                     type="button"
-                    onClick={cancelEdit}
-                    className="btn btn-ghost py-2.5 text-sm"
+                    onClick={() => startEdit(p)}
+                    className="admin-plan-btn-edit"
                   >
-                    Cancel
+                    <Pencil size={15} />
+                    <span>Edit</span>
                   </button>
-                )}
+
+                  <button
+                    type="button"
+                    onClick={() => toggleActive(p)}
+                    className={p.isActive ? 'admin-plan-btn-deactivate' : 'admin-plan-btn-activate'}
+                  >
+                    {p.isActive ? (
+                      <>
+                        <X size={15} />
+                        <span>Deactivate</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check size={15} />
+                        <span>Activate</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* Create / Edit Plan Form Section */}
+      <section id="plan-form-section" className="admin-plan-form-card">
+        <h2 className="admin-plan-form-title">
+          <Sparkles size={20} className="text-[#f5b335]" />
+          <span>{editingId ? 'Edit Membership Plan' : 'Create New Plan'}</span>
+        </h2>
+
+        <form onSubmit={submit} className="flex flex-col gap-4">
+          {/* Plan Name */}
+          <div className="admin-form-group">
+            <label htmlFor="plan-name" className="admin-form-label">
+              Plan Name
+            </label>
+            <div className="admin-input-box">
+              <input
+                id="plan-name"
+                required
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                placeholder="e.g. Daily VIP Pass, Weekend Bank"
+                className="admin-text-input"
+              />
+            </div>
+          </div>
+
+          {/* Duration & Price Row */}
+          <div className="admin-form-row-2col">
+            <div className="admin-form-group">
+              <label htmlFor="plan-duration" className="admin-form-label">
+                Duration (Days)
+              </label>
+              <div className="admin-input-box">
+                <Calendar size={18} className="admin-input-icon" />
+                <input
+                  id="plan-duration"
+                  type="number"
+                  min={1}
+                  required
+                  value={form.durationDays}
+                  onChange={(e) => setForm({ ...form, durationDays: Number(e.target.value) })}
+                  className="admin-text-input admin-text-input-with-icon"
+                />
               </div>
             </div>
-          </form>
-        </div>
-      </div>
+
+            <div className="admin-form-group">
+              <label htmlFor="plan-price-ngn" className="admin-form-label">
+                Price (NGN ₦)
+              </label>
+              <div className="admin-input-box">
+                <Banknote size={18} className="admin-input-icon" />
+                <input
+                  id="plan-price-ngn"
+                  type="number"
+                  min={100}
+                  required
+                  value={form.priceNGN}
+                  onChange={(e) => setForm({ ...form, priceNGN: e.target.value })}
+                  placeholder="e.g. 5000"
+                  className="admin-text-input admin-text-input-with-icon"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Fixed USD Price (Optional) */}
+          <div className="admin-form-group">
+            <label htmlFor="plan-price-usd" className="admin-form-label">
+              Fixed USD Price ($) (Optional)
+            </label>
+            <div className="admin-input-box">
+              <DollarSign size={18} className="admin-input-icon" />
+              <input
+                id="plan-price-usd"
+                type="number"
+                step="0.01"
+                min={0.5}
+                value={form.priceUSDOverride}
+                onChange={(e) => setForm({ ...form, priceUSDOverride: e.target.value })}
+                placeholder="Leave blank to auto-convert NGN amount"
+                className="admin-text-input admin-text-input-with-icon"
+              />
+            </div>
+          </div>
+
+          {/* Access Scope */}
+          <div className="admin-form-group">
+            <label htmlFor="plan-access-scope" className="admin-form-label">
+              Access Scope
+            </label>
+            <div className="admin-select-wrapper">
+              <Lock size={18} className="admin-input-icon" />
+              <select
+                id="plan-access-scope"
+                value={form.accessScope}
+                onChange={(e) => setForm({ ...form, accessScope: e.target.value as 'all' | 'category' })}
+                className="admin-select-input"
+              >
+                <option value="all">All VIP Predictions & Booking Codes</option>
+                <option value="category">Category Only</option>
+              </select>
+              <ChevronDown size={18} className="admin-select-chevron" />
+            </div>
+          </div>
+
+          {error && (
+            <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center gap-2">
+              <ShieldAlert size={15} className="shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
+
+          {/* Submit Action */}
+          <div className="flex flex-col gap-2 pt-2">
+            <button
+              type="submit"
+              disabled={saving}
+              className="admin-submit-btn"
+            >
+              {saving ? (
+                'Saving…'
+              ) : editingId ? (
+                <>
+                  <Check size={18} />
+                  <span>Save Changes</span>
+                </>
+              ) : (
+                <>
+                  <Plus size={18} />
+                  <span>Create Plan</span>
+                </>
+              )}
+            </button>
+
+            {editingId && (
+              <button
+                type="button"
+                onClick={cancelEdit}
+                className="admin-cancel-btn"
+              >
+                Cancel
+              </button>
+            )}
+          </div>
+        </form>
+      </section>
     </div>
   );
 }
-
