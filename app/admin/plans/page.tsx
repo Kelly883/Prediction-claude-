@@ -11,8 +11,6 @@ import {
   Calendar, 
   Banknote, 
   DollarSign, 
-  Lock, 
-  ChevronDown, 
   Clock, 
   MoreVertical,
   Plus,
@@ -26,7 +24,6 @@ type Plan = {
   durationDays: number;
   priceNGN: string;
   priceUSDOverride: string | null;
-  accessScope: 'all' | 'category';
   isActive: boolean;
 };
 
@@ -35,10 +32,9 @@ type FormState = {
   durationDays: number;
   priceNGN: string;
   priceUSDOverride: string;
-  accessScope: 'all' | 'category';
 };
 
-const emptyForm: FormState = { name: '', durationDays: 30, priceNGN: '', priceUSDOverride: '', accessScope: 'all' };
+const emptyForm: FormState = { name: '', durationDays: 30, priceNGN: '', priceUSDOverride: '' };
 
 export default function AdminPlansPage() {
   const [plans, setPlans] = useState<Plan[]>([]);
@@ -61,7 +57,6 @@ export default function AdminPlansPage() {
       durationDays: plan.durationDays,
       priceNGN: plan.priceNGN,
       priceUSDOverride: plan.priceUSDOverride ?? '',
-      accessScope: plan.accessScope,
     });
     // Scroll form into view
     const formEl = document.getElementById('plan-form-section');
@@ -86,7 +81,7 @@ export default function AdminPlansPage() {
         durationDays: Number(form.durationDays),
         priceNGN: Number(form.priceNGN),
         priceUSDOverride: form.priceUSDOverride ? Number(form.priceUSDOverride) : undefined,
-        accessScope: form.accessScope,
+        accessScope: 'all',
       };
 
       if (editingId) {
@@ -185,9 +180,7 @@ export default function AdminPlansPage() {
 
                     <div className="admin-plan-meta">
                       <Clock size={14} className="text-[#85a694] shrink-0" />
-                      <span>
-                        {p.durationDays} Days • Scope: {p.accessScope === 'all' ? 'All VIP Predictions' : 'Category Only'}
-                      </span>
+                      <span>{p.durationDays} Days</span>
                     </div>
 
                     <div className="admin-plan-price-val">
@@ -313,26 +306,6 @@ export default function AdminPlansPage() {
                 placeholder="Leave blank to auto-convert NGN amount"
                 className="admin-text-input admin-text-input-with-icon"
               />
-            </div>
-          </div>
-
-          {/* Access Scope */}
-          <div className="admin-form-group">
-            <label htmlFor="plan-access-scope" className="admin-form-label">
-              Access Scope
-            </label>
-            <div className="admin-select-wrapper">
-              <Lock size={18} className="admin-input-icon" />
-              <select
-                id="plan-access-scope"
-                value={form.accessScope}
-                onChange={(e) => setForm({ ...form, accessScope: e.target.value as 'all' | 'category' })}
-                className="admin-select-input"
-              >
-                <option value="all">All VIP Predictions & Booking Codes</option>
-                <option value="category">Category Only</option>
-              </select>
-              <ChevronDown size={18} className="admin-select-chevron" />
             </div>
           </div>
 

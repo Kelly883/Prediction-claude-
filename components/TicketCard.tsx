@@ -40,7 +40,7 @@ export default function TicketCard({ plan, featured = false }: { plan: Plan; fea
         <div className="ticket-perforation" />
 
         <ul className="ticket-includes">
-          <li>{plan.accessScope === 'all' ? 'Every published tip' : 'Selected leagues for this plan'}</li>
+          <li>Full VIP predictions & booking codes</li>
           <li>Booking code with every post</li>
           <li>Auto-renews — cancel anytime, keep access until the pass ends</li>
         </ul>
