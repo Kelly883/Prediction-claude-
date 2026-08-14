@@ -1,0 +1,276 @@
+generator client {
+  provider      = "prisma-client-js"
+  // "native" alone can pick the wrong engine binary if your build and
+  // runtime environments ever diverge (monorepo setups, some CI caching
+  // configurations). Vercel's serverless functions run on Amazon Linux
+  // 2023 (openssl 3.0) — explicit here rather than relying on Vercel's
+  // build container happening to match at generate time.
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")   // pooled connection (e.g. Neon pooler / Supabase pgbouncer)
+  directUrl = env("DIRECT_URL")      // direct connection, used only by `prisma migrate`
+}
+
+enum Role {
+  admin
+  user
+}
+
+enum SubscriptionStatus {
+  active
+  cancelled
+  expired
+}
+
+enum PaymentProvider {
+  paystack
+  flutterwave
+}
+
+enum Currency {
+  NGN
+  USD
+}
+
+enum TransactionStatus {
+  pending
+  success
+  failed
+}
+
+enum AccessScope {
+  all
+  category
+}
+
+enum PostVisibility {
+  plan_specific
+  subscribers
+  free_window
+}
+
+enum PostStatus {
+  draft
+  scheduled
+  published
+  archived
+}
+
+enum FreeAccessRuleType {
+  global_trial
+  promo_window
+}
+
+model User {
+  id               String   @id @default(uuid())
+  name             String
+  email            String   @unique
+  phone            String?
+  passwordHash     String
+  country          String
+  role             Role     @default(user)
+  twoFactorEnabled Boolean  @default(false)
+  twoFactorSecret  String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  subscriptions       Subscription[]
+  transactions        Transaction[]
+  complimentaryAccess ComplimentaryAccess[]
+  auditLogs           AuditLog[]       @relation("AuditActor")
+  createdPosts        PredictionPost[] @relation("PostCreator")
+  sessions            UserSession[]
+  cmsEdits            CmsSection[]
+  passwordResetTokens PasswordResetToken[]
+
+  @@index([role])
+}
+
+model Plan {
+  id               String      @id @default(uuid())
+  name             String
+  durationDays     Int
+  priceNGN         Decimal     @db.Decimal(12, 2)
+  priceUSDOverride Decimal?    @db.Decimal(12, 2)
+  fxMarkupPercent  Decimal?    @db.Decimal(5, 2)
+  accessScope      AccessScope @default(all)
+  categoryIds      String[]    @default([])
+  isActive         Boolean     @default(true)
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  subscriptions Subscription[]
+  transactions  Transaction[]
+
+  @@index([isActive])
+}
+
+model Subscription {
+  id        String             @id @default(uuid())
+  userId    String
+  user      User               @relation(fields: [userId], references: [id])
+  planId    String
+  plan      Plan               @relation(fields: [planId], references: [id])
+  status    SubscriptionStatus @default(active)
+  autoRenew Boolean            @default(true)
+  startAt   DateTime
+  endAt     DateTime
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  // Reusable payment method captured from a successful charge's webhook
+  // (Paystack authorization_code / Flutterwave card token), used by the
+  // renewal cron to charge unattended. Null means auto-renew has nothing
+  // to charge yet — see app/api/cron/renew for what happens in that case.
+  renewalProvider  PaymentProvider?
+  renewalAuthCode  String?
+  renewalAttempts  Int              @default(0)
+  lastRenewalError String?
+  renewalReminderSentAt DateTime?
+
+  transactions Transaction[]
+
+  @@index([userId, status, endAt])
+}
+
+model Transaction {
+  id                String            @id @default(uuid())
+  userId            String
+  user              User              @relation(fields: [userId], references: [id])
+  subscriptionId    String?
+  subscription      Subscription?     @relation(fields: [subscriptionId], references: [id])
+  planId            String?
+  plan              Plan?             @relation(fields: [planId], references: [id])
+  provider          PaymentProvider
+  providerReference String            @unique
+  amount            Decimal           @db.Decimal(12, 2)
+  currency          Currency
+  fxRateUsed        Decimal?          @db.Decimal(12, 6)
+  status            TransactionStatus @default(pending)
+  idempotencyKey    String            @unique
+  rawPayload        Json?
+  createdAt         DateTime          @default(now())
+
+  @@index([status])
+}
+
+model PredictionPost {
+  id          String         @id @default(uuid())
+  title       String
+  scheduledAt DateTime
+  categoryIds String[]       @default([])
+  bookingCode String
+  bodyNotes   String?
+  visibility  PostVisibility @default(subscribers)
+  freeUntil   DateTime?
+  planIds     String[]       @default([])
+  status      PostStatus     @default(draft)
+  createdById String
+  createdBy   User           @relation("PostCreator", fields: [createdById], references: [id])
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  items                PredictionItem[]
+  media                MediaAsset[]
+  complimentaryAccess  ComplimentaryAccess[]
+
+  @@index([status, scheduledAt])
+}
+
+model PredictionItem {
+  id            String         @id @default(uuid())
+  postId        String
+  post          PredictionPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  match         String
+  prediction    String
+  matchDateTime DateTime?
+
+  @@index([postId])
+}
+
+model MediaAsset {
+  id               String         @id @default(uuid())
+  postId           String
+  post             PredictionPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  storageKey       String
+  watermarkEnabled Boolean        @default(true)
+  createdAt        DateTime       @default(now())
+
+  @@index([postId])
+}
+
+model FreeAccessRule {
+  id        String              @id @default(uuid())
+  type      FreeAccessRuleType
+  trialDays Int?
+  startAt   DateTime?
+  endAt     DateTime?
+  isActive  Boolean             @default(true)
+  createdAt DateTime            @default(now())
+
+  @@index([isActive, type])
+}
+
+model ComplimentaryAccess {
+  id        String          @id @default(uuid())
+  userId    String
+  user      User            @relation(fields: [userId], references: [id])
+  postId    String?
+  post      PredictionPost? @relation(fields: [postId], references: [id])
+  expiresAt DateTime?
+  createdAt DateTime        @default(now())
+
+  @@index([userId])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  actorId    String
+  actor      User     @relation("AuditActor", fields: [actorId], references: [id])
+  action     String
+  targetType String
+  targetId   String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([action, createdAt])
+}
+
+model CmsSection {
+  id          String   @id @default(uuid())
+  page        String
+  key         String
+  content     Json
+  updatedById String?
+  updatedBy   User?    @relation(fields: [updatedById], references: [id])
+  updatedAt   DateTime @updatedAt
+
+  @@unique([page, key])
+}
+
+model UserSession {
+  id                String   @id @default(uuid())
+  userId            String
+  user              User     @relation(fields: [userId], references: [id])
+  deviceFingerprint String
+  ip                String?
+  lastSeenAt        DateTime @default(now())
+  createdAt         DateTime @default(now())
+
+  @@index([userId, lastSeenAt])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}

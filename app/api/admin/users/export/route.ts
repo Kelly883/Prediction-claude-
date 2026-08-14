@@ -1,0 +1,25 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { requireAdmin, errorResponse } from '@/lib/rbac';
+import { writeAudit } from '@/lib/audit';
+
+export const runtime = 'nodejs';
+
+export async function POST(req: NextRequest) {
+  try {
+    const admin = await requireAdmin(req);
+    const users = await prisma.user.findMany({
+      where: { role: 'user' },
+      select: { id: true, name: true, email: true, phone: true, country: true, createdAt: true },
+    });
+
+    // PRD Section 11: user exports must be audited.
+    await writeAudit({ actorId: admin.sub, action: 'user.export', metadata: { count: users.length } });
+
+    const header = 'id,name,email,phone,country,createdAt';
+    const rows = users.map((u: any) => `${u.id},"${u.name.replace(/"/g, '""')}",${u.email},${u.phone ?? ''},${u.country},${u.createdAt instanceof Date ? u.createdAt.toISOString() : new Date(u.createdAt).toISOString()}`);
+    return NextResponse.json({ csv: [header, ...rows].join('\n') });
+  } catch (err) {
+    return errorResponse(err);
+  }
+}

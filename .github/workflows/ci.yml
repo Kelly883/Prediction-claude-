@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      # Dummy values for build-time only — nothing here is real, and no live
+      # DB/Redis/provider connection is required: pages that query the DB
+      # are marked `dynamic = 'force-dynamic'` so Next.js defers those calls
+      # to request time instead of executing them during `next build`.
+      DATABASE_URL: "postgresql://user:pass@localhost:5432/predictpro"
+      DIRECT_URL: "postgresql://user:pass@localhost:5432/predictpro"
+      JWT_ACCESS_SECRET: "ci-only-secret-not-real-32-bytes-min"
+      JWT_REFRESH_SECRET: "ci-only-secret-not-real-32-bytes-min"
+      UPSTASH_REDIS_REST_URL: "https://example.upstash.io"
+      UPSTASH_REDIS_REST_TOKEN: "ci-placeholder"
+      APP_URL: "https://example.com"
+      S3_BUCKET: "ci-placeholder"
+      S3_ACCESS_KEY_ID: "ci-placeholder"
+      S3_SECRET_ACCESS_KEY: "ci-placeholder"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Check for route conflicts
+        run: npm run check-routes
+
+      - name: Prisma generate
+        run: npx prisma generate
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Unit tests
+        run: npx vitest run
+
+      - name: Build
+        run: npm run build
+
+  # Runs separately from `build` because it needs real secrets (only present
+  # on pushes to main, not on PRs from forks) and should only ever run
+  # against main after everything above has already passed.
+  migrate:
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Apply migrations to production DB
+        run: npx prisma migrate deploy
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
