@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { NextRequest } from 'next/server';
-import { POST, GET } from '@/app/api/admin/predictions/[id]/images/route';
+import { POST } from '@/app/api/admin/predictions/[id]/images/route';
 import { prisma } from '@/lib/prisma';
 import * as rbac from '@/lib/rbac';
 import * as ratelimit from '@/lib/ratelimit';

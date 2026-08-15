@@ -22,6 +22,7 @@ const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
 export async function uploadMedia(postId: string, file: File): Promise<{
   id: string;
+  postId?: string;
   storageKey: string;
   url?: string;
   mimeType?: string;
@@ -52,6 +53,7 @@ export async function uploadMedia(postId: string, file: File): Promise<{
   const asset = await prisma.mediaAsset.create({ data: { postId, storageKey: key, watermarkEnabled: true } });
   return {
     id: asset.id,
+    postId: asset.postId,
     storageKey: asset.storageKey,
     url: `/api/media/${asset.id}/raw`,
     mimeType: file.type,
