@@ -4,6 +4,7 @@ import { requireUser, errorResponse, ApiError } from '@/lib/rbac';
 import { verifyTotpCode } from '@/lib/twofactor';
 import { writeAudit } from '@/lib/audit';
 import { TwoFactorVerifySchema } from '@/lib/schemas';
+import { checkRateLimit, authLimiter, getClientIp, normalizeIdentifier } from '@/lib/ratelimit';
 
 export const runtime = 'nodejs';
 
@@ -11,6 +12,14 @@ export const runtime = 'nodejs';
 export async function POST(req: NextRequest) {
   try {
     const user = await requireUser(req);
+    const ip = getClientIp(req);
+    const userId = normalizeIdentifier('user', user.sub);
+
+    const allowed = await checkRateLimit(authLimiter, [ip, userId]);
+    if (!allowed) {
+      return NextResponse.json({ error: 'Too many attempts, try again shortly' }, { status: 429 });
+    }
+
     const { code } = TwoFactorVerifySchema.parse(await req.json());
 
     const record = await prisma.user.findUniqueOrThrow({ where: { id: user.sub } });

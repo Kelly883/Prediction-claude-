@@ -24,11 +24,16 @@ export async function POST(req: NextRequest) {
     if (!body.data?.reference) {
       return NextResponse.json({ error: 'Missing transaction reference' }, { status: 400 });
     }
+    const customerEmail = body.data?.customer?.email ?? null;
+
+    // handleVerifiedWebhook executes atomic state transition (pending/processing -> success)
+    // and validates provider reference, expected amount, currency, and customer email.
     const result = await handleVerifiedWebhook({
       providerReference: body.data.reference,
       status: body.data.status === 'success' ? 'success' : 'failed',
       amountPaid: body.data.amount / 100, // Paystack sends kobo
       currencyPaid: body.data.currency,
+      customerEmail,
       rawPayload: body,
       renewalToken: extractReusableAuthorization(body),
     });

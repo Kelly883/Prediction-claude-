@@ -20,17 +20,40 @@ export const STANDARDIZED_MAX_HEIGHT = 1080;
 
 const ALLOWED_MIME_TYPES = new Set(['image/jpeg', 'image/jpg', 'image/png']);
 
-const hasS3Config = !!(process.env.S3_BUCKET && process.env.S3_ACCESS_KEY_ID && process.env.S3_SECRET_ACCESS_KEY);
+function isS3Configured(): boolean {
+  if (process.env.NODE_ENV === 'test' || process.env.VITEST) {
+    if (process.env.USE_REAL_S3_IN_TESTS !== 'true') {
+      return false;
+    }
+  }
+  const bucket = process.env.S3_BUCKET;
+  if (
+    !bucket ||
+    bucket === 'ci-placeholder' ||
+    !process.env.S3_ACCESS_KEY_ID ||
+    process.env.S3_ACCESS_KEY_ID === 'ci-placeholder' ||
+    !process.env.S3_SECRET_ACCESS_KEY ||
+    process.env.S3_SECRET_ACCESS_KEY === 'ci-placeholder'
+  ) {
+    return false;
+  }
+  return true;
+}
 
-const s3 = new S3Client({
-  endpoint: process.env.S3_ENDPOINT,
-  region: process.env.S3_REGION ?? 'auto',
-  credentials: {
-    accessKeyId: process.env.S3_ACCESS_KEY_ID || 'local',
-    secretAccessKey: process.env.S3_SECRET_ACCESS_KEY || 'local',
-  },
-});
-const bucket = process.env.S3_BUCKET || '';
+let s3ClientInstance: S3Client | null = null;
+function getS3Client(): S3Client {
+  if (!s3ClientInstance) {
+    s3ClientInstance = new S3Client({
+      endpoint: process.env.S3_ENDPOINT,
+      region: process.env.S3_REGION ?? 'auto',
+      credentials: {
+        accessKeyId: process.env.S3_ACCESS_KEY_ID || 'local',
+        secretAccessKey: process.env.S3_SECRET_ACCESS_KEY || 'local',
+      },
+    });
+  }
+  return s3ClientInstance;
+}
 
 const LOCAL_STORAGE_DIR = path.join(process.cwd(), 'storage');
 
@@ -216,7 +239,9 @@ export async function sanitizeAndValidateImage(rawBuffer: Buffer, declaredType?:
  * Saves binary buffer to S3 or local storage
  */
 async function saveToStorage(key: string, buffer: Buffer, mimeType: string): Promise<void> {
-  if (hasS3Config) {
+  if (isS3Configured()) {
+    const s3 = getS3Client();
+    const bucket = process.env.S3_BUCKET!;
     await s3.send(
       new PutObjectCommand({
         Bucket: bucket,
@@ -237,7 +262,9 @@ async function saveToStorage(key: string, buffer: Buffer, mimeType: string): Pro
  */
 async function removeFromStorage(key: string): Promise<void> {
   try {
-    if (hasS3Config) {
+    if (isS3Configured()) {
+      const s3 = getS3Client();
+      const bucket = process.env.S3_BUCKET!;
       await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
     } else {
       const filePath = path.join(LOCAL_STORAGE_DIR, key);
@@ -251,6 +278,7 @@ async function removeFromStorage(key: string): Promise<void> {
 export interface UploadMediaResult {
   id: string;
   postId: string;
+  url: string;
   storageKey: string;
   mimeType: string;
   width: number;
@@ -276,6 +304,9 @@ export async function uploadMedia(postId: string, file: File): Promise<UploadMed
   const randomFileName = `${crypto.randomUUID()}.${sanitized.extension}`;
   const key = `predictions/${postId}/${randomFileName}`;
 
+  // Sanitize original filename strictly for display/audit purposes (strip directory paths)
+  const originalFilename = file.name ? path.basename(file.name).slice(0, 255) : null;
+
   // 1. Store sanitized file
   await saveToStorage(key, sanitized.buffer, sanitized.mimeType);
 
@@ -286,12 +317,19 @@ export async function uploadMedia(postId: string, file: File): Promise<UploadMed
         postId,
         storageKey: key,
         watermarkEnabled: true,
+        originalFilename,
+        mimeType: sanitized.mimeType,
+        fileSize: sanitized.buffer.length,
+        width: sanitized.width,
+        height: sanitized.height,
+        sha256: sanitized.sha256,
       },
     });
 
     return {
       id: asset.id,
       postId: asset.postId,
+      url: `/api/media/${asset.id}/raw`,
       storageKey: asset.storageKey,
       mimeType: sanitized.mimeType,
       width: sanitized.width,
@@ -332,10 +370,13 @@ export async function getSignedUrlForViewer(userId: string, mediaId: string): Pr
   const allowed = await canView(userId, post);
   if (!allowed) throw new ApiError(403, 'Not entitled to view this content');
 
-  if (!hasS3Config) {
-    // In local development or fallback mode, return a direct authenticated API proxy URL
+  if (!isS3Configured()) {
+    // In local development, test mode, or fallback mode, return a direct authenticated API proxy URL
     return `/api/media/${asset.id}/raw`;
   }
+
+  const s3 = getS3Client();
+  const bucket = process.env.S3_BUCKET!;
 
   if (!asset.watermarkEnabled) {
     return getSignedUrl(s3, new GetObjectCommand({ Bucket: bucket, Key: asset.storageKey }), {
@@ -357,7 +398,9 @@ export async function getMediaBuffer(mediaId: string): Promise<{ buffer: Buffer;
   const asset = await prisma.mediaAsset.findUnique({ where: { id: mediaId } });
   if (!asset) throw new ApiError(404, 'Not found');
 
-  if (hasS3Config) {
+  if (isS3Configured()) {
+    const s3 = getS3Client();
+    const bucket = process.env.S3_BUCKET!;
     const res = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: asset.storageKey }));
     const buffer = await streamToBuffer(res.Body as NodeJS.ReadableStream);
     const mimeType = asset.storageKey.endsWith('.png') ? 'image/png' : 'image/jpeg';
@@ -371,6 +414,8 @@ export async function getMediaBuffer(mediaId: string): Promise<{ buffer: Buffer;
 }
 
 async function buildWatermarkedCopy(sourceKey: string, watermarkText: string): Promise<string> {
+  const s3 = getS3Client();
+  const bucket = process.env.S3_BUCKET!;
   const original = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: sourceKey }));
   const buffer = await streamToBuffer(original.Body as NodeJS.ReadableStream);
 

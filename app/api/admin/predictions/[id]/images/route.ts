@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin, errorResponse } from '@/lib/rbac';
-import { uploadMedia } from '@/lib/media';
+import { uploadMedia, MAX_IMAGE_UPLOAD_BYTES } from '@/lib/media';
 import { writeAudit } from '@/lib/audit';
 import { prisma } from '@/lib/prisma';
 import { checkRateLimit, imageUploadLimiter } from '@/lib/ratelimit';
@@ -60,11 +60,32 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       );
     }
 
-    const formData = await req.formData();
+    const contentLength = req.headers.get('content-length');
+    if (contentLength && parseInt(contentLength, 10) > MAX_IMAGE_UPLOAD_BYTES + 1024 * 1024) {
+      return NextResponse.json(
+        { error: 'Image must not exceed 5 MB.' },
+        { status: 413 }
+      );
+    }
+
+    let formData: FormData;
+    try {
+      formData = await req.formData();
+    } catch {
+      return NextResponse.json({ error: 'Malformed request or invalid multipart data.' }, { status: 400 });
+    }
+
     const file = formData.get('file');
 
     if (!file || !(file instanceof File)) {
       return NextResponse.json({ error: 'Image file is required.' }, { status: 400 });
+    }
+
+    if (file.size > MAX_IMAGE_UPLOAD_BYTES) {
+      return NextResponse.json(
+        { error: 'Image must not exceed 5 MB.' },
+        { status: 413 }
+      );
     }
 
     const asset = await uploadMedia(postId, file);
@@ -87,7 +108,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({
       success: true,
       message: 'Prediction image uploaded successfully.',
-      data: asset,
+      data: {
+        id: asset.id,
+        url: asset.url,
+        mime_type: asset.mimeType,
+        mimeType: asset.mimeType,
+        size: asset.size,
+        width: asset.width,
+        height: asset.height,
+        sha256: asset.sha256,
+        storageKey: asset.storageKey,
+      },
     });
   } catch (err) {
     return errorResponse(err);
