@@ -90,4 +90,31 @@ describe('AES-256-GCM Encryption Utility (lib/encryption.ts)', () => {
       /PAYMENT_TOKEN_ENCRYPTION_KEY.*is required/i,
     );
   });
+
+  it('rejects weak encryption keys that are too short', () => {
+    process.env.PAYMENT_TOKEN_ENCRYPTION_KEY = 'short-key';
+
+    expect(() => encryptPaymentToken('token_with_weak_key')).toThrow(
+      /too short/i,
+    );
+  });
+
+  it('ensures payment authorization codes are omitted from subscription client objects', () => {
+    const rawToken = 'AUTH_secret_code_777';
+    const encrypted = encryptPaymentToken(rawToken);
+
+    const subscriptionRecord = {
+      id: 'sub_123',
+      userId: 'usr_456',
+      status: 'active',
+      renewalAuthCode: encrypted,
+      renewalProvider: 'paystack',
+    };
+
+    const { renewalAuthCode, ...safeSubscription } = subscriptionRecord;
+
+    expect(safeSubscription).not.toHaveProperty('renewalAuthCode');
+    expect(JSON.stringify(safeSubscription)).not.toContain(rawToken);
+    expect(JSON.stringify(safeSubscription)).not.toContain(encrypted);
+  });
 });

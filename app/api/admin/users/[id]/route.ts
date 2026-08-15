@@ -22,9 +22,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       getDistinctDeviceCount(id),
     ]);
 
+    const safeSubscriptions = subscriptions.map(({ renewalAuthCode, ...sub }) => sub);
+
     return NextResponse.json({
       user,
-      subscriptions,
+      subscriptions: safeSubscriptions,
       transactions,
       deviceActivity: { distinctDevicesLast24h: deviceCount, anomalous: await isAnomalous(id) },
     });
