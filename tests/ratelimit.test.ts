@@ -78,4 +78,16 @@ describe('Rate Limiting Architecture & Fail-Closed Policies', () => {
     expect(normalizeIdentifier('email', '  User.Name+Test@Example.COM ')).toBe('email:user.name+test@example.com');
     expect(normalizeIdentifier('user', ' user-123 ')).toBe('user:user-123');
   });
+
+  it('fails closed (503) when checking PAYMENT policy endpoints during Redis outage', async () => {
+    const { checkRateLimit } = await import('@/lib/ratelimit');
+    const brokenPaymentLimiter = {
+      limit: vi.fn().mockRejectedValue(new Error('Redis cluster down')),
+      failClosed: true,
+    } as any;
+
+    await expect(
+      checkRateLimit(brokenPaymentLimiter, ['127.0.0.1', 'user:user-123'], { failClosed: true }),
+    ).rejects.toMatchObject({ status: 503 });
+  });
 });
