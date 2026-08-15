@@ -44,6 +44,14 @@ export const csvUploadLimiter = new Ratelimit({
 (csvUploadLimiter as any).policy = 'ADMIN';
 (csvUploadLimiter as any).failClosed = true;
 
+export const imageUploadLimiter = new Ratelimit({
+  redis,
+  limiter: Ratelimit.slidingWindow(10, '60 s'),
+  prefix: 'rl:image_upload',
+});
+(imageUploadLimiter as any).policy = 'ADMIN';
+(imageUploadLimiter as any).failClosed = true;
+
 // 4. PUBLIC policy: 100 requests per 60s, fail-open for unauthenticated public browsing
 export const publicLimiter = new Ratelimit({
   redis,
