@@ -173,66 +173,64 @@ export default function AdminPredictionsPage() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Top Header matching design layout */}
-      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 pb-2">
-        <div>
-          <h1 className="font-bold text-2xl sm:text-3xl text-white tracking-tight">Predictions & Match Tips</h1>
-          <p className="text-xs sm:text-sm text-[var(--chalk-muted)] mt-1">
-            Publish match slips, booking codes, and scheduled betting insights.
-          </p>
-        </div>
+    <div className="admin-dash-wrap">
+      {/* Title & Supertitle Header */}
+      <header className="admin-dash-header space-y-1">
+        <h1 className="admin-dash-title">Predictions & Match Tips</h1>
+        <p className="text-sm text-[#85a694] mt-1 font-medium">
+          Publish match slips, booking codes, and scheduled betting insights.
+        </p>
+      </header>
 
-        {/* Action Buttons styled according to image design */}
-        <div className="grid grid-cols-2 gap-3 sm:flex sm:items-center">
-          <Link
-            href="/admin/predictions/csv"
-            className="flex items-center justify-between gap-3 p-3.5 rounded-xl bg-[var(--pitch)] border border-[rgba(243,245,236,0.12)] hover:border-[rgba(243,245,236,0.25)] transition-all group"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
-                <Upload size={18} />
+      {/* Action Cards Row */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 mt-2">
+        <Link
+          href="/admin/predictions/csv"
+          className="flex items-center justify-between p-4 rounded-2xl bg-[#102e20] border border-[rgba(243,245,236,0.14)] hover:border-[rgba(243,245,236,0.3)] transition-all group shadow-sm"
+        >
+          <div className="flex items-center gap-3.5">
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center justify-center shrink-0">
+              <Upload size={20} />
+            </div>
+            <div>
+              <div className="text-base font-bold text-white leading-snug">Import CSV</div>
+              <div className="text-xs text-[#85a694] font-medium">Bulk upload tips</div>
+            </div>
+          </div>
+          <ChevronRight size={18} className="text-[#85a694] group-hover:text-white transition-colors" />
+        </Link>
+
+        <button
+          onClick={() => setShowForm((s) => !s)}
+          className="flex items-center justify-between p-4 rounded-2xl bg-[#f5b335] text-[#0a2116] font-bold transition-all hover:bg-[#f3bc20] group shadow-md text-left"
+        >
+          <div className="flex items-center gap-3.5">
+            <div className="w-10 h-10 rounded-xl bg-[#0a2116] text-[#f5b335] flex items-center justify-center shrink-0">
+              {showForm ? <X size={20} /> : <Plus size={20} />}
+            </div>
+            <div>
+              <div className="text-base font-bold text-[#0a2116] leading-snug">
+                {showForm ? 'Close Form' : 'New Tip Post'}
               </div>
-              <div className="text-left">
-                <div className="text-xs sm:text-sm font-bold text-white leading-snug">Import CSV</div>
-                <div className="text-[11px] text-[var(--chalk-muted)]">Bulk upload tips</div>
+              <div className="text-xs text-[#0a2116]/80 font-semibold">
+                {showForm ? 'Cancel editing' : 'Create manually'}
               </div>
             </div>
-            <ChevronRight size={16} className="text-[var(--chalk-muted)] group-hover:text-white transition-colors" />
-          </Link>
-
-          <button
-            onClick={() => setShowForm((s) => !s)}
-            className="flex items-center justify-between gap-3 p-3.5 rounded-xl bg-[var(--floodlight)] text-[var(--pitch)] font-bold transition-all hover:bg-[#f3bc20] group"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-[var(--pitch)] text-[var(--floodlight)] flex items-center justify-center shrink-0">
-                {showForm ? <X size={18} /> : <Plus size={18} />}
-              </div>
-              <div className="text-left">
-                <div className="text-xs sm:text-sm font-bold text-[var(--pitch)] leading-snug">
-                  {showForm ? 'Close Form' : 'New Tip Post'}
-                </div>
-                <div className="text-[11px] text-[var(--pitch)]/75">
-                  {showForm ? 'Cancel editing' : 'Create manually'}
-                </div>
-              </div>
-            </div>
-            <ChevronRight size={16} className="text-[var(--pitch)]/70 group-hover:text-[var(--pitch)] transition-colors" />
-          </button>
-        </div>
+          </div>
+          <ChevronRight size={18} className="text-[#0a2116]/70 group-hover:text-[#0a2116] transition-colors" />
+        </button>
       </div>
 
       {/* New Post Form with Image Upload Section */}
       {showForm && (
-        <form onSubmit={createPost} className="card p-4 sm:p-6 space-y-5 border border-[var(--floodlight)]/30">
-          <h2 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
-            <Sparkles size={18} className="text-[var(--floodlight)]" />
+        <form onSubmit={createPost} className="p-5 sm:p-7 rounded-2xl bg-[#102e20] border border-[#f5b335]/40 space-y-5 shadow-lg">
+          <h2 className="text-lg font-bold text-white flex items-center gap-2">
+            <Sparkles size={20} className="text-[#f5b335]" />
             <span>Compose Matchday Prediction Post</span>
           </h2>
 
           <div className="field mb-0">
-            <label htmlFor="title" className="text-xs text-[var(--chalk-muted)] font-semibold uppercase tracking-wider font-mono">
+            <label htmlFor="title" className="text-xs text-[#85a694] font-semibold uppercase tracking-wider font-mono">
               Post Title
             </label>
             <input
@@ -241,13 +239,13 @@ export default function AdminPredictionsPage() {
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="e.g. Saturday European Big 5 Banker"
-              className="w-full text-sm font-medium"
+              className="w-full text-sm font-medium bg-[#0b2216] border border-[rgba(243,245,236,0.14)] rounded-xl p-3 text-white focus:border-[#f5b335]"
             />
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="field mb-0">
-              <label htmlFor="scheduledAt" className="text-xs text-[var(--chalk-muted)] font-semibold uppercase tracking-wider font-mono">
+              <label htmlFor="scheduledAt" className="text-xs text-[#85a694] font-semibold uppercase tracking-wider font-mono">
                 Scheduled Match Time
               </label>
               <input
@@ -256,11 +254,11 @@ export default function AdminPredictionsPage() {
                 required
                 value={scheduledAt}
                 onChange={(e) => setScheduledAt(e.target.value)}
-                className="w-full text-sm"
+                className="w-full text-sm bg-[#0b2216] border border-[rgba(243,245,236,0.14)] rounded-xl p-3 text-white focus:border-[#f5b335]"
               />
             </div>
             <div className="field mb-0">
-              <label htmlFor="bookingCode" className="text-xs text-[var(--chalk-muted)] font-semibold uppercase tracking-wider font-mono">
+              <label htmlFor="bookingCode" className="text-xs text-[#85a694] font-semibold uppercase tracking-wider font-mono">
                 Betting Booking Code
               </label>
               <input
@@ -269,20 +267,20 @@ export default function AdminPredictionsPage() {
                 value={bookingCode}
                 onChange={(e) => setBookingCode(e.target.value)}
                 placeholder="e.g. BC-98342 or SportyBet code"
-                className="w-full font-mono uppercase text-sm"
+                className="w-full font-mono uppercase text-sm bg-[#0b2216] border border-[rgba(243,245,236,0.14)] rounded-xl p-3 text-white focus:border-[#f5b335]"
               />
             </div>
           </div>
 
           <div className="field mb-0">
-            <label htmlFor="visibility" className="text-xs text-[var(--chalk-muted)] font-semibold uppercase tracking-wider font-mono">
+            <label htmlFor="visibility" className="text-xs text-[#85a694] font-semibold uppercase tracking-wider font-mono">
               Subscriber Visibility
             </label>
             <select
               id="visibility"
               value={visibility}
               onChange={(e) => setVisibility(e.target.value as any)}
-              className="w-full bg-[var(--pitch)] border border-[rgba(243,245,236,0.14)] rounded-md p-3 text-sm text-[var(--chalk)]"
+              className="w-full bg-[#0b2216] border border-[rgba(243,245,236,0.14)] rounded-xl p-3 text-sm text-white focus:border-[#f5b335]"
             >
               <option value="subscribers">All Active Subscribers</option>
               <option value="plan_specific">Plan-Specific VIPs</option>
@@ -291,22 +289,22 @@ export default function AdminPredictionsPage() {
           </div>
 
           {/* Upload Prediction as Image Section */}
-          <div className="p-4 rounded-xl bg-[var(--pitch)] border border-dashed border-[rgba(243,245,236,0.2)] space-y-3">
+          <div className="p-4 rounded-xl bg-[#0b2216] border border-dashed border-[rgba(243,245,236,0.2)] space-y-3">
             <div className="flex items-center justify-between">
               <label className="text-xs font-semibold text-white uppercase tracking-wider font-mono flex items-center gap-1.5">
-                <ImageIcon size={14} className="text-[var(--floodlight)]" />
+                <ImageIcon size={14} className="text-[#f5b335]" />
                 <span>Upload Prediction Slip Images ({selectedFiles.length}/10)</span>
               </label>
-              <span className="text-[11px] text-[var(--chalk-muted)]">JPG, PNG (Max 5MB each)</span>
+              <span className="text-[11px] text-[#85a694]">JPG, PNG (Max 5MB each)</span>
             </div>
 
             <div className="flex flex-col sm:flex-row items-center gap-3">
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="btn btn-ghost text-xs py-2 px-4 w-full sm:w-auto inline-flex items-center justify-center gap-2 border-[rgba(243,245,236,0.18)]"
+                className="btn btn-ghost text-xs py-2 px-4 w-full sm:w-auto inline-flex items-center justify-center gap-2 border-[rgba(243,245,236,0.2)] text-white hover:border-[#f5b335]"
               >
-                <FileImage size={15} className="text-[var(--floodlight)]" />
+                <FileImage size={15} className="text-[#f5b335]" />
                 <span>Attach Slip Screenshots</span>
               </button>
               <input
@@ -317,7 +315,7 @@ export default function AdminPredictionsPage() {
                 onChange={handleFileSelection}
                 className="hidden"
               />
-              <p className="text-xs text-[var(--chalk-muted)]">
+              <p className="text-xs text-[#85a694]">
                 Attach original betslip screenshots for subscribers to view.
               </p>
             </div>
@@ -362,7 +360,7 @@ export default function AdminPredictionsPage() {
               <button
                 type="button"
                 onClick={() => setItems([...items, emptyItem()])}
-                className="text-xs text-[var(--floodlight)] hover:underline inline-flex items-center gap-1 font-medium"
+                className="text-xs text-[#f5b335] hover:underline inline-flex items-center gap-1 font-medium"
               >
                 <Plus size={12} />
                 <span>Add Another Match</span>
@@ -372,7 +370,7 @@ export default function AdminPredictionsPage() {
             {items.map((item, i) => (
               <div
                 key={i}
-                className="p-3 rounded-lg bg-[var(--pitch)] border border-[rgba(243,245,236,0.08)] flex flex-col sm:flex-row gap-2 items-stretch sm:items-center"
+                className="p-3 rounded-xl bg-[#0b2216] border border-[rgba(243,245,236,0.1)] flex flex-col sm:flex-row gap-2 items-stretch sm:items-center"
               >
                 <div className="flex-1">
                   <input
@@ -387,7 +385,7 @@ export default function AdminPredictionsPage() {
                     placeholder="Pick (e.g. Over 2.5 @ 1.85)"
                     value={item.prediction}
                     onChange={(e) => setItems(items.map((it, idx) => (idx === i ? { ...it, prediction: e.target.value } : it)))}
-                    className="w-full text-xs sm:text-sm bg-transparent border-0 p-1 text-[var(--floodlight)] font-mono focus:ring-0"
+                    className="w-full text-xs sm:text-sm bg-transparent border-0 p-1 text-[#f5b335] font-mono focus:ring-0"
                   />
                 </div>
                 {items.length > 1 && (
@@ -405,15 +403,15 @@ export default function AdminPredictionsPage() {
           </div>
 
           {error && (
-            <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center gap-2">
+            <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center gap-2">
               <ShieldAlert size={16} className="shrink-0" />
               <span>{error}</span>
             </div>
           )}
 
           {uploadStatus && (
-            <div className="text-xs font-mono text-[var(--floodlight)] flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-[var(--floodlight)] animate-ping" />
+            <div className="text-xs font-mono text-[#f5b335] flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-[#f5b335] animate-ping" />
               <span>{uploadStatus}</span>
             </div>
           )}
@@ -421,7 +419,7 @@ export default function AdminPredictionsPage() {
           <div className="flex items-center gap-3 pt-2">
             <button
               type="submit"
-              className="btn btn-primary py-2.5 px-6 text-sm font-bold"
+              className="btn btn-primary py-2.5 px-6 text-sm font-bold bg-[#f5b335] text-[#0a2116] hover:bg-[#f3bc20]"
               disabled={saving}
             >
               {saving ? 'Saving Post & Media…' : 'Save as Draft'}
@@ -433,7 +431,7 @@ export default function AdminPredictionsPage() {
                 setSelectedFiles([]);
                 setFilePreviews([]);
               }}
-              className="btn btn-ghost py-2.5 px-4 text-sm"
+              className="btn btn-ghost py-2.5 px-4 text-sm text-[#85a694] border-[rgba(243,245,236,0.14)]"
             >
               Cancel
             </button>
@@ -441,63 +439,69 @@ export default function AdminPredictionsPage() {
         </form>
       )}
 
-      {/* Predictions Feed Archive Card with Empty State styled matching the uploaded image */}
-      <div className="card p-5 sm:p-7">
+      {/* Predictions Feed Archive Card */}
+      <div className="p-6 sm:p-8 rounded-2xl bg-[#102e20] border border-[rgba(243,245,236,0.14)] shadow-md">
         {loading ? (
-          <div className="p-12 text-center text-sm text-[var(--chalk-muted)]">
+          <div className="p-12 text-center text-sm text-[#85a694] font-medium">
             Loading match posts…
           </div>
         ) : posts.length === 0 ? (
-          /* Empty State styled exactly like the screenshot */
-          <div className="py-12 px-4 text-center border border-dashed border-[rgba(243,245,236,0.14)] rounded-2xl flex flex-col items-center justify-center">
-            {/* Tactics clipboard graphic icon */}
-            <div className="w-20 h-20 mb-5 relative flex items-center justify-center">
-              <svg className="w-full h-full text-emerald-500" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                {/* Clipboard Outline */}
-                <rect x="25" y="20" width="50" height="68" rx="8" stroke="#10b981" strokeWidth="2.5" fill="#0c2317" />
-                <path d="M40 20V15C40 13.3431 41.3431 12 43 12H57C58.6569 12 60 13.3431 60 15V20" stroke="#10b981" strokeWidth="2.5" />
-                {/* X and O tactics pattern */}
-                <path d="M36 36L46 46M46 36L36 46" stroke="#10b981" strokeWidth="2.5" strokeLinecap="round" />
-                <circle cx="62" cy="58" r="5" stroke="#10b981" strokeWidth="2.5" />
-                <path d="M38 60L46 54" stroke="#10b981" strokeWidth="2" strokeDasharray="2 2" />
-                {/* Football icon at bottom right */}
-                <circle cx="68" cy="72" r="14" fill="#081910" stroke="#10b981" strokeWidth="2.5" />
-                <circle cx="68" cy="72" r="5" fill="#10b981" />
-              </svg>
+          /* Empty State matching image specification */
+          <div className="py-12 px-4 text-center border border-dashed border-[rgba(243,245,236,0.16)] rounded-2xl flex flex-col items-center justify-center bg-[#0b2216]/50">
+            {/* Tactics clipboard graphic icon with sparkle stars */}
+            <div className="relative w-28 h-28 mx-auto mb-4 flex items-center justify-center">
               {/* Sparkle accents */}
-              <div className="absolute -top-1 left-4 text-amber-400 text-xs font-bold">✦</div>
-              <div className="absolute top-8 -right-2 text-amber-400 text-xs font-bold">✦</div>
-              <div className="absolute bottom-4 left-2 text-amber-400 text-[10px]">✦</div>
+              <span className="absolute -top-1 left-3 text-amber-400 text-base select-none">✦</span>
+              <span className="absolute top-2 right-1 text-amber-400 text-lg select-none">✦</span>
+              <span className="absolute bottom-6 left-0 text-amber-400 text-sm select-none">✦</span>
+              <span className="absolute bottom-1 right-2 text-amber-400 text-sm select-none">✦</span>
+
+              <svg className="w-24 h-24 text-emerald-500" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                {/* Clipboard Outline & Fill */}
+                <rect x="26" y="18" width="48" height="66" rx="8" stroke="#10b981" strokeWidth="2.5" fill="#0c2518" />
+                {/* Top Clip */}
+                <path d="M41 18V13C41 11.8954 41.8954 11 43 11H57C58.1046 11 59 11.8954 59 13V18" stroke="#10b981" strokeWidth="2.5" fill="#081a10" />
+                <circle cx="50" cy="15" r="1.5" fill="#10b981" />
+
+                {/* X and O tactics pattern */}
+                <path d="M35 34L43 42M43 34L35 42" stroke="#10b981" strokeWidth="2.5" strokeLinecap="round" />
+                <circle cx="58" cy="38" r="4.5" stroke="#10b981" strokeWidth="2.5" />
+                <path d="M37 58L47 48" stroke="#10b981" strokeWidth="2" strokeDasharray="3 2" />
+                <path d="M43 48H47V52" stroke="#10b981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M35 64L43 72M43 64L35 72" stroke="#10b981" strokeWidth="2.5" strokeLinecap="round" />
+
+                {/* Football icon at bottom right */}
+                <circle cx="66" cy="68" r="13" fill="#081a10" stroke="#10b981" strokeWidth="2.5" />
+                <path d="M66 59L70 62V66L66 69L62 66V62L66 59Z" fill="#10b981" />
+                <path d="M66 59V55M70 62L74 60M70 66L74 69M66 69V73M62 66L58 69M62 62L58 60" stroke="#10b981" strokeWidth="1.5" />
+              </svg>
             </div>
 
             <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
               Feed Archive ({posts.length}) • Live Tips Repository
             </h2>
-            <div className="w-12 h-1 bg-amber-400 rounded-full my-3" />
+            <div className="w-12 h-1 bg-[#f5b335] rounded-full my-3" />
 
-            <p className="text-sm text-[var(--chalk-muted)] font-medium max-w-md mx-auto leading-relaxed mt-2">
+            <p className="text-sm text-[#85a694] font-medium max-w-md mx-auto leading-relaxed mt-2">
               No match predictions created yet.
             </p>
-            <p className="text-xs text-[var(--chalk-muted)]/80 max-w-sm mx-auto mt-1">
+            <p className="text-xs text-[#85a694]/80 max-w-sm mx-auto mt-1">
               Click &quot;New Tip Post&quot; or import a CSV slip to publish your first match predictions.
             </p>
           </div>
         ) : (
           <div>
-            <div className="flex items-center justify-between pb-4 mb-4 border-b border-[rgba(243,245,236,0.1)]">
+            <div className="flex items-center justify-between pb-4 mb-4 border-b border-[rgba(243,245,236,0.12)]">
               <h2 className="text-lg font-bold text-white">
-                Feed Archive ({posts.length})
+                Feed Archive ({posts.length}) • Live Tips Repository
               </h2>
-              <span className="text-xs text-[var(--chalk-muted)] font-mono">
-                Live Tips Repository
-              </span>
             </div>
 
             <div className="space-y-3">
               {posts.map((p) => (
                 <div
                   key={p.id}
-                  className="p-4 rounded-xl bg-[var(--pitch)] border border-[rgba(243,245,236,0.1)] hover:border-[rgba(243,245,236,0.2)] transition-colors flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
+                  className="p-4 rounded-xl bg-[#0b2216] border border-[rgba(243,245,236,0.12)] hover:border-[rgba(243,245,236,0.25)] transition-colors flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
                 >
                   <div className="space-y-1.5">
                     <div className="flex items-center gap-2.5 flex-wrap">
@@ -519,20 +523,20 @@ export default function AdminPredictionsPage() {
                       )}
                     </div>
 
-                    <div className="flex items-center gap-3 text-xs text-[var(--chalk-muted)] flex-wrap font-mono">
+                    <div className="flex items-center gap-3 text-xs text-[#85a694] flex-wrap font-mono">
                       <span className="flex items-center gap-1">
-                        <Calendar size={13} className="text-[var(--floodlight)]" />
+                        <Calendar size={13} className="text-[#f5b335]" />
                         {new Date(p.scheduledAt).toLocaleString()}
                       </span>
                       <span>•</span>
-                      <span className="text-[var(--floodlight)] font-bold">Booking Code: {p.bookingCode}</span>
+                      <span className="text-[#f5b335] font-bold">Booking Code: {p.bookingCode}</span>
                     </div>
                   </div>
 
                   <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
                     <Link
                       href={`/admin/predictions/${p.id}`}
-                      className="btn btn-ghost text-xs py-2 px-3 inline-flex items-center gap-1.5 border-[rgba(243,245,236,0.1)]"
+                      className="btn btn-ghost text-xs py-2 px-3 inline-flex items-center gap-1.5 border-[rgba(243,245,236,0.14)] text-white hover:border-[#f5b335]"
                     >
                       <Edit size={13} />
                       <span>Edit Post & Slip</span>
@@ -540,7 +544,7 @@ export default function AdminPredictionsPage() {
                     {p.status !== 'published' && (
                       <button
                         onClick={() => publish(p.id)}
-                        className="btn btn-primary text-xs py-2 px-3 inline-flex items-center gap-1.5"
+                        className="btn btn-primary text-xs py-2 px-3 inline-flex items-center gap-1.5 bg-[#f5b335] text-[#0a2116] hover:bg-[#f3bc20]"
                       >
                         <CheckCircle2 size={13} />
                         <span>Publish</span>
