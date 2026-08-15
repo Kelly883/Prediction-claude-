@@ -25,6 +25,12 @@ enum SubscriptionStatus {
   expired
 }
 
+enum RenewalStatus {
+  idle
+  processing
+  failed
+}
+
 enum PaymentProvider {
   paystack
   flutterwave
@@ -125,15 +131,19 @@ model Subscription {
   // (Paystack authorization_code / Flutterwave card token), used by the
   // renewal cron to charge unattended. Null means auto-renew has nothing
   // to charge yet — see app/api/cron/renew for what happens in that case.
-  renewalProvider  PaymentProvider?
-  renewalAuthCode  String?
-  renewalAttempts  Int              @default(0)
-  lastRenewalError String?
+  renewalStatus         RenewalStatus    @default(idle)
+  renewalLockedAt       DateTime?
+  renewalReference      String?
+  renewalProvider       PaymentProvider?
+  renewalAuthCode       String?
+  renewalAttempts       Int              @default(0)
+  lastRenewalError      String?
   renewalReminderSentAt DateTime?
 
   transactions Transaction[]
 
   @@index([userId, status, endAt])
+  @@index([status, autoRenew, endAt, renewalStatus])
 }
 
 /// Transaction model serves as the Payment Attempt and Idempotency model.
@@ -199,7 +209,14 @@ model MediaAsset {
   post             PredictionPost @relation(fields: [postId], references: [id], onDelete: Cascade)
   storageKey       String
   watermarkEnabled Boolean        @default(true)
+  originalFilename String?
+  mimeType         String?
+  fileSize         Int?
+  width            Int?
+  height           Int?
+  sha256           String?
   createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @default(now()) @updatedAt
 
   @@index([postId])
 }

@@ -108,7 +108,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({
       success: true,
       message: 'Prediction image uploaded successfully.',
-      data: asset,
+      data: {
+        id: asset.id,
+        url: asset.url,
+        mime_type: asset.mimeType,
+        mimeType: asset.mimeType,
+        size: asset.size,
+        width: asset.width,
+        height: asset.height,
+        sha256: asset.sha256,
+        storageKey: asset.storageKey,
+      },
     });
   } catch (err) {
     return errorResponse(err);
