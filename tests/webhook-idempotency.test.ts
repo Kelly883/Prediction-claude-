@@ -25,6 +25,21 @@ function makeFakeDb() {
         transactions.set(where.id, updated);
         return updated;
       }),
+      updateMany: vi.fn(async ({ where, data }: any) => {
+        const existing = transactions.get(where.id);
+        if (!existing) return { count: 0 };
+        if (where.status?.in && !where.status.in.includes(existing.status)) {
+          return { count: 0 };
+        }
+        const updated = { ...existing, ...data };
+        transactions.set(where.id, updated);
+        return { count: 1 };
+      }),
+      findUniqueOrThrow: vi.fn(async ({ where }: any) => {
+        const found = transactions.get(where.id);
+        if (!found) throw new Error('Transaction not found');
+        return found;
+      }),
     },
     plan: { findUnique: vi.fn(async () => plan) },
     subscription: {
