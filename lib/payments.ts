@@ -99,9 +99,9 @@ export async function handleVerifiedWebhook(params: {
   if (!tx) throw new ApiError(400, 'Unknown transaction reference');
 
   // Idempotency: webhooks can and will be retried by the provider. If this
-  // reference was already processed (status is in a terminal state: success, failed, cancelled),
+  // reference was already processed (status is in a terminal state: success or failed),
   // return immediately with no-op.
-  if (tx.status === 'success' || tx.status === 'failed' || tx.status === 'cancelled') {
+  if ((tx.status as string) === 'success' || (tx.status as string) === 'failed') {
     return tx;
   }
 
@@ -118,11 +118,10 @@ export async function handleVerifiedWebhook(params: {
     await prisma.transaction.updateMany({
       where: {
         id: tx.id,
-        status: { in: ['pending', 'processing'] },
+        status: 'pending',
       },
       data: {
         status: 'failed',
-        completedAt: now,
         rawPayload: params.rawPayload as any,
       },
     });
@@ -131,17 +130,16 @@ export async function handleVerifiedWebhook(params: {
 
   return prisma.$transaction(async (db) => {
     // ATOMIC STATE TRANSITION:
-    // Only transition if the transaction is still pending or processing.
+    // Only transition if the transaction is still pending.
     // This strictly enforces that pending -> success is executed exactly once,
     // even under concurrent webhook deliveries.
     const result = await db.transaction.updateMany({
       where: {
         id: tx.id,
-        status: { in: ['pending', 'processing'] },
+        status: 'pending',
       },
       data: {
         status: params.status,
-        completedAt: now,
         rawPayload: params.rawPayload as any,
       },
     });
