@@ -1,7 +1,9 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { apiFetch } from '@/lib/api-client';
+import { Upload, ArrowLeft, CheckCircle2, AlertCircle, FileText, Sparkles } from 'lucide-react';
 
 type PreviewRow = { line: number; date: string; time: string; matches: string; prediction: string; bookingCode: string };
 type PreviewResult = { rows: PreviewRow[]; errors: { line: number; message: string }[]; bookingCode: string | null };
@@ -62,94 +64,160 @@ export default function CsvImportPage() {
   }
 
   return (
-    <>
-                <h1 className="display" style={{ fontSize: 28, marginBottom: 8 }}>Import predictions from CSV</h1>
-          <p style={{ color: 'var(--chalk-muted)', fontSize: 14, marginBottom: 24 }}>
-            Required columns: <span className="mono">date, time, matches, prediction, booking_code</span>
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center gap-3 pb-2 border-b border-[rgba(243,245,236,0.1)]">
+        <Link
+          href="/admin/predictions"
+          className="p-2 rounded-lg bg-[var(--turf)] text-[var(--chalk-muted)] hover:text-white border border-[rgba(243,245,236,0.1)] transition-colors"
+          title="Back to Predictions"
+        >
+          <ArrowLeft size={16} />
+        </Link>
+        <div>
+          <h1 className="font-bold text-xl sm:text-2xl text-white">Import Predictions from CSV</h1>
+          <p className="text-xs sm:text-sm text-[var(--chalk-muted)] mt-0.5">
+            Required columns: <code className="mono text-white">date, time, matches, prediction, booking_code</code>
           </p>
+        </div>
+      </div>
 
-          {done ? (
-            <div className="card">
-              <p style={{ color: 'var(--floodlight)', marginBottom: 16 }}>Import complete.</p>
-              <a href="/admin/predictions" className="btn btn-primary">Back to predictions</a>
+      {done ? (
+        <div className="card p-6 text-center space-y-3">
+          <CheckCircle2 size={32} className="mx-auto text-emerald-400" />
+          <h2 className="text-lg font-bold text-white">CSV Import Completed Successfully</h2>
+          <p className="text-xs text-[var(--chalk-muted)]">
+            Your match slip picks and booking code are now imported.
+          </p>
+          <div className="pt-2">
+            <Link href="/admin/predictions" className="btn btn-primary text-sm py-2 px-4 inline-flex items-center gap-1.5">
+              <span>View Predictions Archive</span>
+            </Link>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {/* File Upload Drop Area */}
+          <div className="card p-5 sm:p-6 text-center space-y-3">
+            <Upload size={32} className="mx-auto text-[var(--floodlight)] opacity-80" />
+            <h2 className="text-base font-semibold text-white">Upload CSV Slip File</h2>
+            <p className="text-xs text-[var(--chalk-muted)] max-w-md mx-auto">
+              Select a .csv file exported from Excel, Google Sheets, or your betting analysis sheet.
+            </p>
+            <div className="pt-1">
+              <label className="btn btn-primary text-xs sm:text-sm py-2.5 px-5 cursor-pointer inline-flex items-center gap-2">
+                <FileText size={15} />
+                <span>{uploading ? 'Validating CSV…' : 'Choose CSV File'}</span>
+                <input
+                  type="file"
+                  accept=".csv"
+                  onChange={onFileChange}
+                  disabled={uploading}
+                  className="hidden"
+                />
+              </label>
             </div>
-          ) : (
-            <>
-              <div className="card" style={{ marginBottom: 24 }}>
-                <input type="file" accept=".csv" onChange={onFileChange} disabled={uploading} />
-                {uploading && <p style={{ marginTop: 12, fontSize: 13, color: 'var(--chalk-muted)' }}>Validating…</p>}
+          </div>
+
+          {error && <div className="error-text">{error}</div>}
+
+          {preview && (
+            <div className="card p-4 sm:p-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-base font-semibold text-white">
+                  {preview.errors.length === 0
+                    ? `Preview: ${preview.rows.length} Match Picks Ready`
+                    : `Validation Failed (${preview.errors.length} error${preview.errors.length > 1 ? 's' : ''})`}
+                </h2>
+                {preview.bookingCode && (
+                  <span className="mono text-xs text-[var(--floodlight)] bg-[rgba(245,179,53,0.1)] px-2 py-0.5 rounded">
+                    Code: {preview.bookingCode}
+                  </span>
+                )}
               </div>
 
-              {error && <div className="error-text" style={{ marginBottom: 16 }}>{error}</div>}
-
-              {preview && (
-                <div className="card">
-                  <h2 style={{ fontSize: 16, marginBottom: 12 }}>
-                    {preview.errors.length === 0 ? `${preview.rows.length} rows, ready to import` : `${preview.errors.length} error(s) found`}
-                  </h2>
-
-                  {preview.errors.length > 0 ? (
-                    <div className="table-container">
-                      <table style={{ width: '100%', minWidth: 320, borderCollapse: 'collapse', fontSize: 13, marginBottom: 16 }}>
-                        <thead>
-                          <tr style={{ textAlign: 'left', color: 'var(--card-red)' }}>
-                            <th style={{ padding: '4px 8px 4px 0' }}>Line</th>
-                            <th>Issue</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {preview.errors.map((e, i) => (
-                            <tr key={i}>
-                              <td style={{ padding: '4px 8px 4px 0' }}>{e.line}</td>
-                              <td style={{ color: 'var(--chalk-muted)' }}>{e.message}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="table-container">
-                        <table style={{ width: '100%', minWidth: 440, borderCollapse: 'collapse', fontSize: 13, marginBottom: 20 }}>
-                          <thead>
-                            <tr style={{ textAlign: 'left', color: 'var(--chalk-muted)' }}>
-                              <th style={{ padding: '4px 8px 4px 0' }}>Date</th>
-                              <th>Time</th>
-                              <th>Match</th>
-                              <th>Prediction</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {preview.rows.map((r) => (
-                              <tr key={r.line} style={{ borderTop: '1px solid rgba(243,245,236,0.08)' }}>
-                                <td style={{ padding: '4px 8px 4px 0' }}>{r.date}</td>
-                                <td>{r.time}</td>
-                                <td>{r.matches}</td>
-                                <td className="mono">{r.prediction}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-
-                      <div className="field">
-                        <label htmlFor="title">Post title</label>
-                        <input id="title" required value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Saturday Big Wins" />
-                      </div>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, marginBottom: 20 }}>
-                        <input type="checkbox" checked={publishNow} onChange={(e) => setPublishNow(e.target.checked)} />
-                        Publish immediately
-                      </label>
-
-                      <button onClick={confirm} className="btn btn-primary" disabled={confirming || !title}>
-                        {confirming ? 'Importing…' : `Import ${preview.rows.length} matches`}
-                      </button>
-                    </>
-                  )}
+              {preview.errors.length > 0 ? (
+                <div className="table-container">
+                  <table className="table-responsive">
+                    <thead>
+                      <tr>
+                        <th>Line</th>
+                        <th>Error Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {preview.errors.map((e, i) => (
+                        <tr key={i}>
+                          <td className="mono text-red-400 font-bold">{e.line}</td>
+                          <td className="text-xs text-[var(--chalk-muted)]">{e.message}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
+              ) : (
+                <>
+                  <div className="table-container">
+                    <table className="table-responsive">
+                      <thead>
+                        <tr>
+                          <th>Date</th>
+                          <th>Time</th>
+                          <th>Match</th>
+                          <th>Prediction Pick</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {preview.rows.map((r) => (
+                          <tr key={r.line}>
+                            <td className="mono text-xs">{r.date}</td>
+                            <td className="mono text-xs">{r.time}</td>
+                            <td className="text-white font-medium">{r.matches}</td>
+                            <td className="mono text-[var(--floodlight)] font-semibold">{r.prediction}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="field mb-0 pt-2">
+                    <label htmlFor="title" className="text-xs text-[var(--chalk-muted)] font-medium">Post Title</label>
+                    <input
+                      id="title"
+                      required
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      placeholder="e.g. Saturday Mega Weekend Accumulator"
+                      className="w-full text-sm"
+                    />
+                  </div>
+
+                  <label className="flex items-center gap-2.5 text-xs sm:text-sm text-white cursor-pointer py-1">
+                    <input
+                      type="checkbox"
+                      checked={publishNow}
+                      onChange={(e) => setPublishNow(e.target.checked)}
+                      className="rounded border-[rgba(243,245,236,0.2)] bg-[var(--pitch)] text-[var(--floodlight)] focus:ring-[var(--floodlight)]"
+                    />
+                    <span>Publish live immediately to subscribers (skip draft)</span>
+                  </label>
+
+                  <div className="pt-2">
+                    <button
+                      onClick={confirm}
+                      className="btn btn-primary w-full py-2.5 text-sm font-semibold flex items-center justify-center gap-2"
+                      disabled={confirming || !title}
+                    >
+                      <Sparkles size={15} />
+                      <span>{confirming ? 'Importing…' : `Import & Save ${preview.rows.length} Picks`}</span>
+                    </button>
+                  </div>
+                </>
               )}
-            </>
+            </div>
           )}
-    </>
+        </div>
+      )}
+    </div>
   );
 }

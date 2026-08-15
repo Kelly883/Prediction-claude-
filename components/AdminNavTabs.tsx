@@ -7,10 +7,10 @@ export const ADMIN_NAV_LINKS = [
   { href: '/admin', label: 'Overview', exact: true },
   { href: '/admin/plans', label: 'Plans' },
   { href: '/admin/predictions', label: 'Predictions' },
-  { href: '/admin/free-access', label: 'Free acc' },
+  { href: '/admin/free-access', label: 'Free Access' },
   { href: '/admin/users', label: 'Users' },
   { href: '/admin/transactions', label: 'Transactions' },
-  { href: '/admin/audit-logs', label: 'Audit log' },
+  { href: '/admin/audit-logs', label: 'Audit Logs' },
   { href: '/admin/cms', label: 'CMS' },
 ];
 

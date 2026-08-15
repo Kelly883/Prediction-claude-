@@ -7,14 +7,42 @@ import { RegisterSchema } from '@/lib/schemas';
 import { issueAccessToken, issueRefreshToken, cookieOptions } from '@/lib/auth';
 import { touchSession } from '@/lib/sessions';
 import { writeAudit } from '@/lib/audit';
+import { timingSafeStringEqual } from '@/lib/timing-safe';
 
 export const runtime = 'nodejs';
 
-export async function GET() {
+function verifyBootstrapSecret(req: NextRequest): boolean {
+  const secret = process.env.ADMIN_BOOTSTRAP_SECRET;
+  if (!secret) {
+    // If not set, in production bootstrap is disabled entirely
+    return process.env.NODE_ENV !== 'production';
+  }
+
+  const headerSecret =
+    req.headers.get('x-admin-bootstrap-secret') ??
+    req.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
+
+  if (!headerSecret) return false;
+  return timingSafeStringEqual(headerSecret, secret);
+}
+
+export async function GET(req: NextRequest) {
   try {
+    const isProduction = process.env.NODE_ENV === 'production';
+    const hasSecretConfigured = Boolean(process.env.ADMIN_BOOTSTRAP_SECRET);
+
+    if (isProduction && !hasSecretConfigured) {
+      return NextResponse.json({
+        isSetupAvailable: false,
+        message: 'Public admin setup is disabled in production. Use operator CLI.',
+      });
+    }
+
     const adminCount = await prisma.user.count({ where: { role: 'admin' } });
+    const isSetupAvailable = adminCount === 0 && (!isProduction || verifyBootstrapSecret(req));
+
     return NextResponse.json({
-      isSetupAvailable: adminCount === 0,
+      isSetupAvailable,
       adminCount,
     });
   } catch (err) {
@@ -23,26 +51,40 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const ip = getClientIp(req);
+
   try {
-    const ip = getClientIp(req);
     const allowed = await checkRateLimit(adminLimiter, ip);
     if (!allowed) {
+      await writeAudit({
+        action: 'auth.admin_bootstrap_rejected',
+        metadata: { ip, reason: 'rate_limited' },
+      });
       return NextResponse.json({ error: 'Too many attempts, try again shortly' }, { status: 429 });
     }
 
-    // Check if an admin account already exists
-    const existingAdminCount = await prisma.user.count({ where: { role: 'admin' } });
-    if (existingAdminCount > 0) {
-      throw new ApiError(403, 'Administrator account has already been registered. Initial setup is deactivated.');
+    // Enforce production bootstrap secret verification
+    const isAuthorized = verifyBootstrapSecret(req);
+    if (!isAuthorized) {
+      await writeAudit({
+        action: 'auth.admin_bootstrap_rejected',
+        metadata: { ip, reason: 'unauthorized_bootstrap_secret' },
+      });
+      throw new ApiError(403, 'Admin setup requires a valid bootstrap secret.');
     }
 
     const { name, email, phone, password, country } = RegisterSchema.parse(await req.json());
-
     const passwordHash = await hashPassword(password);
 
-    // Create the admin user
-    const admin = await prisma.user
-      .create({
+    // ATOMIC CREATION & CONCURRENCY CONTROL:
+    // Run within a Prisma transaction to eliminate race conditions between concurrent requests.
+    const admin = await prisma.$transaction(async (db) => {
+      const existingAdminCount = await db.user.count({ where: { role: 'admin' } });
+      if (existingAdminCount > 0) {
+        throw new ApiError(403, 'Administrator account has already been registered. Initial setup is deactivated.');
+      }
+
+      return db.user.create({
         data: {
           name,
           email,
@@ -51,13 +93,8 @@ export async function POST(req: NextRequest) {
           country,
           role: 'admin',
         },
-      })
-      .catch((err: any) => {
-        if (err?.code === 'P2002') {
-          throw new ApiError(409, 'An account with this email already exists');
-        }
-        throw err;
       });
+    });
 
     // Auto-login: issue access and refresh tokens
     const accessToken = await issueAccessToken({ sub: admin.id, role: 'admin' });
@@ -66,7 +103,7 @@ export async function POST(req: NextRequest) {
     await touchSession(admin.id, req);
     await writeAudit({
       actorId: admin.id,
-      action: 'admin.initial_setup',
+      action: 'auth.admin_initial_setup',
       targetId: admin.id,
       metadata: { email: admin.email, country: admin.country },
     });
@@ -84,6 +121,12 @@ export async function POST(req: NextRequest) {
 
     return res;
   } catch (err) {
+    if (err instanceof ApiError && err.status === 403) {
+      await writeAudit({
+        action: 'auth.admin_bootstrap_rejected',
+        metadata: { ip, error: err.message },
+      });
+    }
     return errorResponse(err);
   }
 }

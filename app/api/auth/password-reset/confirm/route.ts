@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { hashPassword } from '@/lib/password';
 import { checkRateLimit, authLimiter, getClientIp } from '@/lib/ratelimit';
 import { errorResponse, ApiError } from '@/lib/rbac';
+import { writeAudit } from '@/lib/audit';
 
 export const runtime = 'nodejs';
 
@@ -29,9 +30,34 @@ export async function POST(req: NextRequest) {
 
     const passwordHash = await hashPassword(newPassword);
 
+    // ATOMIC TRANSACTION:
+    // 1. Update passwordHash and increment tokenVersion (invalidating existing refresh tokens).
+    // 2. Revoke all active user sessions across all devices.
+    // 3. Mark the password reset token as used (only after password update succeeds).
     await prisma.$transaction(async (db) => {
-      await db.user.update({ where: { id: record.userId }, data: { passwordHash } });
-      await db.passwordResetToken.update({ where: { id: record.id }, data: { usedAt: new Date() } });
+      await db.user.update({
+        where: { id: record.userId },
+        data: {
+          passwordHash,
+          tokenVersion: { increment: 1 },
+        },
+      });
+
+      await db.userSession.deleteMany({
+        where: { userId: record.userId },
+      });
+
+      await db.passwordResetToken.update({
+        where: { id: record.id },
+        data: { usedAt: new Date() },
+      });
+    });
+
+    await writeAudit({
+      actorId: record.userId,
+      action: 'auth.password_reset_confirmed',
+      targetId: record.userId,
+      metadata: { ip },
     });
 
     return NextResponse.json({ message: 'Password updated. You can now log in.' });

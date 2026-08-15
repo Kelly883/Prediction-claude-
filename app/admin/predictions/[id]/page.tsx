@@ -2,7 +2,20 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { apiJson, apiFetch } from '@/lib/api-client';
+import { 
+  ArrowLeft, 
+  Save, 
+  Upload, 
+  Archive, 
+  CheckCircle2, 
+  Sparkles, 
+  Image as ImageIcon, 
+  Calendar,
+  Layers,
+  AlertTriangle
+} from 'lucide-react';
 
 type Item = { id: string; match: string; prediction: string };
 type MediaAsset = { id: string; storageKey: string };
@@ -107,107 +120,225 @@ export default function EditPredictionPage() {
 
   if (loading) {
     return (
-      <>
-        <div className="container section">Loading…</div>
-      </>
+      <div className="p-8 text-center text-sm text-[var(--chalk-muted)]">
+        Loading prediction post…
+      </div>
     );
   }
 
   if (!post) {
     return (
-      <>
-        <div className="container section">Not found.</div>
-      </>
+      <div className="p-8 text-center border border-dashed border-[rgba(243,245,236,0.14)] rounded-lg">
+        <AlertTriangle size={28} className="mx-auto mb-2 text-red-400" />
+        <p className="text-sm text-white font-medium">Post not found</p>
+        <Link href="/admin/predictions" className="btn btn-ghost text-xs mt-3 inline-flex items-center gap-1.5">
+          <ArrowLeft size={13} />
+          <span>Back to predictions</span>
+        </Link>
+      </div>
     );
   }
 
   return (
-    <>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 24 }}>
-        <h1 className="display" style={{ fontSize: 28 }}>Edit post</h1>
-        <span style={{ fontSize: 13, textTransform: 'capitalize', color: post.status === 'published' ? 'var(--floodlight)' : 'var(--chalk-muted)' }}>
-          {post.status}
-        </span>
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-[rgba(243,245,236,0.1)]">
+        <div className="flex items-center gap-3">
+          <Link
+            href="/admin/predictions"
+            className="p-2 rounded-lg bg-[var(--turf)] text-[var(--chalk-muted)] hover:text-white border border-[rgba(243,245,236,0.1)] transition-colors"
+            title="Back"
+          >
+            <ArrowLeft size={16} />
+          </Link>
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="font-bold text-xl sm:text-2xl text-white truncate max-w-md">
+                Edit Post
+              </h1>
+              <span
+                className={`px-2 py-0.5 text-[10px] font-bold uppercase rounded ${
+                  post.status === 'published'
+                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                    : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                }`}
+              >
+                {post.status}
+              </span>
+            </div>
+            <p className="text-xs text-[var(--chalk-muted)] font-mono mt-0.5">
+              ID: {post.id}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          {post.status !== 'published' && (
+            <button
+              onClick={publish}
+              className="btn btn-ghost text-xs py-2 px-3 inline-flex items-center gap-1.5 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10"
+            >
+              <CheckCircle2 size={14} />
+              <span>Publish Live</span>
+            </button>
+          )}
+          <button
+            onClick={archive}
+            className="btn btn-ghost text-xs py-2 px-3 inline-flex items-center gap-1.5 text-red-400 border-red-500/30 hover:bg-red-500/10"
+          >
+            <Archive size={14} />
+            <span>Archive</span>
+          </button>
+        </div>
       </div>
 
-      <div className="admin-grid-half">
-            <div className="card">
-              <div className="field">
-                <label htmlFor="title">Title</label>
-                <input id="title" value={title} onChange={(e) => setTitle(e.target.value)} />
-              </div>
-              <div className="field">
-                <label htmlFor="bookingCode">Booking code</label>
-                <input id="bookingCode" value={bookingCode} onChange={(e) => setBookingCode(e.target.value)} />
-              </div>
-              <div className="field">
-                <label htmlFor="bodyNotes">Notes</label>
-                <textarea
-                  id="bodyNotes"
-                  rows={4}
-                  value={bodyNotes}
-                  onChange={(e) => setBodyNotes(e.target.value)}
-                  style={{ background: 'var(--pitch)', border: '1px solid rgba(243,245,236,0.14)', borderRadius: 4, padding: '12px 14px', color: 'var(--chalk)', fontFamily: 'inherit', fontSize: 14 }}
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="visibility">Visibility</label>
-                <select
-                  id="visibility"
-                  value={visibility}
-                  onChange={(e) => setVisibility(e.target.value as any)}
-                  style={{ background: 'var(--pitch)', border: '1px solid rgba(243,245,236,0.14)', borderRadius: 4, padding: '12px 14px', color: 'var(--chalk)' }}
-                >
-                  <option value="subscribers">All subscribers</option>
-                  <option value="plan_specific">Specific plans</option>
-                  <option value="free_window">Free window</option>
-                </select>
-              </div>
-              {visibility === 'free_window' && (
-                <div className="field">
-                  <label htmlFor="freeUntil">Free until</label>
-                  <input id="freeUntil" type="datetime-local" value={freeUntil} onChange={(e) => setFreeUntil(e.target.value)} />
-                </div>
-              )}
+      <div className="admin-grid-2col">
+        {/* Post Form */}
+        <div className="card p-4 sm:p-5 space-y-4">
+          <h2 className="text-base font-semibold text-white flex items-center gap-2">
+            <Sparkles size={16} className="text-[var(--floodlight)]" />
+            <span>Post Details</span>
+          </h2>
 
-              {error && <div className="error-text">{error}</div>}
+          <div className="field mb-0">
+            <label htmlFor="title" className="text-xs text-[var(--chalk-muted)] font-medium">Title</label>
+            <input
+              id="title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="w-full text-sm"
+            />
+          </div>
 
-              <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-                <button onClick={save} className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Save changes'}</button>
-                {post.status !== 'published' && (
-                  <button onClick={publish} className="btn btn-ghost">Publish</button>
-                )}
-              </div>
-              <button onClick={archive} className="btn btn-ghost" style={{ color: 'var(--card-red)', borderColor: 'var(--card-red)' }}>
-                Archive post
-              </button>
+          <div className="field mb-0">
+            <label htmlFor="bookingCode" className="text-xs text-[var(--chalk-muted)] font-medium">Betting Booking Code</label>
+            <input
+              id="bookingCode"
+              value={bookingCode}
+              onChange={(e) => setBookingCode(e.target.value)}
+              className="w-full font-mono uppercase text-sm"
+            />
+          </div>
 
-              <h3 style={{ fontSize: 14, marginTop: 24, marginBottom: 8 }}>Matches</h3>
+          <div className="field mb-0">
+            <label htmlFor="visibility" className="text-xs text-[var(--chalk-muted)] font-medium">Subscriber Visibility</label>
+            <select
+              id="visibility"
+              value={visibility}
+              onChange={(e) => setVisibility(e.target.value as any)}
+              className="w-full bg-[var(--pitch)] border border-[rgba(243,245,236,0.14)] rounded-md p-3 text-sm text-[var(--chalk)]"
+            >
+              <option value="subscribers">All Active Subscribers</option>
+              <option value="plan_specific">Plan-Specific VIPs</option>
+              <option value="free_window">Free Window (Promotional)</option>
+            </select>
+          </div>
+
+          {visibility === 'free_window' && (
+            <div className="field mb-0">
+              <label htmlFor="freeUntil" className="text-xs text-[var(--chalk-muted)] font-medium">Free Access Until</label>
+              <input
+                id="freeUntil"
+                type="datetime-local"
+                value={freeUntil}
+                onChange={(e) => setFreeUntil(e.target.value)}
+                className="w-full text-sm"
+              />
+            </div>
+          )}
+
+          <div className="field mb-0">
+            <label htmlFor="bodyNotes" className="text-xs text-[var(--chalk-muted)] font-medium">Analyst Notes & Insights</label>
+            <textarea
+              id="bodyNotes"
+              rows={4}
+              value={bodyNotes}
+              onChange={(e) => setBodyNotes(e.target.value)}
+              placeholder="Add match preview commentary, weather updates, or accumulator tips…"
+              className="w-full bg-[var(--pitch)] border border-[rgba(243,245,236,0.14)] rounded-lg p-3 text-sm text-[var(--chalk)] font-sans focus:border-[var(--floodlight)] outline-none"
+            />
+          </div>
+
+          {error && <div className="error-text">{error}</div>}
+
+          <div className="pt-2">
+            <button
+              onClick={save}
+              className="btn btn-primary w-full py-2.5 text-sm font-semibold flex items-center justify-center gap-2"
+              disabled={saving}
+            >
+              <Save size={14} />
+              <span>{saving ? 'Saving Changes…' : 'Save Changes'}</span>
+            </button>
+          </div>
+
+          {/* Matches Summary */}
+          <div className="pt-4 border-t border-[rgba(243,245,236,0.08)]">
+            <h3 className="text-xs font-semibold text-white uppercase tracking-wider font-mono mb-2">
+              Attached Match Picks ({post.items.length})
+            </h3>
+            <div className="space-y-1.5">
               {post.items.map((item) => (
-                <div key={item.id} style={{ fontSize: 13, color: 'var(--chalk-muted)', padding: '4px 0' }}>
-                  {item.match} — <span className="mono">{item.prediction}</span>
+                <div
+                  key={item.id}
+                  className="p-2.5 rounded bg-[var(--pitch)] border border-[rgba(243,245,236,0.06)] flex items-center justify-between text-xs gap-2"
+                >
+                  <span className="text-white font-medium truncate">{item.match}</span>
+                  <span className="mono text-[var(--floodlight)] font-semibold shrink-0">
+                    {item.prediction}
+                  </span>
                 </div>
               ))}
             </div>
-
-            <div className="card">
-              <h2 style={{ fontSize: 16, marginBottom: 12 }}>Images</h2>
-              <input type="file" accept="image/jpeg,image/png,image/webp" onChange={uploadImage} disabled={uploading} />
-              {uploading && <p style={{ fontSize: 13, color: 'var(--chalk-muted)', marginTop: 8 }}>Uploading…</p>}
-
-              <div style={{ marginTop: 16, display: 'grid', gap: 8 }}>
-                {post.media.length === 0 ? (
-                  <p style={{ fontSize: 13, color: 'var(--chalk-muted)' }}>No images uploaded yet.</p>
-                ) : (
-                  post.media.map((m) => (
-                    <div key={m.id} className="mono" style={{ fontSize: 12, color: 'var(--chalk-muted)', padding: 8, background: 'var(--pitch)', borderRadius: 4 }}>
-                      {m.storageKey.split('/').pop()}
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
           </div>
-    </>
+        </div>
+
+        {/* Media & Images Management */}
+        <div className="card p-4 sm:p-5 space-y-4">
+          <h2 className="text-base font-semibold text-white flex items-center gap-2">
+            <ImageIcon size={16} className="text-[var(--floodlight)]" />
+            <span>Slip Screenshots & Media ({post.media.length})</span>
+          </h2>
+
+          <div className="p-4 rounded-lg bg-[var(--pitch)] border border-dashed border-[rgba(243,245,236,0.18)] text-center space-y-2">
+            <Upload size={24} className="mx-auto text-[var(--chalk-muted)]" />
+            <div className="text-xs text-[var(--chalk-muted)]">
+              Upload betslip screenshots (JPEG, PNG, WebP up to 10MB)
+            </div>
+            <label className="btn btn-ghost text-xs py-1.5 px-3 cursor-pointer inline-flex items-center gap-1.5">
+              <span>Choose Image</span>
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                onChange={uploadImage}
+                disabled={uploading}
+                className="hidden"
+              />
+            </label>
+            {uploading && <p className="text-xs text-[var(--floodlight)]">Uploading asset…</p>}
+          </div>
+
+          <div className="space-y-2">
+            {post.media.length === 0 ? (
+              <p className="text-xs text-[var(--chalk-muted)] text-center py-4">
+                No screenshot media uploaded for this tip.
+              </p>
+            ) : (
+              post.media.map((m) => (
+                <div
+                  key={m.id}
+                  className="p-2.5 rounded bg-[var(--pitch)] border border-[rgba(243,245,236,0.08)] flex items-center justify-between text-xs"
+                >
+                  <span className="mono text-[var(--chalk-muted)] truncate max-w-[200px]">
+                    {m.storageKey.split('/').pop()}
+                  </span>
+                  <span className="text-[10px] text-emerald-400 font-mono">Uploaded</span>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }

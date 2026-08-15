@@ -5,6 +5,7 @@ import { verifyTotpCode } from '@/lib/twofactor';
 import { errorResponse, ApiError } from '@/lib/rbac';
 import { touchSession } from '@/lib/sessions';
 import { checkRateLimit, authLimiter, getClientIp } from '@/lib/ratelimit';
+import { writeAudit } from '@/lib/audit';
 
 export const runtime = 'nodejs';
 
@@ -23,12 +24,17 @@ export async function POST(req: NextRequest) {
 
     const user = await prisma.user.findUniqueOrThrow({ where: { id: challenge.sub } });
     if (!user.twoFactorSecret || !verifyTotpCode(user.twoFactorSecret, code)) {
+      await writeAudit({ actorId: user.id, action: 'auth.2fa_failed', metadata: { stage: 'login_verify' } });
       throw new ApiError(400, 'Invalid code');
     }
 
     const accessToken = await issueAccessToken({ sub: user.id, role: user.role });
     const refreshToken = await issueRefreshToken(user.id);
     await touchSession(user.id, req);
+
+    if (user.role === 'admin') {
+      await writeAudit({ actorId: user.id, action: 'auth.admin_login', metadata: { via: '2fa' } });
+    }
 
     const res = NextResponse.json({ id: user.id, email: user.email, role: user.role });
     res.cookies.set('access_token', accessToken, cookieOptions(15 * 60));

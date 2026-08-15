@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { sendEmail } from '@/lib/email';
 import { checkRateLimit, authLimiter, getClientIp, normalizeIdentifier } from '@/lib/ratelimit';
 import { errorResponse } from '@/lib/rbac';
+import { writeAudit } from '@/lib/audit';
 
 export const runtime = 'nodejs';
 const TOKEN_TTL_MINUTES = 30;
@@ -22,6 +23,12 @@ export async function POST(req: NextRequest) {
     }
 
     const user = email ? await prisma.user.findUnique({ where: { email } }) : null;
+
+    await writeAudit({
+      actorId: user?.id ?? null,
+      action: 'auth.password_reset_requested',
+      metadata: { ip, emailNormalized: email ? email.toLowerCase() : null },
+    });
 
     // Always return the same generic response whether or not the account
     // exists — a different response here is a classic account-enumeration leak.

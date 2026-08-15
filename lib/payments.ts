@@ -6,6 +6,8 @@ import { ApiError } from './rbac';
 import { paystackInitialize } from './providers/paystack';
 import { flutterwaveInitialize } from './providers/flutterwave';
 import { timingSafeStringEqual } from './timing-safe';
+import { encryptPaymentToken } from './encryption';
+import { writeAudit } from './audit';
 
 // Implements design doc Section 5.2 (Payment + Entitlement Activation) and
 // the early-renewal rule from PRD Section 9: newEnd = max(currentEnd, now) + planDuration.
@@ -179,8 +181,11 @@ async function activateOrRenewSubscription(
   const now = new Date();
   const durationMs = plan.durationDays * 24 * 60 * 60 * 1000;
 
+  // Reusable payment method (Paystack auth code / Flutterwave card token) is ALWAYS encrypted at rest using AES-256-GCM
+  const encryptedRenewalAuthCode = renewalToken ? encryptPaymentToken(renewalToken) : undefined;
+
   // Any successful charge — first payment or renewal — resets the retry
-  // counter and (if the provider gave us one) refreshes the stored payment
+  // counter and (if the provider gave us one) refreshes the stored encrypted payment
   // method for future auto-renewals, as well as releasing any renewal lock.
   const renewalFields = {
     renewalAttempts: 0,
@@ -188,8 +193,18 @@ async function activateOrRenewSubscription(
     renewalStatus: 'idle' as const,
     renewalLockedAt: null,
     renewalReference: null,
-    ...(renewalToken ? { renewalProvider: provider, renewalAuthCode: renewalToken } : {}),
+    ...(encryptedRenewalAuthCode ? { renewalProvider: provider, renewalAuthCode: encryptedRenewalAuthCode } : {}),
   };
+
+  if (renewalToken) {
+    // Log security audit event for payment authorization update (never logging token in metadata)
+    await writeAudit({
+      actorId: userId,
+      action: 'payment.authorization_updated',
+      targetId: transactionId,
+      metadata: { provider },
+    });
+  }
 
   if (existing) {
     const newEnd = new Date(Math.max(existing.endAt.getTime(), now.getTime()) + durationMs);
@@ -230,11 +245,7 @@ export function verifyPaystackSignature(rawBody: string, signature: string | nul
 export function verifyFlutterwaveSignature(hash: string | null): boolean {
   // Verified against Flutterwave's current docs: verif-hash header, plain
   // string equality against the secret hash configured in the dashboard —
-  // not HMAC. (Some third-party sources describe an HMAC-SHA256
-  // "flutterwave-signature" scheme; that isn't what Flutterwave's own
-  // webhook documentation and blog describe for the standard v3 API as of
-  // this writing. Re-verify against your dashboard's webhook settings page
-  // if signature checks start failing — providers do change these schemes.)
+  // not HMAC.
   if (!hash || !process.env.FLUTTERWAVE_WEBHOOK_SECRET_HASH) return false;
   return timingSafeStringEqual(hash, process.env.FLUTTERWAVE_WEBHOOK_SECRET_HASH);
 }

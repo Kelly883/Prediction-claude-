@@ -647,14 +647,20 @@ textarea:focus-visible {
    ========================================================================== */
 .admin-overview-shell {
   width: 100%;
-  max-width: 680px;
+  max-width: 1080px;
   margin: 0 auto;
-  padding: 0 12px;
+  padding: 0 16px;
+}
+
+@media (max-width: 640px) {
+  .admin-overview-shell {
+    padding: 0 12px;
+  }
 }
 
 .admin-dash-wrap {
   width: 100%;
-  max-width: 680px;
+  max-width: 1000px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
@@ -671,12 +677,18 @@ textarea:focus-visible {
   border-radius: 16px;
   padding: 6px;
   overflow-x: auto;
-  scrollbar-width: none;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(245, 179, 53, 0.3) transparent;
   -webkit-overflow-scrolling: touch;
 }
 
 .admin-dash-tabs::-webkit-scrollbar {
-  display: none;
+  height: 4px;
+}
+
+.admin-dash-tabs::-webkit-scrollbar-thumb {
+  background: rgba(245, 179, 53, 0.25);
+  border-radius: 4px;
 }
 
 .admin-dash-tab {
@@ -686,12 +698,21 @@ textarea:focus-visible {
   text-decoration: none;
   font-size: 14px;
   font-weight: 600;
-  padding: 8px 20px;
+  padding: 8px 18px;
+  min-height: 40px;
   border-radius: 12px;
   white-space: nowrap;
   color: #7e9e8c;
   transition: all 0.15s ease;
   flex-shrink: 0;
+}
+
+@media (max-width: 640px) {
+  .admin-dash-tab {
+    font-size: 13px;
+    padding: 6px 14px;
+    min-height: 38px;
+  }
 }
 
 .admin-dash-tab:hover {
@@ -727,6 +748,12 @@ textarea:focus-visible {
   margin: 0;
 }
 
+@media (max-width: 640px) {
+  .admin-dash-title {
+    font-size: 28px;
+  }
+}
+
 .admin-dash-underline {
   width: 46px;
   height: 3.5px;
@@ -742,9 +769,10 @@ textarea:focus-visible {
   margin-top: 4px;
 }
 
-@media (max-width: 520px) {
+@media (max-width: 640px) {
   .admin-dash-actions {
     grid-template-columns: 1fr;
+    gap: 10px;
   }
 }
 
@@ -757,6 +785,7 @@ textarea:focus-visible {
   border: none;
   border-radius: 16px;
   padding: 15px 18px;
+  min-height: 52px;
   text-decoration: none !important;
   font-weight: 700;
   font-size: 15px;
@@ -779,6 +808,7 @@ textarea:focus-visible {
   border: 1px solid rgba(243, 245, 236, 0.16);
   border-radius: 16px;
   padding: 15px 18px;
+  min-height: 52px;
   text-decoration: none !important;
   font-weight: 600;
   font-size: 15px;
@@ -807,6 +837,7 @@ textarea:focus-visible {
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
 }
 
 .admin-btn-icon-box-gold {
@@ -819,13 +850,20 @@ textarea:focus-visible {
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
 }
 
 .admin-dash-cards {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
   gap: 16px;
   margin-top: 4px;
+}
+
+@media (max-width: 768px) {
+  .admin-dash-cards {
+    grid-template-columns: 1fr;
+  }
 }
 
 .admin-kpi-card {
@@ -838,6 +876,13 @@ textarea:focus-visible {
   align-items: flex-start;
   gap: 18px;
   overflow: hidden;
+}
+
+@media (max-width: 480px) {
+  .admin-kpi-card {
+    padding: 16px 18px;
+    gap: 14px;
+  }
 }
 
 .admin-kpi-dots {
@@ -953,7 +998,7 @@ textarea:focus-visible {
    ========================================================================== */
 .admin-plans-wrap {
   width: 100%;
-  max-width: 680px;
+  max-width: 1000px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
@@ -975,6 +1020,12 @@ textarea:focus-visible {
   margin: 0 0 8px 0;
 }
 
+@media (max-width: 640px) {
+  .admin-plans-title {
+    font-size: 26px;
+  }
+}
+
 .admin-plans-subtitle {
   font-size: 14px;
   color: #85a694;
@@ -986,6 +1037,18 @@ textarea:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+.admin-plans-grid-cards {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+@media (max-width: 768px) {
+  .admin-plans-grid-cards {
+    grid-template-columns: 1fr;
+  }
 }
 
 .admin-plans-section-top {
