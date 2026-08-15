@@ -17,7 +17,7 @@ describe('access/refresh token roundtrip', () => {
     const { issueRefreshToken, verifyRefreshToken } = await import('@/lib/auth');
     const token = await issueRefreshToken('user-42');
     const payload = await verifyRefreshToken(token);
-    expect(payload).toEqual({ sub: 'user-42' });
+    expect(payload?.sub).toBe('user-42');
   });
 
   it('an access token cannot be used as a refresh token', async () => {

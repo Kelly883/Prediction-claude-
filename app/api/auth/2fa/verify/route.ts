@@ -26,11 +26,12 @@ export async function POST(req: NextRequest) {
     if (!record.twoFactorSecret) throw new ApiError(400, 'Call /api/auth/2fa/setup first');
 
     if (!verifyTotpCode(record.twoFactorSecret, code)) {
+      await writeAudit({ actorId: user.sub, action: 'auth.2fa_failed', metadata: { stage: 'setup_verify' } });
       throw new ApiError(400, 'Invalid code');
     }
 
     await prisma.user.update({ where: { id: user.sub }, data: { twoFactorEnabled: true } });
-    await writeAudit({ actorId: user.sub, action: 'user.2fa_enabled' });
+    await writeAudit({ actorId: user.sub, action: 'auth.2fa_enabled' });
 
     return NextResponse.json({ ok: true });
   } catch (err) {

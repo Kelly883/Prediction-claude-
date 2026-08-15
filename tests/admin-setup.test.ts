@@ -21,7 +21,7 @@ function makeFakeDb() {
           err.code = 'P2002';
           throw err;
         }
-        const record = { id: `usr-${users.size + 1}`, ...data };
+        const record = { id: `usr-${users.size + 1}`, tokenVersion: 0, ...data };
         users.set(record.id, record);
         return record;
       }),
@@ -47,7 +47,9 @@ function makeFakeDb() {
         return data;
       }),
     },
+    $transaction: vi.fn(async (fn: any) => fn(db)),
     _users: users,
+    _auditLogs: auditLogs,
   };
   return db;
 }
@@ -71,14 +73,16 @@ vi.mock('@/lib/ratelimit', async () => {
   };
 });
 
-describe('One-Time Admin Setup API', () => {
+describe('One-Time Admin Setup API & Bootstrap Security', () => {
   beforeEach(() => {
     fakeDb = makeFakeDb();
+    delete process.env.ADMIN_BOOTSTRAP_SECRET;
   });
 
   it('reports isSetupAvailable=true when no admin exists in the database', async () => {
     const { GET } = await import('@/app/api/auth/admin-setup/route');
-    const res = await GET();
+    const req = new NextRequest('http://localhost:3000/api/auth/admin-setup');
+    const res = await GET(req);
     const data = await res.json();
     expect(res.status).toBe(200);
     expect(data.isSetupAvailable).toBe(true);
@@ -113,7 +117,8 @@ describe('One-Time Admin Setup API', () => {
     expect(res.cookies.get('refresh_token')).toBeDefined();
 
     // After creation, setup status must report isSetupAvailable=false
-    const getRes = await GET();
+    const getReq = new NextRequest('http://localhost:3000/api/auth/admin-setup');
+    const getRes = await GET(getReq);
     const getData = await getRes.json();
     expect(getData.isSetupAvailable).toBe(false);
     expect(getData.adminCount).toBe(1);
@@ -154,5 +159,44 @@ describe('One-Time Admin Setup API', () => {
 
     expect(secondRes.status).toBe(403);
     expect(secondData.error).toMatch(/already been registered|Initial setup is deactivated/i);
+  });
+
+  it('enforces ADMIN_BOOTSTRAP_SECRET when configured', async () => {
+    process.env.ADMIN_BOOTSTRAP_SECRET = 'strong-bootstrap-secret-999';
+
+    const { POST } = await import('@/app/api/auth/admin-setup/route');
+
+    // Attempt without secret header
+    const unauthReq = new NextRequest('http://localhost:3000/api/auth/admin-setup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Secret Admin',
+        email: 'secret@predictpro.com',
+        phone: '+2348033333333',
+        password: 'Password123!',
+        country: 'NG',
+      }),
+    });
+    const unauthRes = await POST(unauthReq);
+    expect(unauthRes.status).toBe(403);
+
+    // Attempt with correct secret header
+    const authReq = new NextRequest('http://localhost:3000/api/auth/admin-setup', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-admin-bootstrap-secret': 'strong-bootstrap-secret-999',
+      },
+      body: JSON.stringify({
+        name: 'Secret Admin',
+        email: 'secret@predictpro.com',
+        phone: '+2348033333333',
+        password: 'Password123!',
+        country: 'NG',
+      }),
+    });
+    const authRes = await POST(authReq);
+    expect(authRes.status).toBe(200);
   });
 });

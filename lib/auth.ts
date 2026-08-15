@@ -36,6 +36,11 @@ export interface AccessTokenPayload {
   role: 'admin' | 'user';
 }
 
+export interface RefreshTokenPayload {
+  sub: string;
+  tv?: number; // tokenVersion / session version
+}
+
 export async function issueAccessToken(payload: AccessTokenPayload): Promise<string> {
   return new SignJWT({ ...payload })
     .setProtectedHeader({ alg: 'HS256' })
@@ -44,8 +49,8 @@ export async function issueAccessToken(payload: AccessTokenPayload): Promise<str
     .sign(getAccessSecret());
 }
 
-export async function issueRefreshToken(userId: string): Promise<string> {
-  return new SignJWT({ sub: userId, type: 'refresh' })
+export async function issueRefreshToken(userId: string, tokenVersion: number = 0): Promise<string> {
+  return new SignJWT({ sub: userId, type: 'refresh', tv: tokenVersion })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setExpirationTime(process.env.JWT_REFRESH_TTL ?? '7d')
@@ -61,11 +66,11 @@ export async function verifyAccessToken(token: string): Promise<AccessTokenPaylo
   }
 }
 
-export async function verifyRefreshToken(token: string): Promise<{ sub: string } | null> {
+export async function verifyRefreshToken(token: string): Promise<RefreshTokenPayload | null> {
   try {
     const { payload } = await jwtVerify(token, getRefreshSecret());
     if (payload.type !== 'refresh') return null;
-    return { sub: payload.sub as string };
+    return { sub: payload.sub as string, tv: typeof payload.tv === 'number' ? payload.tv : undefined };
   } catch {
     return null;
   }

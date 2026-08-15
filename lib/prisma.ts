@@ -247,6 +247,8 @@ function createClientWrapper(): any {
     }
   }
 
+  const modelCache: Record<string, any> = {};
+
   return new Proxy(realClient || {}, {
     get(target, prop: string) {
       if (prop === '$transaction') {
@@ -262,6 +264,10 @@ function createClientWrapper(): any {
       }
       if (prop === '$connect' || prop === '$disconnect') {
         return async () => {};
+      }
+
+      if (modelCache[prop]) {
+        return modelCache[prop];
       }
 
       // Map model property names
@@ -284,9 +290,10 @@ function createClientWrapper(): any {
       const normalizedModel = modelKeyMap[prop] || (prop.charAt(0).toUpperCase() + prop.slice(1));
       const inMemoryModel = createInMemoryModel(normalizedModel);
 
+      let resultModel: any;
       if (realClient && target[prop]) {
         // Wrap real model calls with fallback
-        return new Proxy(target[prop], {
+        resultModel = new Proxy(target[prop], {
           get(modelTarget, method: string) {
             return async (...args: any[]) => {
               try {
@@ -301,9 +308,12 @@ function createClientWrapper(): any {
             };
           },
         });
+      } else {
+        resultModel = inMemoryModel;
       }
 
-      return inMemoryModel;
+      modelCache[prop] = resultModel;
+      return resultModel;
     },
   });
 }

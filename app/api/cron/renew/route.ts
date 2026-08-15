@@ -6,6 +6,7 @@ import { paystackChargeAuthorization } from '@/lib/providers/paystack';
 import { flutterwaveChargeToken } from '@/lib/providers/flutterwave';
 import { sendEmail } from '@/lib/email';
 import { timingSafeStringEqual } from '@/lib/timing-safe';
+import { decryptPaymentToken } from '@/lib/encryption';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -170,17 +171,22 @@ export async function GET(req: NextRequest) {
       // 5. Execute charge against payment provider with deterministic reference
       const { amount, currency, fxRateUsed } = await resolvePrice(plan, subUser.country);
 
+      // Decrypt stored authorization code / card token immediately before provider request
+      const decryptedAuthCode = sub.renewalAuthCode.startsWith('v1:')
+        ? decryptPaymentToken(sub.renewalAuthCode)
+        : sub.renewalAuthCode;
+
       const chargeResult =
         sub.renewalProvider === 'paystack'
           ? await paystackChargeAuthorization({
               email: subUser.email,
               amountMinorUnits: toMinorUnits(amount, currency),
               currency,
-              authorizationCode: sub.renewalAuthCode,
+              authorizationCode: decryptedAuthCode,
               reference,
             })
           : await flutterwaveChargeToken({
-              token: sub.renewalAuthCode,
+              token: decryptedAuthCode,
               amount,
               currency,
               email: subUser.email,

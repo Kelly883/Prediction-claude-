@@ -149,7 +149,7 @@ export default function AdminPlansPage() {
             </p>
           </div>
         ) : (
-          <div className="flex flex-col gap-4">
+          <div className="admin-plans-grid-cards">
             {plans.map((p) => (
               <div key={p.id} className="admin-plan-card">
                 <div className="admin-plan-card-main">

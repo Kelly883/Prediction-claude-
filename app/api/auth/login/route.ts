@@ -4,8 +4,9 @@ import { issueAccessToken, issueRefreshToken, issueTwoFactorChallengeToken, cook
 import { verifyPassword } from '@/lib/password';
 import { checkRateLimit, authLimiter, getClientIp, normalizeIdentifier } from '@/lib/ratelimit';
 import { errorResponse, ApiError } from '@/lib/rbac';
-import { touchSession } from '@/lib/sessions';
+import { touchSession, isAnomalous } from '@/lib/sessions';
 import { LoginSchema } from '@/lib/schemas';
+import { writeAudit } from '@/lib/audit';
 
 export const runtime = 'nodejs';
 
@@ -27,6 +28,11 @@ export async function POST(req: NextRequest) {
 
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user || !(await verifyPassword(password, user.passwordHash))) {
+      await writeAudit({
+        actorId: user?.id ?? null,
+        action: 'auth.login_failure',
+        metadata: { ip, emailNormalized: email.toLowerCase() },
+      });
       throw new ApiError(401, 'Invalid credentials');
     }
 
@@ -39,9 +45,25 @@ export async function POST(req: NextRequest) {
     }
 
     const accessToken = await issueAccessToken({ sub: user.id, role: user.role });
-    const refreshToken = await issueRefreshToken(user.id);
+    const refreshToken = await issueRefreshToken(user.id, user.tokenVersion);
 
     await touchSession(user.id, req);
+
+    if (await isAnomalous(user.id)) {
+      await writeAudit({
+        actorId: user.id,
+        action: 'auth.suspicious_login',
+        metadata: { ip, reason: 'device_anomaly_threshold_reached' },
+      });
+    }
+
+    if (user.role === 'admin') {
+      await writeAudit({
+        actorId: user.id,
+        action: 'auth.admin_login',
+        metadata: { ip },
+      });
+    }
 
     const res = NextResponse.json({ id: user.id, email: user.email, role: user.role });
     res.cookies.set('access_token', accessToken, cookieOptions(15 * 60));

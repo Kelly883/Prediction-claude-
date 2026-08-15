@@ -3,15 +3,13 @@ import { prisma } from '@/lib/prisma';
 import { verifyRefreshToken, issueAccessToken, cookieOptions } from '@/lib/auth';
 import { errorResponse, ApiError } from '@/lib/rbac';
 import { checkRateLimit, authLimiter, getClientIp } from '@/lib/ratelimit';
+import { writeAudit } from '@/lib/audit';
 
 export const runtime = 'nodejs';
 
 /**
  * Silently exchanges a valid refresh_token cookie for a new access_token.
- * This route existing at all was the actual gap: without it, every session
- * hard-logs-out after 15 minutes (JWT_ACCESS_TTL) with no recovery path.
- * The frontend should call this whenever a request comes back 401, then
- * retry the original request once — see lib/api-client.ts.
+ * Enforces tokenVersion validity — if password reset occurred, older tokens are rejected.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -29,6 +27,17 @@ export async function POST(req: NextRequest) {
 
     const user = await prisma.user.findUnique({ where: { id: payload.sub } });
     if (!user) throw new ApiError(401, 'User no longer exists');
+
+    // Token version check: If token version in token does not match user's current version
+    // (e.g. after a password reset), reject and log security event.
+    if (payload.tv !== undefined && payload.tv !== user.tokenVersion) {
+      await writeAudit({
+        actorId: user.id,
+        action: 'auth.refresh_token_reuse',
+        metadata: { expectedVersion: user.tokenVersion, providedVersion: payload.tv },
+      });
+      throw new ApiError(401, 'Session revoked. Please log in again.');
+    }
 
     const accessToken = await issueAccessToken({ sub: user.id, role: user.role });
 
