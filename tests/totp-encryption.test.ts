@@ -47,6 +47,12 @@ describe('TOTP Secrets Encryption & Verification', () => {
       errorResponse: (err: any) => NextResponse.json({ error: (err as Error).message }, { status: 500 }),
     }));
 
+    vi.doMock('@/lib/ratelimit', () => ({
+      checkRateLimit: vi.fn(async () => true),
+      authLimiter: {},
+      getClientIp: vi.fn(() => '127.0.0.1'),
+    }));
+
     const { POST: setup2fa } = await import('@/app/api/auth/2fa/setup/route');
     const req = new NextRequest('http://localhost/api/auth/2fa/setup', { method: 'POST' });
 
