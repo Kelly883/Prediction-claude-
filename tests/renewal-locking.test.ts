@@ -215,4 +215,39 @@ describe('Subscription Auto-Renewal Locking & Concurrency', () => {
     // Transaction should not be created
     expect(fakeDb._getTransactions()).toHaveLength(0);
   });
+
+  it('defaults to 15-minute lease timeout when RENEWAL_LOCK_TIMEOUT_SECONDS is invalid or negative', async () => {
+    process.env.RENEWAL_LOCK_TIMEOUT_SECONDS = 'invalid_number';
+
+    const endAt = new Date(Date.now() + 1000 * 60 * 60);
+    // Locked 10 minutes ago (within 15 minute lease window -> should NOT be reclaimable)
+    const tenMinsAgo = new Date(Date.now() - 10 * 60 * 1000);
+
+    fakeDb._seed({
+      id: 'sub-fallback-lock',
+      userId: 'user-1',
+      planId: 'plan-1',
+      status: 'active',
+      autoRenew: true,
+      endAt,
+      renewalProvider: 'paystack',
+      renewalAuthCode: 'AUTH_test_123',
+      renewalAttempts: 0,
+      renewalStatus: 'processing',
+      renewalLockedAt: tenMinsAgo,
+      renewalReference: `renew_sub-fallback-lock_${endAt.getTime()}_att1`,
+      plan: { id: 'plan-1', name: 'VIP Pass', durationDays: 30, priceNGN: 5000, priceUSDOverride: null, fxMarkupPercent: null },
+      user: { id: 'user-1', email: 'test@example.com', country: 'NG' },
+    });
+
+    const { GET } = await import('@/app/api/cron/renew/route');
+    const req = new Request('http://localhost/api/cron/renew', {
+      headers: { authorization: 'Bearer test_cron_secret' },
+    });
+
+    const res = await GET(req as any);
+    const json = await res.json();
+
+    expect(json.renewed).toBe(0);
+  });
 });
