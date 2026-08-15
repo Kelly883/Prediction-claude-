@@ -212,6 +212,75 @@ describe('Flutterwave Webhook Hardening & Verification', () => {
     expect(fakeDb._subscriptionCount()).toBe(0);
   });
 
+  it('rejects a webhook if verification returns a different txRef', async () => {
+    mockFlutterwaveVerify.mockResolvedValue({
+      verified: true,
+      txRef: 'different-reference-abc', // mismatch!
+      amount: 5000,
+      currency: 'NGN',
+      status: 'successful',
+      customerEmail: 'payer@example.com',
+      raw: {},
+    });
+
+    const { POST } = await import('@/app/api/payments/webhook/flutterwave/route');
+    const req = new NextRequest('http://localhost/api/payments/webhook/flutterwave', {
+      method: 'POST',
+      headers: { 'verif-hash': 'test_flw_secret_hash' },
+      body: JSON.stringify({
+        event: 'charge.completed',
+        data: { id: 999, tx_ref: 'ref-flw-123', status: 'successful', amount: 5000, currency: 'NGN' },
+      }),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    expect(fakeDb._subscriptionCount()).toBe(0);
+  });
+
+  it('rejects requests with missing or invalid verif-hash signature', async () => {
+    const { POST } = await import('@/app/api/payments/webhook/flutterwave/route');
+    const req = new NextRequest('http://localhost/api/payments/webhook/flutterwave', {
+      method: 'POST',
+      headers: { 'verif-hash': 'invalid_hash' },
+      body: JSON.stringify({
+        event: 'charge.completed',
+        data: { id: 999, tx_ref: 'ref-flw-123' },
+      }),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    expect(fakeDb._subscriptionCount()).toBe(0);
+  });
+
+  it('rejects webhook when verified customer email belongs to another user', async () => {
+    mockFlutterwaveVerify.mockResolvedValue({
+      verified: true,
+      txRef: 'ref-flw-123',
+      amount: 5000,
+      currency: 'NGN',
+      status: 'successful',
+      customerEmail: 'attacker@evil.com', // wrong email!
+      raw: {},
+    });
+
+    const { POST } = await import('@/app/api/payments/webhook/flutterwave/route');
+    const req = new NextRequest('http://localhost/api/payments/webhook/flutterwave', {
+      method: 'POST',
+      headers: { 'verif-hash': 'test_flw_secret_hash' },
+      body: JSON.stringify({
+        event: 'charge.completed',
+        data: { id: 999, tx_ref: 'ref-flw-123', status: 'successful', amount: 5000, currency: 'NGN' },
+      }),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    expect(fakeDb._transactionStatus('tx-flw-1')).toBe('failed');
+    expect(fakeDb._subscriptionCount()).toBe(0);
+  });
+
   it('rejects a webhook with wrong currency verified from provider API', async () => {
     mockFlutterwaveVerify.mockResolvedValue({
       verified: true,

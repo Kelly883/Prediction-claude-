@@ -29,7 +29,12 @@ export async function POST(req: NextRequest) {
       txRef,
     });
 
-    if (!verification.verified || verification.status !== 'successful' || (verification.txRef && verification.txRef !== txRef)) {
+    if (
+      !verification.verified ||
+      verification.status !== 'successful' ||
+      !verification.txRef ||
+      verification.txRef !== txRef
+    ) {
       // Record failure if transaction exists
       await handleVerifiedWebhook({
         providerReference: txRef,

@@ -39,7 +39,7 @@ export default function DashboardPlansPage() {
   useEffect(() => {
     Promise.allSettled([
       apiJson<Plan[]>('/api/plans'),
-      apiJson<Subscription | null>('/api/me/subscription'),
+      apiJson<Subscription | null | { subscription: Subscription | null }>('/api/me/subscription'),
     ])
       .then(([plansRes, subRes]) => {
         if (plansRes.status === 'fulfilled' && Array.isArray(plansRes.value)) {
@@ -47,7 +47,8 @@ export default function DashboardPlansPage() {
           setPlans(plansRes.value.filter((p) => p.isActive));
         }
         if (subRes.status === 'fulfilled' && subRes.value) {
-          setSubscription(subRes.value);
+          const subData = 'subscription' in subRes.value ? subRes.value.subscription : subRes.value;
+          setSubscription(subData);
         }
       })
       .finally(() => setLoading(false));
