@@ -37,9 +37,8 @@ function createRedisClient(): any {
     sadd: async () => 1,
     smembers: async () => [],
     eval: async () => [1, 0],
+    evalsha: async () => [1, 0],
   };
 }
 
 export const redis = createRedisClient() as unknown as Redis;
-
-

@@ -20,9 +20,7 @@ import {
   FileCheck,
   Zap,
   Eye,
-  Info,
   Clock,
-  ExternalLink,
 } from 'lucide-react';
 
 type MediaAsset = { id: string; storageKey: string };
@@ -656,7 +654,7 @@ export default function AdminPredictionsPage() {
           </h2>
 
           <div className="field mb-0">
-            <label htmlFor="title" className="text-xs text-[var(--chalk-muted)] font-semibold uppercase tracking-wider font-mono">
+            <label htmlFor="title" className="text-xs text-[#85a694] font-semibold uppercase tracking-wider font-mono">
               Post Title
             </label>
             <input
@@ -665,13 +663,13 @@ export default function AdminPredictionsPage() {
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="e.g. Saturday European Big 5 Banker"
-              className="w-full text-sm font-medium"
+              className="w-full text-sm font-medium bg-[#0b2216] border border-[rgba(243,245,236,0.14)] rounded-xl p-3 text-white focus:border-[#f5b335]"
             />
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="field mb-0">
-              <label htmlFor="scheduledAt" className="text-xs text-[var(--chalk-muted)] font-semibold uppercase tracking-wider font-mono">
+              <label htmlFor="scheduledAt" className="text-xs text-[#85a694] font-semibold uppercase tracking-wider font-mono">
                 Scheduled Match Time
               </label>
               <input
@@ -680,11 +678,11 @@ export default function AdminPredictionsPage() {
                 required
                 value={scheduledAt}
                 onChange={(e) => setScheduledAt(e.target.value)}
-                className="w-full text-sm"
+                className="w-full text-sm bg-[#0b2216] border border-[rgba(243,245,236,0.14)] rounded-xl p-3 text-white focus:border-[#f5b335]"
               />
             </div>
             <div className="field mb-0">
-              <label htmlFor="bookingCode" className="text-xs text-[var(--chalk-muted)] font-semibold uppercase tracking-wider font-mono">
+              <label htmlFor="bookingCode" className="text-xs text-[#85a694] font-semibold uppercase tracking-wider font-mono">
                 Betting Booking Code
               </label>
               <input
@@ -693,20 +691,20 @@ export default function AdminPredictionsPage() {
                 value={bookingCode}
                 onChange={(e) => setBookingCode(e.target.value)}
                 placeholder="e.g. BC-98342 or SportyBet code"
-                className="w-full font-mono uppercase text-sm"
+                className="w-full font-mono uppercase text-sm bg-[#0b2216] border border-[rgba(243,245,236,0.14)] rounded-xl p-3 text-white focus:border-[#f5b335]"
               />
             </div>
           </div>
 
           <div className="field mb-0">
-            <label htmlFor="visibility" className="text-xs text-[var(--chalk-muted)] font-semibold uppercase tracking-wider font-mono">
+            <label htmlFor="visibility" className="text-xs text-[#85a694] font-semibold uppercase tracking-wider font-mono">
               Subscriber Visibility
             </label>
             <select
               id="visibility"
               value={visibility}
               onChange={(e) => setVisibility(e.target.value as any)}
-              className="w-full bg-[var(--pitch)] border border-[rgba(243,245,236,0.14)] rounded-md p-3 text-sm text-[var(--chalk)]"
+              className="w-full bg-[#0b2216] border border-[rgba(243,245,236,0.14)] rounded-xl p-3 text-sm text-white focus:border-[#f5b335]"
             >
               <option value="subscribers">All Active Subscribers</option>
               <option value="plan_specific">Plan-Specific VIPs</option>
@@ -721,7 +719,7 @@ export default function AdminPredictionsPage() {
                 <ImageIcon size={14} className="text-[var(--floodlight)]" />
                 <span>Attach Slip Screenshots ({selectedFiles.length}/10)</span>
               </label>
-              <span className="text-[11px] text-[var(--chalk-muted)]">JPG, PNG (Max 5MB each)</span>
+              <span className="text-[11px] text-[#85a694]">JPG, PNG (Max 5MB each)</span>
             </div>
 
             <div className="flex flex-col sm:flex-row items-center gap-3">
@@ -730,7 +728,7 @@ export default function AdminPredictionsPage() {
                 onClick={() => manualFileInputRef.current?.click()}
                 className="btn btn-ghost text-xs py-2 px-4 w-full sm:w-auto inline-flex items-center justify-center gap-2 border-[rgba(243,245,236,0.18)]"
               >
-                <FileImage size={15} className="text-[var(--floodlight)]" />
+                <FileImage size={15} className="text-[#f5b335]" />
                 <span>Attach Slip Screenshots</span>
               </button>
               <input
@@ -785,7 +783,7 @@ export default function AdminPredictionsPage() {
               <button
                 type="button"
                 onClick={() => setItems([...items, emptyItem()])}
-                className="text-xs text-[var(--floodlight)] hover:underline inline-flex items-center gap-1 font-medium"
+                className="text-xs text-[#f5b335] hover:underline inline-flex items-center gap-1 font-medium"
               >
                 <Plus size={12} />
                 <span>Add Another Match</span>
@@ -795,7 +793,7 @@ export default function AdminPredictionsPage() {
             {items.map((item, i) => (
               <div
                 key={i}
-                className="p-3 rounded-lg bg-[var(--pitch)] border border-[rgba(243,245,236,0.08)] flex flex-col sm:flex-row gap-2 items-stretch sm:items-center"
+                className="p-3 rounded-xl bg-[#0b2216] border border-[rgba(243,245,236,0.1)] flex flex-col sm:flex-row gap-2 items-stretch sm:items-center"
               >
                 <div className="flex-1">
                   <input
@@ -810,7 +808,7 @@ export default function AdminPredictionsPage() {
                     placeholder="Pick (e.g. Over 2.5 @ 1.85)"
                     value={item.prediction}
                     onChange={(e) => setItems(items.map((it, idx) => (idx === i ? { ...it, prediction: e.target.value } : it)))}
-                    className="w-full text-xs sm:text-sm bg-transparent border-0 p-1 text-[var(--floodlight)] font-mono focus:ring-0"
+                    className="w-full text-xs sm:text-sm bg-transparent border-0 p-1 text-[#f5b335] font-mono focus:ring-0"
                   />
                 </div>
                 {items.length > 1 && (
@@ -828,15 +826,15 @@ export default function AdminPredictionsPage() {
           </div>
 
           {error && (
-            <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center gap-2">
+            <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center gap-2">
               <ShieldAlert size={16} className="shrink-0" />
               <span>{error}</span>
             </div>
           )}
 
           {uploadStatus && (
-            <div className="text-xs font-mono text-[var(--floodlight)] flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-[var(--floodlight)] animate-ping" />
+            <div className="text-xs font-mono text-[#f5b335] flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-[#f5b335] animate-ping" />
               <span>{uploadStatus}</span>
             </div>
           )}
@@ -844,7 +842,7 @@ export default function AdminPredictionsPage() {
           <div className="flex items-center gap-3 pt-2">
             <button
               type="submit"
-              className="btn btn-primary py-2.5 px-6 text-sm font-bold"
+              className="btn btn-primary py-2.5 px-6 text-sm font-bold bg-[#f5b335] text-[#0a2116] hover:bg-[#f3bc20]"
               disabled={saving}
             >
               {saving ? 'Saving Post & Media…' : 'Save as Draft'}
@@ -856,7 +854,7 @@ export default function AdminPredictionsPage() {
                 setSelectedFiles([]);
                 setFilePreviews([]);
               }}
-              className="btn btn-ghost py-2.5 px-4 text-sm"
+              className="btn btn-ghost py-2.5 px-4 text-sm text-[#85a694] border-[rgba(243,245,236,0.14)]"
             >
               Cancel
             </button>
@@ -914,7 +912,7 @@ export default function AdminPredictionsPage() {
             Loading match posts…
           </div>
         ) : filteredPosts.length === 0 ? (
-          /* Empty State styled exactly matching original artwork */
+          /* Empty State styled with tactics clipboard graphic and sparkle icons */
           <div className="py-12 px-4 text-center border border-dashed border-[rgba(243,245,236,0.14)] rounded-2xl flex flex-col items-center justify-center">
             <div className="w-20 h-20 mb-5 relative flex items-center justify-center">
               <svg className="w-full h-full text-emerald-500" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -934,7 +932,7 @@ export default function AdminPredictionsPage() {
             <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
               Feed Archive ({filteredPosts.length}) • Live Tips Repository
             </h2>
-            <div className="w-12 h-1 bg-amber-400 rounded-full my-3" />
+            <div className="w-12 h-1 bg-[#f5b335] rounded-full my-3" />
 
             <p className="text-sm text-[var(--chalk-muted)] font-medium max-w-md mx-auto leading-relaxed mt-2">
               No match predictions found in this category.
