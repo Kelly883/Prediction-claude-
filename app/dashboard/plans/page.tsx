@@ -39,15 +39,15 @@ export default function DashboardPlansPage() {
   useEffect(() => {
     Promise.allSettled([
       apiJson<Plan[]>('/api/plans'),
-      apiJson<Subscription | null>('/api/me/subscription'),
+      apiJson<{ subscription: Subscription | null }>('/api/me/subscription'),
     ])
       .then(([plansRes, subRes]) => {
         if (plansRes.status === 'fulfilled' && Array.isArray(plansRes.value)) {
           // Only show active plans configured by admin
           setPlans(plansRes.value.filter((p) => p.isActive));
         }
-        if (subRes.status === 'fulfilled' && subRes.value) {
-          setSubscription(subRes.value);
+        if (subRes.status === 'fulfilled' && subRes.value?.subscription) {
+          setSubscription(subRes.value.subscription);
         }
       })
       .finally(() => setLoading(false));
@@ -174,7 +174,7 @@ export default function DashboardPlansPage() {
                   <div className="ticket-perforation" />
 
                   <ul className="ticket-includes">
-                    <li>Full VIP predictions & matchday tips</li>
+                    <li>{plan.accessScope === 'all' ? 'All published tips' : 'Category-specific tips'}</li>
                     <li>One booking code per post</li>
                     <li>Instant unlock upon successful payment</li>
                   </ul>

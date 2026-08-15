@@ -38,11 +38,7 @@ function LoginForm() {
         return;
       }
 
-      const targetPath = data.role === 'admin'
-        ? (destination && destination.startsWith('/admin') ? destination : '/admin')
-        : (destination && destination.startsWith('/dashboard') ? destination : '/dashboard');
-
-      router.push(targetPath);
+      router.push(destination);
       router.refresh();
     } catch (err) {
       setError((err as Error).message);
@@ -63,12 +59,7 @@ function LoginForm() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? 'Invalid code');
-
-      const targetPath = data.role === 'admin'
-        ? (destination && destination.startsWith('/admin') ? destination : '/admin')
-        : (destination && destination.startsWith('/dashboard') ? destination : '/dashboard');
-
-      router.push(targetPath);
+      router.push(destination);
       router.refresh();
     } catch (err) {
       setError((err as Error).message);

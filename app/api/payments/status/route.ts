@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireUser, errorResponse, ApiError } from '@/lib/rbac';
-import { checkRateLimit, paymentLimiter, getClientIp, normalizeIdentifier } from '@/lib/ratelimit';
 
 export const runtime = 'nodejs';
 
@@ -13,14 +12,6 @@ export const runtime = 'nodejs';
 export async function GET(req: NextRequest) {
   try {
     const user = await requireUser(req);
-    const ip = getClientIp(req);
-    const userId = normalizeIdentifier('user', user.sub);
-
-    const allowed = await checkRateLimit(paymentLimiter, [ip, userId]);
-    if (!allowed) {
-      return NextResponse.json({ error: 'Too many requests, try again shortly' }, { status: 429 });
-    }
-
     const reference = req.nextUrl.searchParams.get('reference');
     if (!reference) throw new ApiError(400, 'reference is required');
 

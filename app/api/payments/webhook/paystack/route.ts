@@ -21,14 +21,11 @@ export async function POST(req: NextRequest) {
     const body = JSON.parse(rawBody);
     if (body.event !== 'charge.success') return NextResponse.json({ received: true });
 
-    const customerEmail = body.data?.customer?.email ?? null;
-
     const result = await handleVerifiedWebhook({
       providerReference: body.data.reference,
       status: body.data.status === 'success' ? 'success' : 'failed',
       amountPaid: body.data.amount / 100, // Paystack sends kobo
       currencyPaid: body.data.currency,
-      customerEmail,
       rawPayload: body,
       renewalToken: extractReusableAuthorization(body),
     });

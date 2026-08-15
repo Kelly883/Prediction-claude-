@@ -67,63 +67,6 @@ export async function flutterwaveChargeToken(params: ChargeTokenParams): Promise
   return { success, raw: data };
 }
 
-export interface VerifyTransactionParams {
-  id?: number | string;
-  txRef?: string;
-}
-
-export interface VerifiedFlutterwaveTransaction {
-  verified: boolean;
-  txRef: string;
-  amount: number;
-  currency: string;
-  status: string;
-  customerEmail?: string;
-  reusableToken?: string | null;
-  raw: unknown;
-}
-
-/**
- * Verifies a transaction directly with Flutterwave's verification API.
- * Never blindly trusts webhook payloads without independent verification.
- */
-export async function flutterwaveVerifyTransaction(
-  params: VerifyTransactionParams,
-): Promise<VerifiedFlutterwaveTransaction> {
-  const url = params.id
-    ? `${BASE_URL}/transactions/${params.id}/verify`
-    : `${BASE_URL}/transactions/verify_by_reference?tx_ref=${encodeURIComponent(params.txRef!)}`;
-
-  const res = await fetch(url, {
-    method: 'GET',
-    headers: headers(),
-  });
-
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok || data.status !== 'success' || !data.data) {
-    return {
-      verified: false,
-      txRef: params.txRef ?? '',
-      amount: 0,
-      currency: '',
-      status: 'failed',
-      raw: data,
-    };
-  }
-
-  const txData = data.data;
-  return {
-    verified: true,
-    txRef: txData.tx_ref,
-    amount: Number(txData.amount),
-    currency: txData.currency,
-    status: txData.status, // e.g. 'successful'
-    customerEmail: txData.customer?.email,
-    reusableToken: txData.card?.token ?? null,
-    raw: data,
-  };
-}
-
 /**
  * Flutterwave returns a reusable card token on successful charges. Stored
  * on the Subscription so the renewal cron can charge it later unattended.

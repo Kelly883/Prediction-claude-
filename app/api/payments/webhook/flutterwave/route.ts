@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyFlutterwaveSignature, handleVerifiedWebhook } from '@/lib/payments';
-import { extractReusableToken, flutterwaveVerifyTransaction } from '@/lib/providers/flutterwave';
+import { extractReusableToken } from '@/lib/providers/flutterwave';
 import { errorResponse } from '@/lib/rbac';
 
 export const runtime = 'nodejs';
@@ -12,45 +12,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid signature' }, { status: 400 });
     }
 
-    const rawBody = await req.text();
-    const body = JSON.parse(rawBody);
+    const body = await req.json();
     if (body.event !== 'charge.completed') return NextResponse.json({ received: true });
 
-    const txRef = body.data?.tx_ref;
-    const txId = body.data?.id;
-
-    if (!txRef) {
-      return NextResponse.json({ error: 'Missing transaction reference' }, { status: 400 });
-    }
-
-    // Independent API verification with Flutterwave to prevent webhook forgery/tampering
-    const verification = await flutterwaveVerifyTransaction({
-      id: txId,
-      txRef,
-    });
-
-    if (!verification.verified || verification.status !== 'successful' || (verification.txRef && verification.txRef !== txRef)) {
-      // Record failure if transaction exists
-      await handleVerifiedWebhook({
-        providerReference: txRef,
-        status: 'failed',
-        amountPaid: verification.amount || Number(body.data?.amount) || 0,
-        currencyPaid: verification.currency || body.data?.currency || 'NGN',
-        customerEmail: verification.customerEmail || body.data?.customer?.email,
-        rawPayload: { webhook: body, verification: verification.raw },
-      }).catch(() => {});
-
-      return NextResponse.json({ error: 'Transaction verification failed' }, { status: 400 });
-    }
-
     const result = await handleVerifiedWebhook({
-      providerReference: verification.txRef || txRef,
-      status: 'success',
-      amountPaid: verification.amount,
-      currencyPaid: verification.currency,
-      customerEmail: verification.customerEmail,
-      rawPayload: { webhook: body, verification: verification.raw },
-      renewalToken: verification.reusableToken ?? extractReusableToken(body),
+      providerReference: body.data.tx_ref,
+      status: body.data.status === 'successful' ? 'success' : 'failed',
+      amountPaid: body.data.amount,
+      currencyPaid: body.data.currency,
+      rawPayload: body,
+      renewalToken: extractReusableToken(body),
     });
 
     return NextResponse.json(result);

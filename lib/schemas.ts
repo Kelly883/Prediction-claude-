@@ -22,7 +22,7 @@ export const CreatePlanSchema = z.object({
   priceNGN: z.number().positive(),
   priceUSDOverride: z.number().positive().optional(),
   fxMarkupPercent: z.number().min(0).max(100).optional(),
-  accessScope: z.enum(['all', 'category']).default('all').optional(),
+  accessScope: z.enum(['all', 'category']),
   categoryIds: z.array(z.string()).optional(),
   isActive: z.boolean().optional(),
 });

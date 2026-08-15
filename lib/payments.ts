@@ -87,71 +87,32 @@ export async function handleVerifiedWebhook(params: {
   status: 'success' | 'failed';
   amountPaid: number;
   currencyPaid: string;
-  customerEmail?: string | null;
   rawPayload: unknown;
   /** Reusable authorization code / card token, if the provider returned one on this charge. */
   renewalToken?: string | null;
 }) {
-  const tx = await prisma.transaction.findUnique({
-    where: { providerReference: params.providerReference },
-    include: { user: true },
-  });
+  const tx = await prisma.transaction.findUnique({ where: { providerReference: params.providerReference } });
   if (!tx) throw new ApiError(400, 'Unknown transaction reference');
 
   // Idempotency: webhooks can and will be retried by the provider. If this
-  // reference was already processed (status is in a terminal state: success, failed, cancelled),
-  // return immediately with no-op.
-  if (tx.status === 'success' || tx.status === 'failed' || tx.status === 'cancelled') {
-    return tx;
-  }
+  // reference was already processed, no-op regardless of how many times
+  // the handler fires — this is what makes it safe to run on a stateless
+  // serverless function with no queue/dedup layer in front of it.
+  if (tx.status !== 'pending') return tx;
 
-  const now = new Date();
-
-  // Validate amount, currency, and customer email match expected transaction record
-  const emailToCompare = params.customerEmail?.trim();
-  const amountMatches = Number(tx.amount).toFixed(2) === params.amountPaid.toFixed(2);
-  const currencyMatches = tx.currency === params.currencyPaid;
-  const userMatches =
-    !emailToCompare || !tx.user?.email || emailToCompare.toLowerCase() === tx.user.email.toLowerCase().trim();
-
-  if (!amountMatches || !currencyMatches || !userMatches) {
-    await prisma.transaction.updateMany({
-      where: {
-        id: tx.id,
-        status: { in: ['pending', 'processing'] },
-      },
-      data: {
-        status: 'failed',
-        completedAt: now,
-        rawPayload: params.rawPayload as any,
-      },
+  if (Number(tx.amount).toFixed(2) !== params.amountPaid.toFixed(2) || tx.currency !== params.currencyPaid) {
+    await prisma.transaction.update({
+      where: { id: tx.id },
+      data: { status: 'failed', rawPayload: params.rawPayload as any },
     });
-    throw new ApiError(400, 'Transaction verification mismatch (amount, currency, or customer)');
+    throw new ApiError(400, 'Amount/currency mismatch — possible tampering');
   }
 
   return prisma.$transaction(async (db) => {
-    // ATOMIC STATE TRANSITION:
-    // Only transition if the transaction is still pending or processing.
-    // This strictly enforces that pending -> success is executed exactly once,
-    // even under concurrent webhook deliveries.
-    const result = await db.transaction.updateMany({
-      where: {
-        id: tx.id,
-        status: { in: ['pending', 'processing'] },
-      },
-      data: {
-        status: params.status,
-        completedAt: now,
-        rawPayload: params.rawPayload as any,
-      },
+    const updated = await db.transaction.update({
+      where: { id: tx.id },
+      data: { status: params.status, rawPayload: params.rawPayload as any },
     });
-
-    if (result.count === 0) {
-      // Another concurrent worker/webhook already transitioned this transaction
-      return db.transaction.findUniqueOrThrow({ where: { id: tx.id } });
-    }
-
-    const updated = await db.transaction.findUniqueOrThrow({ where: { id: tx.id } });
 
     if (params.status === 'success') {
       await activateOrRenewSubscription(db, tx.userId, updated.id, tx.provider, params.renewalToken ?? null);
@@ -182,15 +143,10 @@ async function activateOrRenewSubscription(
 
   // Any successful charge — first payment or renewal — resets the retry
   // counter and (if the provider gave us one) refreshes the stored payment
-  // method for future auto-renewals, as well as releasing any renewal lock.
-  const renewalFields = {
-    renewalAttempts: 0,
-    lastRenewalError: null,
-    renewalStatus: 'idle' as const,
-    renewalLockedAt: null,
-    renewalReference: null,
-    ...(renewalToken ? { renewalProvider: provider, renewalAuthCode: renewalToken } : {}),
-  };
+  // method for future auto-renewals.
+  const renewalFields = renewalToken
+    ? { renewalProvider: provider, renewalAuthCode: renewalToken, renewalAttempts: 0, lastRenewalError: null }
+    : { renewalAttempts: 0, lastRenewalError: null };
 
   if (existing) {
     const newEnd = new Date(Math.max(existing.endAt.getTime(), now.getTime()) + durationMs);
@@ -223,8 +179,8 @@ export function verifyPaystackSignature(rawBody: string, signature: string | nul
   // Verified against Paystack's current docs (paystack.com/docs/payments/webhooks):
   // x-paystack-signature header, HMAC-SHA512 of the raw body, keyed with the
   // secret key. Note it's SHA-512, not the SHA-256 most other providers use.
-  if (!signature || !process.env.PAYSTACK_SECRET_KEY) return false;
-  const expected = crypto.createHmac('sha512', process.env.PAYSTACK_SECRET_KEY).update(rawBody).digest('hex');
+  if (!signature) return false;
+  const expected = crypto.createHmac('sha512', process.env.PAYSTACK_SECRET_KEY!).update(rawBody).digest('hex');
   return timingSafeStringEqual(expected, signature);
 }
 
@@ -238,4 +194,18 @@ export function verifyFlutterwaveSignature(hash: string | null): boolean {
   // if signature checks start failing — providers do change these schemes.)
   if (!hash || !process.env.FLUTTERWAVE_WEBHOOK_SECRET_HASH) return false;
   return timingSafeStringEqual(hash, process.env.FLUTTERWAVE_WEBHOOK_SECRET_HASH);
+}
+
+/**
+ * Plain `===` on secrets leaks timing information an attacker can use to
+ * guess the value byte-by-byte over enough requests — crypto.timingSafeEqual
+ * takes constant time regardless of where the strings first differ. Requires
+ * equal-length buffers, so length-mismatch is checked (and short-circuits
+ * safely) before calling it.
+ */
+function timingSafeEqual(a: string, b: string): boolean {
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
 }
