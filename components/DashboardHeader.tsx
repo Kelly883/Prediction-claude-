@@ -37,38 +37,6 @@ export default function DashboardHeader({ isAdmin: propIsAdmin }: { isAdmin?: bo
           <Logo size="sm" adminBadge={isAdmin} />
         </Link>
         <nav style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-          <Link
-            href="/dashboard"
-            style={{
-              fontSize: 12,
-              fontWeight: 500,
-              textDecoration: 'none',
-              color: !inAdmin ? 'var(--floodlight)' : 'var(--chalk-muted)',
-              whiteSpace: 'nowrap',
-              padding: '6px 8px',
-              borderRadius: 4,
-              background: !inAdmin ? 'rgba(245, 179, 53, 0.12)' : 'transparent',
-            }}
-          >
-            Dashboard
-          </Link>
-          {isAdmin && (
-            <Link
-              href="/admin"
-              style={{
-                fontSize: 12,
-                fontWeight: 600,
-                textDecoration: 'none',
-                color: inAdmin ? 'var(--floodlight)' : 'var(--chalk-muted)',
-                whiteSpace: 'nowrap',
-                padding: '6px 8px',
-                borderRadius: 4,
-                background: inAdmin ? 'rgba(245, 179, 53, 0.12)' : 'transparent',
-              }}
-            >
-              Admin
-            </Link>
-          )}
           <button
             onClick={logout}
             className="btn btn-ghost"
