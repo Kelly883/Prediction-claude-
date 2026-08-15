@@ -251,6 +251,7 @@ async function removeFromStorage(key: string): Promise<void> {
 export interface UploadMediaResult {
   id: string;
   postId: string;
+  url: string;
   storageKey: string;
   mimeType: string;
   width: number;
@@ -276,6 +277,9 @@ export async function uploadMedia(postId: string, file: File): Promise<UploadMed
   const randomFileName = `${crypto.randomUUID()}.${sanitized.extension}`;
   const key = `predictions/${postId}/${randomFileName}`;
 
+  // Sanitize original filename strictly for display/audit purposes (strip directory paths)
+  const originalFilename = file.name ? path.basename(file.name).slice(0, 255) : null;
+
   // 1. Store sanitized file
   await saveToStorage(key, sanitized.buffer, sanitized.mimeType);
 
@@ -286,12 +290,19 @@ export async function uploadMedia(postId: string, file: File): Promise<UploadMed
         postId,
         storageKey: key,
         watermarkEnabled: true,
+        originalFilename,
+        mimeType: sanitized.mimeType,
+        fileSize: sanitized.buffer.length,
+        width: sanitized.width,
+        height: sanitized.height,
+        sha256: sanitized.sha256,
       },
     });
 
     return {
       id: asset.id,
       postId: asset.postId,
+      url: `/api/media/${asset.id}/raw`,
       storageKey: asset.storageKey,
       mimeType: sanitized.mimeType,
       width: sanitized.width,

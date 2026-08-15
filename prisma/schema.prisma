@@ -209,7 +209,14 @@ model MediaAsset {
   post             PredictionPost @relation(fields: [postId], references: [id], onDelete: Cascade)
   storageKey       String
   watermarkEnabled Boolean        @default(true)
+  originalFilename String?
+  mimeType         String?
+  fileSize         Int?
+  width            Int?
+  height           Int?
+  sha256           String?
   createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @default(now()) @updatedAt
 
   @@index([postId])
 }
