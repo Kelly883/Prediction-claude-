@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { apiJson, apiFetch } from '@/lib/api-client';
@@ -14,7 +14,11 @@ import {
   Image as ImageIcon, 
   Trash2,
   AlertTriangle,
-  ShieldAlert
+  ShieldAlert,
+  Eye,
+  FileImage,
+  X,
+  Plus
 } from 'lucide-react';
 
 type Item = { id: string; match: string; prediction: string };
@@ -50,6 +54,13 @@ export default function EditPredictionPage() {
   const [deletingMediaId, setDeletingMediaId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Signed URLs for viewing uploaded media images
+  const [mediaUrls, setMediaUrls] = useState<Record<string, string>>({});
+  const [previewModalUrl, setPreviewModalUrl] = useState<string | null>(null);
+
+  // File input ref
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   function load() {
     apiJson<Post>(`/api/predictions/${id}`)
       .then((p) => {
@@ -62,7 +73,19 @@ export default function EditPredictionPage() {
       })
       .finally(() => setLoading(false));
   }
+
   useEffect(load, [id]);
+
+  // Fetch signed media URLs for previews
+  useEffect(() => {
+    if (!post || !post.media) return;
+    post.media.forEach((asset) => {
+      if (mediaUrls[asset.id]) return;
+      apiJson<{ url: string }>(`/api/media/${asset.id}/signed-url`)
+        .then((data) => setMediaUrls((prev) => ({ ...prev, [asset.id]: data.url })))
+        .catch(() => {});
+    });
+  }, [post]);
 
   async function save() {
     setSaving(true);
@@ -103,36 +126,39 @@ export default function EditPredictionPage() {
   }
 
   async function uploadImage(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file || !post) return;
+    const files = Array.from(e.target.files ?? []);
+    if (!files.length || !post) return;
 
     setError(null);
 
-    // Client-side security validations
-    if (!ALLOWED_MIME_TYPES.includes(file.type.toLowerCase())) {
-      setError(`"${file.name}" is not a supported format. Only JPG and PNG images are allowed.`);
-      e.target.value = '';
-      return;
-    }
-    if (file.size > MAX_IMAGE_UPLOAD_BYTES) {
-      setError(`"${file.name}" exceeds the maximum allowed file size of 5 MB.`);
-      e.target.value = '';
-      return;
+    for (const file of files) {
+      if (!ALLOWED_MIME_TYPES.includes(file.type.toLowerCase())) {
+        setError(`"${file.name}" is not a supported format. Only JPG and PNG images are allowed.`);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        return;
+      }
+      if (file.size > MAX_IMAGE_UPLOAD_BYTES) {
+        setError(`"${file.name}" exceeds the maximum allowed file size of 5 MB.`);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        return;
+      }
     }
 
     setUploading(true);
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      const res = await apiFetch(`/api/admin/predictions/${post.id}/images`, { method: 'POST', body: formData });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? 'Upload failed');
+      for (const file of files) {
+        const formData = new FormData();
+        formData.append('file', file);
+        const res = await apiFetch(`/api/admin/predictions/${post.id}/images`, { method: 'POST', body: formData });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? `Upload failed for ${file.name}`);
+      }
       load();
     } catch (err) {
       setError((err as Error).message);
     } finally {
       setUploading(false);
-      e.target.value = '';
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   }
 
@@ -158,15 +184,15 @@ export default function EditPredictionPage() {
 
   if (loading) {
     return (
-      <div className="p-8 text-center text-sm text-[var(--chalk-muted)]">
-        Loading prediction post…
+      <div className="p-12 text-center text-sm text-[var(--chalk-muted)] font-mono animate-pulse">
+        Loading prediction post details…
       </div>
     );
   }
 
   if (!post) {
     return (
-      <div className="p-8 text-center border border-dashed border-[rgba(243,245,236,0.14)] rounded-lg">
+      <div className="p-8 text-center border border-dashed border-[rgba(243,245,236,0.14)] rounded-xl">
         <AlertTriangle size={28} className="mx-auto mb-2 text-red-400" />
         <p className="text-sm text-white font-medium">Post not found</p>
         <Link href="/admin/predictions" className="btn btn-ghost text-xs mt-3 inline-flex items-center gap-1.5">
@@ -181,21 +207,21 @@ export default function EditPredictionPage() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-[rgba(243,245,236,0.1)]">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 min-w-0">
           <Link
             href="/admin/predictions"
-            className="p-2 rounded-lg bg-[var(--turf)] text-[var(--chalk-muted)] hover:text-white border border-[rgba(243,245,236,0.1)] transition-colors"
-            title="Back"
+            className="p-2 rounded-xl bg-[var(--turf)] text-[var(--chalk-muted)] hover:text-white border border-[rgba(243,245,236,0.1)] transition-colors shrink-0"
+            title="Back to Predictions"
           >
             <ArrowLeft size={16} />
           </Link>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="font-bold text-xl sm:text-2xl text-white truncate max-w-md">
-                Edit Post
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="font-bold text-xl sm:text-2xl text-white truncate">
+                Edit Prediction Post
               </h1>
               <span
-                className={`px-2 py-0.5 text-[10px] font-bold uppercase rounded ${
+                className={`px-2.5 py-0.5 text-[10px] font-extrabold uppercase rounded-full ${
                   post.status === 'published'
                     ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                     : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
@@ -204,8 +230,8 @@ export default function EditPredictionPage() {
                 {post.status}
               </span>
             </div>
-            <p className="text-xs text-[var(--chalk-muted)] font-mono mt-0.5">
-              ID: {post.id}
+            <p className="text-xs text-[var(--chalk-muted)] font-mono mt-0.5 truncate">
+              Post ID: {post.id}
             </p>
           </div>
         </div>
@@ -225,179 +251,268 @@ export default function EditPredictionPage() {
             className="btn btn-ghost text-xs py-2 px-3 inline-flex items-center gap-1.5 text-red-400 border-red-500/30 hover:bg-red-500/10"
           >
             <Archive size={14} />
-            <span>Archive</span>
+            <span>Archive Post</span>
           </button>
         </div>
       </div>
 
-      <div className="admin-grid-2col">
-        {/* Post Form */}
-        <div className="card p-4 sm:p-5 space-y-4">
-          <h2 className="text-base font-semibold text-white flex items-center gap-2">
-            <Sparkles size={16} className="text-[var(--floodlight)]" />
-            <span>Post Details</span>
-          </h2>
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* Post Form Column */}
+        <div className="lg:col-span-7 space-y-6">
+          <div className="card p-4 sm:p-6 space-y-4">
+            <h2 className="text-base font-bold text-white flex items-center gap-2">
+              <Sparkles size={16} className="text-[var(--floodlight)]" />
+              <span>Post Configuration</span>
+            </h2>
 
-          <div className="field mb-0">
-            <label htmlFor="title" className="text-xs text-[var(--chalk-muted)] font-medium">Title</label>
-            <input
-              id="title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="w-full text-sm"
-            />
-          </div>
-
-          <div className="field mb-0">
-            <label htmlFor="bookingCode" className="text-xs text-[var(--chalk-muted)] font-medium">Betting Booking Code</label>
-            <input
-              id="bookingCode"
-              value={bookingCode}
-              onChange={(e) => setBookingCode(e.target.value)}
-              className="w-full font-mono uppercase text-sm"
-            />
-          </div>
-
-          <div className="field mb-0">
-            <label htmlFor="visibility" className="text-xs text-[var(--chalk-muted)] font-medium">Subscriber Visibility</label>
-            <select
-              id="visibility"
-              value={visibility}
-              onChange={(e) => setVisibility(e.target.value as any)}
-              className="w-full bg-[var(--pitch)] border border-[rgba(243,245,236,0.14)] rounded-md p-3 text-sm text-[var(--chalk)]"
-            >
-              <option value="subscribers">All Active Subscribers</option>
-              <option value="plan_specific">Plan-Specific VIPs</option>
-              <option value="free_window">Free Window (Promotional)</option>
-            </select>
-          </div>
-
-          {visibility === 'free_window' && (
             <div className="field mb-0">
-              <label htmlFor="freeUntil" className="text-xs text-[var(--chalk-muted)] font-medium">Free Access Until</label>
+              <label htmlFor="title" className="text-xs text-[var(--chalk-muted)] font-semibold uppercase tracking-wider font-mono">
+                Title
+              </label>
               <input
-                id="freeUntil"
-                type="datetime-local"
-                value={freeUntil}
-                onChange={(e) => setFreeUntil(e.target.value)}
-                className="w-full text-sm"
+                id="title"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                className="w-full text-sm font-medium"
               />
             </div>
-          )}
 
-          <div className="field mb-0">
-            <label htmlFor="bodyNotes" className="text-xs text-[var(--chalk-muted)] font-medium">Analyst Notes & Insights</label>
-            <textarea
-              id="bodyNotes"
-              rows={4}
-              value={bodyNotes}
-              onChange={(e) => setBodyNotes(e.target.value)}
-              placeholder="Add match preview commentary, weather updates, or accumulator tips…"
-              className="w-full bg-[var(--pitch)] border border-[rgba(243,245,236,0.14)] rounded-lg p-3 text-sm text-[var(--chalk)] font-sans focus:border-[var(--floodlight)] outline-none"
-            />
-          </div>
-
-          {error && (
-            <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center gap-2">
-              <ShieldAlert size={16} className="shrink-0" />
-              <span>{error}</span>
+            <div className="field mb-0">
+              <label htmlFor="bookingCode" className="text-xs text-[var(--chalk-muted)] font-semibold uppercase tracking-wider font-mono">
+                Betting Booking Code
+              </label>
+              <input
+                id="bookingCode"
+                value={bookingCode}
+                onChange={(e) => setBookingCode(e.target.value)}
+                className="w-full font-mono uppercase text-sm"
+              />
             </div>
-          )}
 
-          <div className="pt-2">
-            <button
-              onClick={save}
-              className="btn btn-primary w-full py-2.5 text-sm font-semibold flex items-center justify-center gap-2"
-              disabled={saving}
-            >
-              <Save size={14} />
-              <span>{saving ? 'Saving Changes…' : 'Save Changes'}</span>
-            </button>
+            <div className="field mb-0">
+              <label htmlFor="visibility" className="text-xs text-[var(--chalk-muted)] font-semibold uppercase tracking-wider font-mono">
+                Subscriber Visibility
+              </label>
+              <select
+                id="visibility"
+                value={visibility}
+                onChange={(e) => setVisibility(e.target.value as any)}
+                className="w-full bg-[var(--pitch)] border border-[rgba(243,245,236,0.14)] rounded-md p-3 text-sm text-[var(--chalk)]"
+              >
+                <option value="subscribers">All Active Subscribers</option>
+                <option value="plan_specific">Plan-Specific VIPs</option>
+                <option value="free_window">Free Window (Promotional)</option>
+              </select>
+            </div>
+
+            {visibility === 'free_window' && (
+              <div className="field mb-0">
+                <label htmlFor="freeUntil" className="text-xs text-[var(--chalk-muted)] font-semibold uppercase tracking-wider font-mono">
+                  Free Access Until
+                </label>
+                <input
+                  id="freeUntil"
+                  type="datetime-local"
+                  value={freeUntil}
+                  onChange={(e) => setFreeUntil(e.target.value)}
+                  className="w-full text-sm"
+                />
+              </div>
+            )}
+
+            <div className="field mb-0">
+              <label htmlFor="bodyNotes" className="text-xs text-[var(--chalk-muted)] font-semibold uppercase tracking-wider font-mono">
+                Analyst Notes & Insights
+              </label>
+              <textarea
+                id="bodyNotes"
+                rows={4}
+                value={bodyNotes}
+                onChange={(e) => setBodyNotes(e.target.value)}
+                placeholder="Add match preview commentary, weather updates, or accumulator tips…"
+                className="w-full bg-[var(--pitch)] border border-[rgba(243,245,236,0.14)] rounded-lg p-3 text-sm text-[var(--chalk)] font-sans focus:border-[var(--floodlight)] outline-none"
+              />
+            </div>
+
+            {error && (
+              <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center gap-2">
+                <ShieldAlert size={16} className="shrink-0" />
+                <span>{error}</span>
+              </div>
+            )}
+
+            <div className="pt-2">
+              <button
+                onClick={save}
+                className="btn btn-primary w-full py-2.5 text-sm font-semibold flex items-center justify-center gap-2"
+                disabled={saving}
+              >
+                <Save size={14} />
+                <span>{saving ? 'Saving Changes…' : 'Save Changes'}</span>
+              </button>
+            </div>
           </div>
 
-          {/* Matches Summary */}
-          <div className="pt-4 border-t border-[rgba(243,245,236,0.08)]">
-            <h3 className="text-xs font-semibold text-white uppercase tracking-wider font-mono mb-2">
-              Attached Match Picks ({(post.items ?? []).length})
+          {/* Attached Matches Summary */}
+          <div className="card p-4 sm:p-5 space-y-3">
+            <h3 className="text-xs font-semibold text-white uppercase tracking-wider font-mono flex items-center justify-between">
+              <span>Attached Match Picks ({(post.items ?? []).length})</span>
             </h3>
-            <div className="space-y-1.5">
-              {(post.items ?? []).map((item) => (
-                <div
-                  key={item.id}
-                  className="p-2.5 rounded bg-[var(--pitch)] border border-[rgba(243,245,236,0.06)] flex items-center justify-between text-xs gap-2"
-                >
-                  <span className="text-white font-medium truncate">{item.match}</span>
-                  <span className="mono text-[var(--floodlight)] font-semibold shrink-0">
-                    {item.prediction}
-                  </span>
-                </div>
-              ))}
+            <div className="space-y-2">
+              {(post.items ?? []).length === 0 ? (
+                <p className="text-xs text-[var(--chalk-muted)] py-2">No match picks items attached to this post.</p>
+              ) : (
+                (post.items ?? []).map((item) => (
+                  <div
+                    key={item.id}
+                    className="p-3 rounded-lg bg-[var(--pitch)] border border-[rgba(243,245,236,0.08)] flex items-center justify-between text-xs gap-3"
+                  >
+                    <span className="text-white font-medium truncate">{item.match}</span>
+                    <span className="mono text-[var(--floodlight)] font-bold shrink-0">
+                      {item.prediction}
+                    </span>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>
 
-        {/* Media & Images Management */}
-        <div className="card p-4 sm:p-5 space-y-4">
-          <h2 className="text-base font-semibold text-white flex items-center gap-2">
-            <ImageIcon size={16} className="text-[var(--floodlight)]" />
-            <span>Slip Screenshots & Media ({(post.media ?? []).length})</span>
-          </h2>
-
-          <div className="p-4 rounded-lg bg-[var(--pitch)] border border-dashed border-[rgba(243,245,236,0.18)] text-center space-y-2">
-            <Upload size={24} className="mx-auto text-[var(--chalk-muted)]" />
-            <div className="text-xs text-[var(--chalk-muted)]">
-              Upload betslip screenshots (JPEG, PNG up to 5MB)
+        {/* Media & Images Column */}
+        <div className="lg:col-span-5 space-y-6">
+          <div className="card p-4 sm:p-6 space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-[rgba(243,245,236,0.1)]">
+              <h2 className="text-base font-bold text-white flex items-center gap-2">
+                <ImageIcon size={18} className="text-emerald-400" />
+                <span>Slip Screenshots ({(post.media ?? []).length})</span>
+              </h2>
+              <span className="text-[11px] text-[var(--chalk-muted)] font-mono">Max 10 images</span>
             </div>
-            <label className="btn btn-ghost text-xs py-1.5 px-3 cursor-pointer inline-flex items-center gap-1.5 border-[rgba(243,245,236,0.15)]">
-              <span>Choose Image File</span>
+
+            {/* Upload Box */}
+            <div
+              onClick={() => fileInputRef.current?.click()}
+              className="p-5 rounded-2xl bg-[var(--pitch)] border-2 border-dashed border-emerald-500/30 hover:border-emerald-400 text-center cursor-pointer transition-all space-y-2 group"
+            >
+              <div className="w-10 h-10 mx-auto rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center group-hover:scale-105 transition-transform">
+                <Upload size={20} />
+              </div>
+              <div className="text-xs font-medium text-white">
+                Upload Slip Images (JPG/PNG &lt; 5MB)
+              </div>
+              <p className="text-[11px] text-[var(--chalk-muted)]">
+                Click or drop files to attach additional screenshots
+              </p>
               <input
+                ref={fileInputRef}
                 type="file"
+                multiple
                 accept="image/jpeg,image/png,image/jpg"
                 onChange={uploadImage}
                 disabled={uploading}
                 className="hidden"
               />
-            </label>
-            {uploading && <p className="text-xs text-[var(--floodlight)] font-mono animate-pulse">Processing & uploading asset…</p>}
-          </div>
+            </div>
 
-          <div className="space-y-2.5">
-            {(post.media ?? []).length === 0 ? (
-              <p className="text-xs text-[var(--chalk-muted)] text-center py-4">
-                No screenshot media uploaded for this tip.
+            {uploading && (
+              <p className="text-xs text-emerald-400 font-mono text-center animate-pulse flex items-center justify-center gap-2">
+                <FileImage size={14} />
+                <span>Processing & uploading prediction image…</span>
               </p>
-            ) : (
-              (post.media ?? []).map((m) => (
-                <div
-                  key={m.id}
-                  className="p-3 rounded-lg bg-[var(--pitch)] border border-[rgba(243,245,236,0.08)] flex items-center justify-between text-xs gap-3"
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="w-8 h-8 rounded bg-zinc-800 border border-zinc-700 flex items-center justify-center shrink-0">
-                      <ImageIcon size={14} className="text-[var(--floodlight)]" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="mono text-white truncate text-xs font-medium">
-                        {m.storageKey.split('/').pop()}
-                      </div>
-                      <div className="text-[10px] text-emerald-400 font-mono">Sanitized & Encrypted</div>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={() => deleteImage(m.id)}
-                    disabled={deletingMediaId === m.id}
-                    className="p-1.5 rounded text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition-colors shrink-0"
-                    title="Delete image"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              ))
             )}
+
+            {/* Uploaded Media Gallery */}
+            <div className="space-y-3 pt-2">
+              {(post.media ?? []).length === 0 ? (
+                <div className="text-center py-6 border border-dashed border-[rgba(243,245,236,0.1)] rounded-xl">
+                  <ImageIcon size={28} className="mx-auto text-[var(--chalk-muted)] mb-2" />
+                  <p className="text-xs text-[var(--chalk-muted)]">
+                    No screenshot media attached to this prediction.
+                  </p>
+                </div>
+              ) : (
+                (post.media ?? []).map((m) => {
+                  const mediaUrl = mediaUrls[m.id];
+                  return (
+                    <div
+                      key={m.id}
+                      className="p-3 rounded-xl bg-[var(--pitch)] border border-[rgba(243,245,236,0.1)] flex items-center justify-between text-xs gap-3 group"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        {mediaUrl ? (
+                          <div
+                            onClick={() => setPreviewModalUrl(mediaUrl)}
+                            className="w-12 h-12 rounded-lg overflow-hidden bg-black border border-zinc-700 shrink-0 cursor-pointer relative group/img"
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={mediaUrl} alt="Slip" className="w-full h-full object-cover" />
+                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 flex items-center justify-center text-white transition-opacity">
+                              <Eye size={12} />
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="w-12 h-12 rounded-lg bg-zinc-800 border border-zinc-700 flex items-center justify-center shrink-0">
+                            <ImageIcon size={16} className="text-emerald-400" />
+                          </div>
+                        )}
+
+                        <div className="min-w-0">
+                          <div className="mono text-white truncate text-xs font-semibold">
+                            {m.storageKey.split('/').pop()}
+                          </div>
+                          <div className="text-[10px] text-emerald-400 font-mono mt-0.5">
+                            Sanitized & Encrypted
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1 shrink-0">
+                        {mediaUrl && (
+                          <button
+                            onClick={() => setPreviewModalUrl(mediaUrl)}
+                            className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+                            title="Preview Image"
+                          >
+                            <Eye size={14} />
+                          </button>
+                        )}
+                        <button
+                          onClick={() => deleteImage(m.id)}
+                          disabled={deletingMediaId === m.id}
+                          className="p-1.5 rounded-lg text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                          title="Delete image"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
           </div>
         </div>
       </div>
+
+      {/* Lightbox Modal for Image Previews */}
+      {previewModalUrl && (
+        <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="relative max-w-4xl w-full max-h-[90vh] flex flex-col items-center">
+            <button
+              onClick={() => setPreviewModalUrl(null)}
+              className="absolute -top-10 right-0 p-2 text-white/80 hover:text-white"
+            >
+              <X size={24} />
+            </button>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={previewModalUrl}
+              alt="Prediction slip full view"
+              className="max-h-[85vh] w-auto object-contain rounded-xl border border-zinc-700 shadow-2xl"
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
