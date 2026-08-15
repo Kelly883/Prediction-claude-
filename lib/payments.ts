@@ -91,8 +91,6 @@ export async function handleVerifiedWebhook(params: {
   rawPayload: unknown;
   /** Reusable authorization code / card token, if the provider returned one on this charge. */
   renewalToken?: string | null;
-  expectedUserId?: string;
-  expectedEmail?: string;
 }) {
   const tx = await prisma.transaction.findUnique({
     where: { providerReference: params.providerReference },
@@ -110,14 +108,10 @@ export async function handleVerifiedWebhook(params: {
   const now = new Date();
 
   // Validate amount, currency, and customer email match expected transaction record
-  const payloadEmail = (params.rawPayload as any)?.data?.customer?.email;
-  const targetCustomerEmail = params.customerEmail ?? params.expectedEmail ?? payloadEmail;
-
   const amountMatches = Number(tx.amount).toFixed(2) === params.amountPaid.toFixed(2);
   const currencyMatches = tx.currency === params.currencyPaid;
   const userMatches =
-    (!params.expectedUserId || tx.userId === params.expectedUserId) &&
-    (!targetCustomerEmail || !tx.user?.email || targetCustomerEmail.toLowerCase().trim() === tx.user.email.toLowerCase().trim());
+    !params.customerEmail || !tx.user?.email || params.customerEmail.toLowerCase().trim() === tx.user.email.toLowerCase().trim();
 
   if (!amountMatches || !currencyMatches || !userMatches) {
     await prisma.transaction.updateMany({
@@ -131,7 +125,7 @@ export async function handleVerifiedWebhook(params: {
         rawPayload: params.rawPayload as any,
       },
     });
-    throw new ApiError(400, 'Transaction verification mismatch (amount, currency, or customer email)');
+    throw new ApiError(400, 'Transaction verification mismatch (amount, currency, or customer)');
   }
 
   return prisma.$transaction(async (db) => {

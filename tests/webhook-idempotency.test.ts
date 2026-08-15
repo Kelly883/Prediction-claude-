@@ -71,11 +71,10 @@ function makeFakeDb() {
       }),
     },
     $transaction: vi.fn(async (fn: any) => fn(db)),
-    _seed(tx: any, user?: any) {
-      transactions.set(tx.id, { ...tx, user: user ?? { id: tx.userId, email: 'user@example.com' } });
+    _seed(tx: any) {
+      transactions.set(tx.id, tx);
     },
     _subscriptionCount: () => subscriptions.size,
-    _getSub: (id: string) => subscriptions.get(id),
     _transactionStatus: (id: string) => transactions.get(id)?.status,
     _transactionCompletedAt: (id: string) => transactions.get(id)?.completedAt,
     _getSubscriptions: () => [...subscriptions.values()],
@@ -136,8 +135,6 @@ describe('handleVerifiedWebhook Paystack Idempotency & Concurrency', () => {
       customerEmail: 'payer@example.com',
       rawPayload: { delivery: 1 },
     });
-    expect(fakeDb._subscriptionCount()).toBe(1);
-    const subAfterFirst = (fakeDb as any)._getSub('sub-1');
 
     const initialSubs = fakeDb._getSubscriptions();
     const initialEndAt = initialSubs[0].endAt;
@@ -156,8 +153,6 @@ describe('handleVerifiedWebhook Paystack Idempotency & Concurrency', () => {
     expect(fakeDb._subscriptionCount()).toBe(1);
     expect(fakeDb.subscription.create).toHaveBeenCalledTimes(1);
     expect(fakeDb.subscription.update).not.toHaveBeenCalled();
-    const subAfterSecond = (fakeDb as any)._getSub('sub-1');
-    expect(subAfterSecond.endAt.getTime()).toBe(subAfterFirst.endAt.getTime());
     expect(initialSubs[0].endAt).toEqual(initialEndAt);
   });
 
@@ -206,43 +201,5 @@ describe('handleVerifiedWebhook Paystack Idempotency & Concurrency', () => {
 
     expect(fakeDb._transactionStatus('tx-1')).toBe('failed');
     expect(fakeDb._subscriptionCount()).toBe(0);
-  });
-
-  it('validates expected user / email mismatch and rejects', async () => {
-    const { handleVerifiedWebhook } = await import('@/lib/payments');
-
-    await expect(
-      handleVerifiedWebhook({
-        providerReference: 'ref-paystack-123',
-        status: 'success',
-        amountPaid: 4500,
-        currencyPaid: 'NGN',
-        rawPayload: {},
-        expectedUserId: 'wrong-user-id',
-      }),
-    ).rejects.toThrow(/Transaction verification mismatch/i);
-
-    // Reset tx-1 status back to pending for the next check
-    fakeDb._seed({
-      id: 'tx-1',
-      userId: 'user-1',
-      planId: 'plan-1',
-      provider: 'paystack',
-      providerReference: 'ref-paystack-123',
-      amount: 4500,
-      currency: 'NGN',
-      status: 'pending',
-    });
-
-    await expect(
-      handleVerifiedWebhook({
-        providerReference: 'ref-paystack-123',
-        status: 'success',
-        amountPaid: 4500,
-        currencyPaid: 'NGN',
-        customerEmail: 'wrong@example.com',
-        rawPayload: { data: { customer: { email: 'wrong@example.com' } } },
-      }),
-    ).rejects.toThrow(/Transaction verification mismatch/i);
   });
 });

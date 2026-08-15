@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
       status: 'success',
       amountPaid: verification.amount,
       currencyPaid: verification.currency,
-      customerEmail: verification.customerEmail || (body.data?.customer?.email ?? null),
+      customerEmail: verification.customerEmail,
       rawPayload: { webhook: body, verification: verification.raw },
       renewalToken: verification.reusableToken ?? extractReusableToken(body),
     });
