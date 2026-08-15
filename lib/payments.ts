@@ -87,11 +87,15 @@ export async function handleVerifiedWebhook(params: {
   status: 'success' | 'failed';
   amountPaid: number;
   currencyPaid: string;
+  customerEmail?: string | null;
   rawPayload: unknown;
   /** Reusable authorization code / card token, if the provider returned one on this charge. */
   renewalToken?: string | null;
 }) {
-  const tx = await prisma.transaction.findUnique({ where: { providerReference: params.providerReference } });
+  const tx = await prisma.transaction.findUnique({
+    where: { providerReference: params.providerReference },
+    include: { user: true },
+  });
   if (!tx) throw new ApiError(400, 'Unknown transaction reference');
 
   // Idempotency: webhooks can and will be retried by the provider. If this
@@ -103,8 +107,13 @@ export async function handleVerifiedWebhook(params: {
 
   const now = new Date();
 
-  // Validate amount and currency match expected transaction record
-  if (Number(tx.amount).toFixed(2) !== params.amountPaid.toFixed(2) || tx.currency !== params.currencyPaid) {
+  // Validate amount, currency, and customer email match expected transaction record
+  const amountMatches = Number(tx.amount).toFixed(2) === params.amountPaid.toFixed(2);
+  const currencyMatches = tx.currency === params.currencyPaid;
+  const userMatches =
+    !params.customerEmail || !tx.user?.email || params.customerEmail.toLowerCase().trim() === tx.user.email.toLowerCase().trim();
+
+  if (!amountMatches || !currencyMatches || !userMatches) {
     await prisma.transaction.updateMany({
       where: {
         id: tx.id,
@@ -116,7 +125,7 @@ export async function handleVerifiedWebhook(params: {
         rawPayload: params.rawPayload as any,
       },
     });
-    throw new ApiError(400, 'Amount/currency mismatch — possible tampering');
+    throw new ApiError(400, 'Transaction verification mismatch (amount, currency, or customer)');
   }
 
   return prisma.$transaction(async (db) => {
@@ -213,8 +222,8 @@ export function verifyPaystackSignature(rawBody: string, signature: string | nul
   // Verified against Paystack's current docs (paystack.com/docs/payments/webhooks):
   // x-paystack-signature header, HMAC-SHA512 of the raw body, keyed with the
   // secret key. Note it's SHA-512, not the SHA-256 most other providers use.
-  if (!signature) return false;
-  const expected = crypto.createHmac('sha512', process.env.PAYSTACK_SECRET_KEY!).update(rawBody).digest('hex');
+  if (!signature || !process.env.PAYSTACK_SECRET_KEY) return false;
+  const expected = crypto.createHmac('sha512', process.env.PAYSTACK_SECRET_KEY).update(rawBody).digest('hex');
   return timingSafeStringEqual(expected, signature);
 }
 
@@ -228,18 +237,4 @@ export function verifyFlutterwaveSignature(hash: string | null): boolean {
   // if signature checks start failing — providers do change these schemes.)
   if (!hash || !process.env.FLUTTERWAVE_WEBHOOK_SECRET_HASH) return false;
   return timingSafeStringEqual(hash, process.env.FLUTTERWAVE_WEBHOOK_SECRET_HASH);
-}
-
-/**
- * Plain `===` on secrets leaks timing information an attacker can use to
- * guess the value byte-by-byte over enough requests — crypto.timingSafeEqual
- * takes constant time regardless of where the strings first differ. Requires
- * equal-length buffers, so length-mismatch is checked (and short-circuits
- * safely) before calling it.
- */
-function timingSafeEqual(a: string, b: string): boolean {
-  const bufA = Buffer.from(a);
-  const bufB = Buffer.from(b);
-  if (bufA.length !== bufB.length) return false;
-  return crypto.timingSafeEqual(bufA, bufB);
 }

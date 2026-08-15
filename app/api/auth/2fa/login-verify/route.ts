@@ -4,15 +4,16 @@ import { verifyTwoFactorChallengeToken, issueAccessToken, issueRefreshToken, coo
 import { verifyTotpCode } from '@/lib/twofactor';
 import { errorResponse, ApiError } from '@/lib/rbac';
 import { touchSession } from '@/lib/sessions';
-import { checkRateLimit, authLimiter } from '@/lib/ratelimit';
+import { checkRateLimit, authLimiter, getClientIp } from '@/lib/ratelimit';
 
 export const runtime = 'nodejs';
 
 /** Step 2 of login for 2FA-enabled accounts — exchanges challengeToken + a valid TOTP code for real session cookies. */
 export async function POST(req: NextRequest) {
   try {
-    const ip = req.headers.get('x-forwarded-for') ?? 'unknown';
-    if (!(await checkRateLimit(authLimiter, ip))) {
+    const ip = getClientIp(req);
+    const allowed = await checkRateLimit(authLimiter, ip);
+    if (!allowed) {
       return NextResponse.json({ error: 'Too many attempts, try again shortly' }, { status: 429 });
     }
 
