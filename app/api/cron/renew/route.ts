@@ -12,6 +12,11 @@ export const maxDuration = 60;
 const LOOKAHEAD_HOURS = 24; // pick up renewals due within the next 24h, plus any still in a retry grace period
 const MAX_RENEWAL_ATTEMPTS = 3;
 
+// Configurable lease timeout for stuck 'processing' renewals (defaults to 15 minutes / 900 seconds)
+const parsedLockTimeout = Number(process.env.RENEWAL_LOCK_TIMEOUT_SECONDS);
+const RENEWAL_LOCK_TIMEOUT_SECONDS =
+  Number.isFinite(parsedLockTimeout) && parsedLockTimeout > 0 ? parsedLockTimeout : 15 * 60;
+
 /**
  * Replaces NestJS's @Cron(EVERY_DAY_AT_2AM) RenewalCron. vercel.json declares
  * the schedule; Vercel injects `Authorization: Bearer $CRON_SECRET` on the
@@ -32,8 +37,19 @@ export async function GET(req: NextRequest) {
 
   const now = new Date();
   const cutoff = new Date(now.getTime() + LOOKAHEAD_HOURS * 60 * 60 * 1000);
+  const leaseCutoff = new Date(now.getTime() - RENEWAL_LOCK_TIMEOUT_SECONDS * 1000);
+
   const dueSubs = await prisma.subscription.findMany({
-    where: { status: 'active', autoRenew: true, endAt: { lte: cutoff } },
+    where: {
+      status: 'active',
+      autoRenew: true,
+      endAt: { lte: cutoff },
+      OR: [
+        { renewalStatus: 'idle' },
+        { renewalStatus: 'failed' },
+        { renewalStatus: 'processing', renewalLockedAt: { lte: leaseCutoff } },
+      ],
+    },
     include: { plan: true, user: true },
   });
 
@@ -59,7 +75,10 @@ export async function GET(req: NextRequest) {
       const alreadyExpired = sub.endAt <= now;
 
       if (alreadyExpired) {
-        await prisma.subscription.update({ where: { id: sub.id }, data: { status: 'expired' } });
+        await prisma.subscription.update({
+          where: { id: sub.id },
+          data: { status: 'expired', renewalStatus: 'idle', renewalLockedAt: null },
+        });
         results.expired++;
         continue;
       }
@@ -85,7 +104,35 @@ export async function GET(req: NextRequest) {
       continue;
     }
 
-    const reference = `renew_${sub.id}_${Date.now()}`;
+    // Deterministic reference uniquely identifies the subscription, billing period, and attempt number
+    const periodTimestamp = Math.floor(sub.endAt.getTime() / 1000);
+    const reference = `renew_${sub.id}_${periodTimestamp}_${sub.renewalAttempts}`;
+
+    // ATOMIC CLAIM: Lock the subscription before performing any network charge.
+    // If another concurrent cron execution claimed this subscription, updateMany returns count: 0.
+    const claimResult = await prisma.subscription.updateMany({
+      where: {
+        id: sub.id,
+        status: 'active',
+        autoRenew: true,
+        OR: [
+          { renewalStatus: 'idle' },
+          { renewalStatus: 'failed' },
+          { renewalStatus: 'processing', renewalLockedAt: { lte: leaseCutoff } },
+        ],
+      },
+      data: {
+        renewalStatus: 'processing',
+        renewalLockedAt: now,
+        renewalReference: reference,
+      },
+    });
+
+    if (claimResult.count === 0) {
+      // Already claimed by another simultaneous process or lease currently active
+      continue;
+    }
+
     const plan = sub.plan; // narrowed above, but TS can't see through the $transaction closure below — capture explicitly
     const subUser = sub.user;
 
@@ -131,7 +178,15 @@ export async function GET(req: NextRequest) {
         const newEnd = new Date(Math.max(sub.endAt.getTime(), now.getTime()) + durationMs);
         await db.subscription.update({
           where: { id: sub.id },
-          data: { endAt: newEnd, renewalAttempts: 0, lastRenewalError: null, renewalReminderSentAt: null },
+          data: {
+            endAt: newEnd,
+            renewalStatus: 'idle',
+            renewalLockedAt: null,
+            renewalReference: null,
+            renewalAttempts: 0,
+            lastRenewalError: null,
+            renewalReminderSentAt: null,
+          },
         });
       });
 
@@ -143,13 +198,25 @@ export async function GET(req: NextRequest) {
       if (attempts >= MAX_RENEWAL_ATTEMPTS) {
         await prisma.subscription.update({
           where: { id: sub.id },
-          data: { status: 'expired', autoRenew: false, renewalAttempts: attempts, lastRenewalError: message },
+          data: {
+            status: 'expired',
+            autoRenew: false,
+            renewalStatus: 'failed',
+            renewalLockedAt: null,
+            renewalAttempts: attempts,
+            lastRenewalError: message,
+          },
         });
         results.expired++;
       } else {
         await prisma.subscription.update({
           where: { id: sub.id },
-          data: { renewalAttempts: attempts, lastRenewalError: message },
+          data: {
+            renewalStatus: 'failed',
+            renewalLockedAt: null,
+            renewalAttempts: attempts,
+            lastRenewalError: message,
+          },
         });
         results.retriesScheduled++;
       }
