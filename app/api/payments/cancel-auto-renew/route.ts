@@ -15,7 +15,8 @@ export async function POST(req: NextRequest) {
     }
 
     const sub = await cancelAutoRenew(user.sub);
-    return NextResponse.json(sub);
+    const { renewalAuthCode, ...safeSub } = sub;
+    return NextResponse.json(safeSub);
   } catch (err) {
     return errorResponse(err);
   }

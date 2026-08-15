@@ -12,7 +12,9 @@ export async function GET(req: NextRequest) {
       orderBy: { endAt: 'desc' },
       include: { plan: true },
     });
-    return NextResponse.json(sub);
+    if (!sub) return NextResponse.json(null);
+    const { renewalAuthCode, ...safeSub } = sub;
+    return NextResponse.json(safeSub);
   } catch (err) {
     return errorResponse(err);
   }
