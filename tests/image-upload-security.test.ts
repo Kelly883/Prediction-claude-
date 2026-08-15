@@ -309,7 +309,7 @@ describe('Production Image Upload Security & Validation', () => {
         updatedAt: new Date(),
       } as any);
 
-      vi.spyOn(prisma.mediaAsset, 'create').mockImplementationOnce(async ({ data }: any) => ({
+      (vi.spyOn(prisma.mediaAsset, 'create') as any).mockImplementationOnce(async ({ data }: any) => ({
         id: 'asset_uuid_123',
         postId: mockPostId,
         storageKey: data.storageKey,
@@ -322,10 +322,10 @@ describe('Production Image Upload Security & Validation', () => {
         sha256: data.sha256,
         createdAt: new Date(),
         updatedAt: new Date(),
-      }) as any);
+      }));
 
       // Attempt path traversal via filename
-      const maliciousFile = new File([sampleJpegBuffer], '../../etc/passwd.jpg', { type: 'image/jpeg' });
+      const maliciousFile = new File([new Uint8Array(sampleJpegBuffer)], '../../etc/passwd.jpg', { type: 'image/jpeg' });
       const uploaded = await uploadMedia(mockPostId, maliciousFile);
 
       expect(uploaded.id).toBe('asset_uuid_123');
@@ -338,7 +338,7 @@ describe('Production Image Upload Security & Validation', () => {
 
     it('rejects uploads for nonexistent prediction posts (404)', async () => {
       vi.spyOn(prisma.predictionPost, 'findUnique').mockResolvedValueOnce(null);
-      const file = new File([sampleJpegBuffer], 'valid.jpg', { type: 'image/jpeg' });
+      const file = new File([new Uint8Array(sampleJpegBuffer)], 'valid.jpg', { type: 'image/jpeg' });
       await expect(uploadMedia('nonexistent_post', file)).rejects.toThrowError('Prediction post not found.');
     });
   });

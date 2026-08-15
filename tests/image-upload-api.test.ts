@@ -102,7 +102,7 @@ describe('Admin Prediction Image Upload API Route Security', () => {
       vi.spyOn(ratelimit, 'checkRateLimit').mockResolvedValueOnce(true);
       vi.spyOn(prisma.mediaAsset, 'count').mockResolvedValueOnce(10); // Quota reached
 
-      const file = new File([sampleJpegBuffer], 'test.jpg', { type: 'image/jpeg' });
+      const file = new File([new Uint8Array(sampleJpegBuffer)], 'test.jpg', { type: 'image/jpeg' });
       const req = createMultipartRequest('http://localhost:3000/api/admin/predictions/p1/images', file);
       const res = await POST(req, { params: Promise.resolve({ id: 'p1' }) });
       const data = await res.json();
@@ -141,7 +141,7 @@ describe('Admin Prediction Image Upload API Route Security', () => {
         sha256: 'a1b2c3d4e5f6',
       });
 
-      const file = new File([sampleJpegBuffer], 'valid-chart.jpg', { type: 'image/jpeg' });
+      const file = new File([new Uint8Array(sampleJpegBuffer)], 'valid-chart.jpg', { type: 'image/jpeg' });
       const req = createMultipartRequest('http://localhost:3000/api/admin/predictions/p1/images', file);
       const res = await POST(req, { params: Promise.resolve({ id: 'p1' }) });
       const json = await res.json();
