@@ -78,4 +78,55 @@ describe('Rate Limiting Architecture & Fail-Closed Policies', () => {
     expect(normalizeIdentifier('email', '  User.Name+Test@Example.COM ')).toBe('email:user.name+test@example.com');
     expect(normalizeIdentifier('user', ' user-123 ')).toBe('user:user-123');
   });
+
+  it('fails closed (503) when checking PAYMENT policy endpoints during Redis outage', async () => {
+    const { checkRateLimit } = await import('@/lib/ratelimit');
+    const brokenPaymentLimiter = {
+      limit: vi.fn().mockRejectedValue(new Error('Redis cluster down')),
+      failClosed: true,
+    } as any;
+
+    await expect(
+      checkRateLimit(brokenPaymentLimiter, ['127.0.0.1', 'user:user-123'], { failClosed: true }),
+    ).rejects.toMatchObject({ status: 503 });
+  });
+
+  it('recovers and allows requests when Redis becomes available again after an outage', async () => {
+    const { checkRateLimit } = await import('@/lib/ratelimit');
+    let isDown = true;
+    const recoverableLimiter = {
+      limit: vi.fn().mockImplementation(async () => {
+        if (isDown) throw new Error('Redis down');
+        return { success: true };
+      }),
+      failClosed: true,
+    } as any;
+
+    // Outage phase
+    await expect(checkRateLimit(recoverableLimiter, '127.0.0.1')).rejects.toMatchObject({ status: 503 });
+
+    // Recovery phase
+    isDown = false;
+    const allowed = await checkRateLimit(recoverableLimiter, '127.0.0.1');
+    expect(allowed).toBe(true);
+  });
+
+  it('isolates rate limits so a different user/IP is not incorrectly blocked', async () => {
+    const { checkRateLimit } = await import('@/lib/ratelimit');
+    const blockedIds = new Set(['ip:10.0.0.1', 'user:user-abuser']);
+
+    const mockLimiter = {
+      limit: vi.fn().mockImplementation(async (id: string) => {
+        return { success: !blockedIds.has(id) };
+      }),
+    } as any;
+
+    // Abuser request -> blocked
+    const abuserAllowed = await checkRateLimit(mockLimiter, ['ip:10.0.0.1', 'user:user-abuser']);
+    expect(abuserAllowed).toBe(false);
+
+    // Legitimate user on different IP -> allowed
+    const legitAllowed = await checkRateLimit(mockLimiter, ['ip:10.0.0.2', 'user:user-honest']);
+    expect(legitAllowed).toBe(true);
+  });
 });
