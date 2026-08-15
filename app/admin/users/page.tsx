@@ -86,22 +86,6 @@ export default function AdminUsersPage() {
 
   return (
     <div className="admin-users-wrap">
-      {/* Navigation Bar Pills */}
-      <nav className="admin-users-nav-bar" aria-label="Admin quick tabs">
-        <Link href="/admin/predictions" className="admin-users-nav-item">
-          Predictions
-        </Link>
-        <Link href="/admin/free-access" className="admin-users-nav-item">
-          Free acc
-        </Link>
-        <Link href="/admin/users" className="admin-users-nav-item admin-users-nav-item-active">
-          Users
-        </Link>
-        <Link href="/admin/transactions" className="admin-users-nav-item">
-          Transactions
-        </Link>
-      </nav>
-
       {/* Page Header Title & Subtitle */}
       <header className="admin-users-header">
         <h1 className="admin-users-title">Users &amp; Subscribers</h1>

@@ -48,22 +48,6 @@ export default function AdminOverviewPage() {
   return (
     <div className="admin-overview-shell">
       <div className="admin-dash-wrap">
-        {/* Navigation Tabs Pill Bar */}
-        <nav className="admin-dash-tabs" aria-label="Admin quick tabs">
-          <Link href="/admin" className="admin-dash-tab admin-dash-tab-active">
-            Overview
-          </Link>
-          <Link href="/admin/plans" className="admin-dash-tab">
-            Plans
-          </Link>
-          <Link href="/admin/predictions" className="admin-dash-tab">
-            Predictions
-          </Link>
-          <Link href="/admin/free-access" className="admin-dash-tab">
-            Free acc
-          </Link>
-        </nav>
-
         {/* Section Header */}
         <header className="admin-dash-header">
           <div className="admin-dash-supertitle">Admin Portal Live Console</div>

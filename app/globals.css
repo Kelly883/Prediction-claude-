@@ -379,20 +379,22 @@ textarea:focus-visible {
   margin-bottom: 10px;
 }
 .sidebar-link {
-  padding: 9px 12px;
-  border-radius: 4px;
+  padding: 8px 16px;
+  border-radius: 12px;
   font-size: 14px;
+  font-weight: 600;
   text-decoration: none;
-  color: var(--chalk-muted);
+  color: #7e9e8c;
+  transition: all 0.15s ease;
 }
 .sidebar-link:hover {
-  color: var(--chalk);
-  background: var(--turf);
+  color: #ffffff;
 }
 .sidebar-link-active {
-  color: var(--pitch);
-  background: var(--floodlight);
-  font-weight: 600;
+  background: #f5b335;
+  color: #0a2116 !important;
+  font-weight: 700;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 .dashboard-content {
   flex: 1;
@@ -409,9 +411,10 @@ textarea:focus-visible {
     position: static;
     flex-direction: row;
     overflow-x: auto;
-    gap: 4px;
-    background: var(--turf);
-    border-radius: 6px;
+    gap: 6px;
+    background: #0d271b;
+    border: 1px solid rgba(243, 245, 236, 0.12);
+    border-radius: 16px;
     padding: 6px;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
@@ -426,8 +429,8 @@ textarea:focus-visible {
   .sidebar-link {
     white-space: nowrap;
     flex-shrink: 0;
-    font-size: 13px;
-    padding: 7px 12px;
+    font-size: 14px;
+    padding: 8px 18px;
   }
 }
 
@@ -473,6 +476,12 @@ textarea:focus-visible {
   max-width: 680px;
   margin: 0 auto;
   padding: 0 12px;
+}
+
+@media (max-width: 640px) {
+  .admin-overview-shell {
+    padding: 0;
+  }
 }
 
 .admin-dash-wrap {
@@ -548,6 +557,12 @@ textarea:focus-visible {
   line-height: 1.1;
   letter-spacing: -0.02em;
   margin: 0;
+}
+
+@media (max-width: 640px) {
+  .admin-dash-title {
+    font-size: 30px;
+  }
 }
 
 .admin-dash-underline {
@@ -661,6 +676,20 @@ textarea:focus-visible {
   align-items: flex-start;
   gap: 18px;
   overflow: hidden;
+}
+
+@media (max-width: 480px) {
+  .admin-kpi-card {
+    padding: 16px;
+    gap: 14px;
+  }
+  .admin-kpi-icon-box {
+    width: 44px;
+    height: 44px;
+  }
+  .admin-kpi-dots {
+    display: none;
+  }
 }
 
 .admin-kpi-dots {

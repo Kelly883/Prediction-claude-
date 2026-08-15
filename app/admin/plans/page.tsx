@@ -116,25 +116,6 @@ export default function AdminPlansPage() {
 
   return (
     <div className="admin-plans-wrap">
-      {/* Quick Nav Tab Bar */}
-      <nav className="admin-dash-tabs" aria-label="Admin console navigation">
-        <Link href="/admin/predictions" className="admin-dash-tab">
-          Predictions
-        </Link>
-        <Link href="/admin/free-access" className="admin-dash-tab">
-          Free acc
-        </Link>
-        <Link href="/admin/users" className="admin-dash-tab">
-          Users
-        </Link>
-        <Link href="/admin/transactions" className="admin-dash-tab">
-          Transactions
-        </Link>
-        <Link href="/admin/plans" className="admin-dash-tab admin-dash-tab-active">
-          Plans
-        </Link>
-      </nav>
-
       {/* Header */}
       <header className="admin-plans-header">
         <h1 className="admin-plans-title">Membership Plans</h1>
