@@ -37,6 +37,17 @@ function createRedisClient(): any {
     sadd: async () => 1,
     smembers: async () => [],
     eval: async () => [1, 0],
+    // @upstash/ratelimit's sliding-window algorithm calls evalsha (a cached
+    // Lua script execution) directly rather than falling back to eval — an
+    // in-memory mock missing this method throws "evalsha is not a
+    // function" the moment any rate-limited route runs without real
+    // Upstash configured (any local dev environment, or this test suite).
+    // Matches eval's behavior: reports "not rate limited" rather than
+    // implementing real sliding-window logic in-memory — acceptable for a
+    // fallback whose job is "don't crash when Redis isn't configured,"
+    // not "replicate Redis locally." Real rate limiting requires real
+    // Upstash, in any environment, same as before.
+    evalsha: async () => [1, 0],
   };
 }
 

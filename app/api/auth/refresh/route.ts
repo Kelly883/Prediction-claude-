@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { verifyRefreshToken, issueAccessToken, cookieOptions } from '@/lib/auth';
 import { errorResponse, ApiError } from '@/lib/rbac';
+import { checkRateLimit, authLimiter, getClientIp } from '@/lib/ratelimit';
 import { writeAudit } from '@/lib/audit';
 
 export const runtime = 'nodejs';
@@ -12,6 +13,12 @@ export const runtime = 'nodejs';
  */
 export async function POST(req: NextRequest) {
   try {
+    const ip = getClientIp(req);
+    const allowed = await checkRateLimit(authLimiter, ip);
+    if (!allowed) {
+      return NextResponse.json({ error: 'Too many attempts, try again shortly' }, { status: 429 });
+    }
+
     const token = req.cookies.get('refresh_token')?.value;
     if (!token) throw new ApiError(401, 'No refresh token');
 

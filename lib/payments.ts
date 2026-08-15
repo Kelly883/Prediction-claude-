@@ -110,10 +110,11 @@ export async function handleVerifiedWebhook(params: {
   const now = new Date();
 
   // Validate amount, currency, and customer email match expected transaction record
+  const emailToCompare = params.customerEmail?.trim();
   const amountMatches = Number(tx.amount).toFixed(2) === params.amountPaid.toFixed(2);
   const currencyMatches = tx.currency === params.currencyPaid;
   const userMatches =
-    !params.customerEmail || !tx.user?.email || params.customerEmail.toLowerCase().trim() === tx.user.email.toLowerCase().trim();
+    !emailToCompare || !tx.user?.email || emailToCompare.toLowerCase() === tx.user.email.toLowerCase().trim();
 
   if (!amountMatches || !currencyMatches || !userMatches) {
     await prisma.transaction.updateMany({

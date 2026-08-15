@@ -14,7 +14,8 @@ export const maxDuration = 60;
 const LOOKAHEAD_HOURS = 24; // pick up renewals due within the next 24h, plus any still in a retry grace period
 const MAX_RENEWAL_ATTEMPTS = 3;
 // Configurable lease timeout for stuck 'processing' renewals (defaults to 15 minutes / 900 seconds)
-const RENEWAL_LOCK_TIMEOUT_SECONDS = Number(process.env.RENEWAL_LOCK_TIMEOUT_SECONDS ?? 15 * 60);
+const parsedLockTimeout = Number(process.env.RENEWAL_LOCK_TIMEOUT_SECONDS);
+const RENEWAL_LOCK_TIMEOUT_SECONDS = Number.isFinite(parsedLockTimeout) && parsedLockTimeout > 0 ? parsedLockTimeout : 15 * 60;
 
 /**
  * Replaces NestJS's @Cron(EVERY_DAY_AT_2AM) RenewalCron. vercel.json declares
