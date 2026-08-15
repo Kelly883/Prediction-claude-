@@ -2,12 +2,19 @@ import crypto from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { hashPassword } from '@/lib/password';
+import { checkRateLimit, authLimiter, getClientIp } from '@/lib/ratelimit';
 import { errorResponse, ApiError } from '@/lib/rbac';
 
 export const runtime = 'nodejs';
 
 export async function POST(req: NextRequest) {
   try {
+    const ip = getClientIp(req);
+    const allowed = await checkRateLimit(authLimiter, ip);
+    if (!allowed) {
+      return NextResponse.json({ error: 'Too many attempts, try again shortly' }, { status: 429 });
+    }
+
     const { token, newPassword } = await req.json();
     if (!token || !newPassword || newPassword.length < 8) {
       throw new ApiError(400, 'token and a newPassword of at least 8 characters are required');
