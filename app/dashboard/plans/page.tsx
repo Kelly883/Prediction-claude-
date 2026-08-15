@@ -39,15 +39,15 @@ export default function DashboardPlansPage() {
   useEffect(() => {
     Promise.allSettled([
       apiJson<Plan[]>('/api/plans'),
-      apiJson<{ subscription: Subscription | null }>('/api/me/subscription'),
+      apiJson<Subscription | null>('/api/me/subscription'),
     ])
       .then(([plansRes, subRes]) => {
         if (plansRes.status === 'fulfilled' && Array.isArray(plansRes.value)) {
           // Only show active plans configured by admin
           setPlans(plansRes.value.filter((p) => p.isActive));
         }
-        if (subRes.status === 'fulfilled' && subRes.value?.subscription) {
-          setSubscription(subRes.value.subscription);
+        if (subRes.status === 'fulfilled' && subRes.value) {
+          setSubscription(subRes.value);
         }
       })
       .finally(() => setLoading(false));
