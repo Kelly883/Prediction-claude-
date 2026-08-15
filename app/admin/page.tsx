@@ -16,7 +16,7 @@ export default function AdminOverviewPage() {
     <>
       <h1 className="display" style={{ fontSize: 28, marginBottom: 24 }}>Overview</h1>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16, maxWidth: 640 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16, width: '100%', maxWidth: 640 }}>
         <div className="card">
           <div className="eyebrow" style={{ marginBottom: 8 }}>SUCCESSFUL PAYMENTS (24H)</div>
           <div className="mono" style={{ fontSize: 32, color: 'var(--floodlight)' }}>{health?.successfulLast24h ?? '—'}</div>

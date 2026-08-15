@@ -38,7 +38,10 @@ function LoginForm() {
         return;
       }
 
-      router.push(destination);
+      const defaultLanding = data.role === 'admin' ? '/admin' : '/dashboard';
+      const finalDest = searchParams.get('next') ? destination : defaultLanding;
+
+      router.push(finalDest);
       router.refresh();
     } catch (err) {
       setError((err as Error).message);
@@ -59,7 +62,11 @@ function LoginForm() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? 'Invalid code');
-      router.push(destination);
+
+      const defaultLanding = data.role === 'admin' ? '/admin' : '/dashboard';
+      const finalDest = searchParams.get('next') ? destination : defaultLanding;
+
+      router.push(finalDest);
       router.refresh();
     } catch (err) {
       setError((err as Error).message);
