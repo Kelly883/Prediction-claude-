@@ -98,26 +98,26 @@ describe('canView', () => {
     expect(await canView('user-1', post)).toBe(false);
   });
 
-  it('allows access via an active subscription with accessScope=all', async () => {
+  it('allows access via an active subscription with no specific category limitations', async () => {
     mockPrisma.subscription.findFirst.mockResolvedValue({
       id: 's1', status: 'active', endAt: new Date(Date.now() + 60_000),
-      plan: { accessScope: 'all', categoryIds: [] },
+      plan: { categoryIds: [] },
     });
     expect(await canView('user-1', basePost)).toBe(true);
   });
 
-  it('allows access via a category-scoped plan that covers the post category', async () => {
+  it('allows access via a category plan that covers the post category', async () => {
     mockPrisma.subscription.findFirst.mockResolvedValue({
       id: 's1', status: 'active', endAt: new Date(Date.now() + 60_000),
-      plan: { accessScope: 'category', categoryIds: ['epl'] },
+      plan: { categoryIds: ['epl'] },
     });
     expect(await canView('user-1', basePost)).toBe(true);
   });
 
-  it('denies access via a category-scoped plan that does not cover the post category', async () => {
+  it('denies access via a category plan that does not cover the post category', async () => {
     mockPrisma.subscription.findFirst.mockResolvedValue({
       id: 's1', status: 'active', endAt: new Date(Date.now() + 60_000),
-      plan: { accessScope: 'category', categoryIds: ['laliga'] },
+      plan: { categoryIds: ['laliga'] },
     });
     expect(await canView('user-1', basePost)).toBe(false);
   });

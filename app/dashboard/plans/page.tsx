@@ -10,7 +10,6 @@ type Plan = {
   durationDays: number;
   priceNGN: string | number;
   priceUSDOverride: string | number | null;
-  accessScope: 'all' | 'category';
   isActive: boolean;
 };
 
@@ -175,7 +174,7 @@ export default function DashboardPlansPage() {
                   <div className="ticket-perforation" />
 
                   <ul className="ticket-includes">
-                    <li>{plan.accessScope === 'all' ? 'All published tips' : 'Category-specific tips'}</li>
+                    <li>Full access to predictions and booking codes</li>
                     <li>One booking code per post</li>
                     <li>Instant unlock upon successful payment</li>
                   </ul>

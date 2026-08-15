@@ -47,11 +47,6 @@ enum TransactionStatus {
   failed
 }
 
-enum AccessScope {
-  all
-  category
-}
-
 enum PostVisibility {
   plan_specific
   subscribers
@@ -102,7 +97,6 @@ model Plan {
   priceNGN         Decimal     @db.Decimal(12, 2)
   priceUSDOverride Decimal?    @db.Decimal(12, 2)
   fxMarkupPercent  Decimal?    @db.Decimal(5, 2)
-  accessScope      AccessScope @default(all)
   categoryIds      String[]    @default([])
   isActive         Boolean     @default(true)
   createdAt        DateTime    @default(now())

@@ -23,17 +23,37 @@ export async function GET(req: NextRequest) {
     await requireAdmin(req);
     const status = req.nextUrl.searchParams.get('status') as 'paid' | 'unpaid' | null;
 
-    const all = await prisma.user.findMany({ where: { role: 'user' }, select: SAFE_USER_FIELDS });
-    if (!status) return NextResponse.json(all);
+    const allUsers = await prisma.user.findMany({
+      where: { role: 'user' },
+      select: SAFE_USER_FIELDS,
+      orderBy: { createdAt: 'desc' },
+    });
 
     const activeSubs = await prisma.subscription.findMany({
       where: { status: 'active', endAt: { gt: new Date() } },
-      select: { userId: true },
-      distinct: ['userId'],
+      select: { userId: true, endAt: true },
+      orderBy: { endAt: 'desc' },
     });
-    const paidIds = new Set(activeSubs.map((s) => s.userId));
 
-    const filtered = status === 'paid' ? all.filter((u) => paidIds.has(u.id)) : all.filter((u) => !paidIds.has(u.id));
+    const subMap = new Map<string, Date>();
+    for (const sub of activeSubs) {
+      if (!subMap.has(sub.userId)) {
+        subMap.set(sub.userId, sub.endAt);
+      }
+    }
+
+    const enriched = allUsers.map((u) => {
+      const expiresAt = subMap.get(u.id);
+      return {
+        ...u,
+        isPaid: Boolean(expiresAt),
+        expiresAt: expiresAt ? expiresAt.toISOString() : null,
+      };
+    });
+
+    if (!status) return NextResponse.json(enriched);
+
+    const filtered = status === 'paid' ? enriched.filter((u) => u.isPaid) : enriched.filter((u) => !u.isPaid);
     return NextResponse.json(filtered);
   } catch (err) {
     return errorResponse(err);

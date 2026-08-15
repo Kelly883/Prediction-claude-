@@ -50,7 +50,7 @@ export async function canView(userId: string | null, post: PredictionPost): Prom
   });
 
   if (activeSub?.plan) {
-    if (activeSub.plan.accessScope === 'all') return true;
+    if (!activeSub.plan.categoryIds || activeSub.plan.categoryIds.length === 0) return true;
     const overlaps = post.categoryIds.some((c) => activeSub.plan!.categoryIds.includes(c));
     if (overlaps) return true;
   }

@@ -4,7 +4,6 @@ type Plan = {
   durationDays: number;
   priceNGN: unknown; // Prisma Decimal, formatted below
   priceUSDOverride: unknown;
-  accessScope: string;
 };
 
 function formatNaira(value: unknown): string {
@@ -40,7 +39,7 @@ export default function TicketCard({ plan, featured = false }: { plan: Plan; fea
         <div className="ticket-perforation" />
 
         <ul className="ticket-includes">
-          <li>{plan.accessScope === 'all' ? 'Every published tip' : 'Selected leagues for this plan'}</li>
+          <li>Full access to predictions and booking codes</li>
           <li>Booking code with every post</li>
           <li>Auto-renews — cancel anytime, keep access until the pass ends</li>
         </ul>
