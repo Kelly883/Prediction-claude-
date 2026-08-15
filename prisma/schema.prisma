@@ -43,6 +43,7 @@ enum Currency {
 
 enum TransactionStatus {
   pending
+  processing
   success
   failed
 }

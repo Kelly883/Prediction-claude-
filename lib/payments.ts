@@ -118,7 +118,7 @@ export async function handleVerifiedWebhook(params: {
     await prisma.transaction.updateMany({
       where: {
         id: tx.id,
-        status: 'pending',
+        status: { in: ['pending', 'processing'] },
       },
       data: {
         status: 'failed',
@@ -130,13 +130,13 @@ export async function handleVerifiedWebhook(params: {
 
   return prisma.$transaction(async (db) => {
     // ATOMIC STATE TRANSITION:
-    // Only transition if the transaction is still pending.
-    // This strictly enforces that pending -> success is executed exactly once,
+    // Only transition if the transaction is still pending or processing.
+    // This strictly enforces that pending/processing -> success is executed exactly once,
     // even under concurrent webhook deliveries.
     const result = await db.transaction.updateMany({
       where: {
         id: tx.id,
-        status: 'pending',
+        status: { in: ['pending', 'processing'] },
       },
       data: {
         status: params.status,
