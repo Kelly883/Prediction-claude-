@@ -23,6 +23,14 @@ import {
 
 type Item = { id: string; match: string; prediction: string };
 type MediaAsset = { id: string; storageKey: string };
+type SubscriptionPlan = {
+  id: string;
+  name: string;
+  durationDays: number;
+  priceNGN: string;
+  priceUSDOverride: string | null;
+  isActive: boolean;
+};
 type Post = {
   id: string;
   title: string;
@@ -30,6 +38,7 @@ type Post = {
   bodyNotes: string | null;
   status: string;
   visibility: 'plan_specific' | 'subscribers' | 'free_window';
+  planIds?: string[];
   freeUntil: string | null;
   items: Item[];
   media: MediaAsset[];
@@ -43,10 +52,12 @@ export default function EditPredictionPage() {
   const router = useRouter();
 
   const [post, setPost] = useState<Post | null>(null);
+  const [availablePlans, setAvailablePlans] = useState<SubscriptionPlan[]>([]);
   const [title, setTitle] = useState('');
   const [bookingCode, setBookingCode] = useState('');
   const [bodyNotes, setBodyNotes] = useState('');
   const [visibility, setVisibility] = useState<'plan_specific' | 'subscribers' | 'free_window'>('subscribers');
+  const [planIds, setPlanIds] = useState<string[]>([]);
   const [freeUntil, setFreeUntil] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -69,9 +80,14 @@ export default function EditPredictionPage() {
         setBookingCode(p.bookingCode);
         setBodyNotes(p.bodyNotes ?? '');
         setVisibility(p.visibility);
+        setPlanIds(p.planIds ?? []);
         setFreeUntil(p.freeUntil ? p.freeUntil.slice(0, 16) : '');
       })
       .finally(() => setLoading(false));
+
+    apiJson<SubscriptionPlan[]>('/api/plans')
+      .then(setAvailablePlans)
+      .catch(() => {});
   }
 
   useEffect(load, [id]);
@@ -99,6 +115,7 @@ export default function EditPredictionPage() {
           bookingCode,
           bodyNotes,
           visibility,
+          planIds: visibility === 'plan_specific' ? planIds : [],
           freeUntil: visibility === 'free_window' && freeUntil ? new Date(freeUntil).toISOString() : null,
         }),
       });
@@ -289,7 +306,7 @@ export default function EditPredictionPage() {
               />
             </div>
 
-            <div className="field mb-0">
+            <div className="field mb-0 space-y-2">
               <label htmlFor="visibility" className="text-xs text-[var(--chalk-muted)] font-semibold uppercase tracking-wider font-mono">
                 Subscriber Visibility
               </label>
@@ -303,6 +320,40 @@ export default function EditPredictionPage() {
                 <option value="plan_specific">Plan-Specific VIPs</option>
                 <option value="free_window">Free Window (Promotional)</option>
               </select>
+
+              {visibility === 'plan_specific' && (
+                <div className="p-3 rounded-xl bg-[var(--pitch)] border border-[rgba(243,245,236,0.14)] space-y-2 mt-2">
+                  <label className="text-xs text-[var(--chalk-muted)] font-semibold uppercase tracking-wider font-mono block">
+                    Select Admin-Created Subscription Plans
+                  </label>
+                  {availablePlans.length === 0 ? (
+                    <p className="text-xs text-[var(--chalk-muted)] italic">
+                      No subscription plans created by admin yet. Create plans in the Membership Plans section.
+                    </p>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                      {availablePlans.map((plan) => (
+                        <label key={plan.id} className="flex items-center gap-2 text-xs text-white bg-black/40 p-2 rounded-lg border border-[rgba(243,245,236,0.1)] cursor-pointer hover:border-emerald-500/30">
+                          <input
+                            type="checkbox"
+                            checked={planIds.includes(plan.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setPlanIds([...planIds, plan.id]);
+                              } else {
+                                setPlanIds(planIds.filter((pid) => pid !== plan.id));
+                              }
+                            }}
+                            className="rounded border-zinc-700 bg-zinc-900 text-emerald-400 focus:ring-emerald-400"
+                          />
+                          <span className="font-medium">{plan.name}</span>
+                          <span className="text-[10px] text-[var(--chalk-muted)] ml-auto">({plan.durationDays}d)</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {visibility === 'free_window' && (

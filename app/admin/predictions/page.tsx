@@ -25,6 +25,14 @@ import {
 
 type MediaAsset = { id: string; storageKey: string };
 type PostItem = { id?: string; match: string; prediction: string };
+type SubscriptionPlan = {
+  id: string;
+  name: string;
+  durationDays: number;
+  priceNGN: string;
+  priceUSDOverride: string | null;
+  isActive: boolean;
+};
 type Post = {
   id: string;
   title: string;
@@ -32,6 +40,7 @@ type Post = {
   scheduledAt: string;
   bookingCode: string;
   visibility: 'plan_specific' | 'subscribers' | 'free_window';
+  planIds?: string[];
   items?: PostItem[];
   media?: MediaAsset[];
 };
@@ -43,6 +52,7 @@ const emptyItem = () => ({ match: '', prediction: '' });
 
 export default function AdminPredictionsPage() {
   const [posts, setPosts] = useState<Post[]>([]);
+  const [availablePlans, setAvailablePlans] = useState<SubscriptionPlan[]>([]);
   const [loading, setLoading] = useState(true);
 
   // UI Tabs & Toggles
@@ -55,6 +65,7 @@ export default function AdminPredictionsPage() {
   const [imgBookingCode, setImgBookingCode] = useState('');
   const [imgScheduledAt, setImgScheduledAt] = useState('');
   const [imgVisibility, setImgVisibility] = useState<'plan_specific' | 'subscribers' | 'free_window'>('subscribers');
+  const [imgPlanIds, setImgPlanIds] = useState<string[]>([]);
   const [imgAutoPublish, setImgAutoPublish] = useState(true);
   const [imgFiles, setImgFiles] = useState<File[]>([]);
   const [imgPreviews, setImgPreviews] = useState<string[]>([]);
@@ -67,6 +78,7 @@ export default function AdminPredictionsPage() {
   const [scheduledAt, setScheduledAt] = useState('');
   const [bookingCode, setBookingCode] = useState('');
   const [visibility, setVisibility] = useState<'plan_specific' | 'subscribers' | 'free_window'>('subscribers');
+  const [selectedPlanIds, setSelectedPlanIds] = useState<string[]>([]);
   const [items, setItems] = useState([emptyItem()]);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [filePreviews, setFilePreviews] = useState<string[]>([]);
@@ -83,6 +95,9 @@ export default function AdminPredictionsPage() {
     apiJson<Post[]>('/api/predictions')
       .then(setPosts)
       .finally(() => setLoading(false));
+    apiJson<SubscriptionPlan[]>('/api/plans')
+      .then(setAvailablePlans)
+      .catch(() => {});
   }
 
   useEffect(load, []);
@@ -174,6 +189,7 @@ export default function AdminPredictionsPage() {
           scheduledAt: postScheduled,
           bookingCode: imgBookingCode.trim() || 'SLIP-IMAGE',
           visibility: imgVisibility,
+          planIds: imgVisibility === 'plan_specific' ? imgPlanIds : [],
           items: [{ match: 'See attached prediction slip screenshot', prediction: 'Slip Image' }],
         }),
       });
@@ -202,6 +218,7 @@ export default function AdminPredictionsPage() {
       setImgTitle('');
       setImgBookingCode('');
       setImgScheduledAt('');
+      setImgPlanIds([]);
       setImgFiles([]);
       setImgPreviews([]);
       setShowImageUploadSection(false);
@@ -254,6 +271,7 @@ export default function AdminPredictionsPage() {
           scheduledAt: new Date(scheduledAt).toISOString(),
           bookingCode,
           visibility,
+          planIds: visibility === 'plan_specific' ? selectedPlanIds : [],
           items: items.filter((i) => i.match && i.prediction),
         }),
       });
@@ -279,6 +297,7 @@ export default function AdminPredictionsPage() {
       setTitle('');
       setScheduledAt('');
       setBookingCode('');
+      setSelectedPlanIds([]);
       setItems([emptyItem()]);
       setSelectedFiles([]);
       setFilePreviews([]);
@@ -605,17 +624,52 @@ export default function AdminPredictionsPage() {
                 <span className="font-semibold text-emerald-300">Publish Live Immediately</span>
               </label>
 
-              <div className="flex items-center gap-1.5 text-xs text-[var(--chalk-muted)]">
-                <span>Visibility:</span>
-                <select
-                  value={imgVisibility}
-                  onChange={(e) => setImgVisibility(e.target.value as any)}
-                  className="bg-[var(--pitch)] border border-[rgba(243,245,236,0.15)] rounded px-2 py-1 text-xs text-white"
-                >
-                  <option value="subscribers">Subscribers</option>
-                  <option value="plan_specific">Plan VIPs</option>
-                  <option value="free_window">Free Window</option>
-                </select>
+              <div className="flex flex-col gap-1.5 text-xs text-[var(--chalk-muted)]">
+                <div className="flex items-center gap-1.5">
+                  <span>Visibility:</span>
+                  <select
+                    value={imgVisibility}
+                    onChange={(e) => setImgVisibility(e.target.value as any)}
+                    className="bg-[var(--pitch)] border border-[rgba(243,245,236,0.15)] rounded px-2 py-1 text-xs text-white"
+                  >
+                    <option value="subscribers">Subscribers</option>
+                    <option value="plan_specific">Plan VIPs</option>
+                    <option value="free_window">Free Window</option>
+                  </select>
+                </div>
+
+                {imgVisibility === 'plan_specific' && (
+                  <div className="mt-2 p-3 rounded-lg bg-[var(--pitch)] border border-emerald-500/30 space-y-2">
+                    <span className="text-[11px] font-semibold text-emerald-300 block">
+                      Select Admin-Created Subscription Plans:
+                    </span>
+                    {availablePlans.length === 0 ? (
+                      <p className="text-[11px] text-[var(--chalk-muted)] italic">
+                        No subscription plans created by admin yet. Create plans in the Membership Plans section.
+                      </p>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {availablePlans.map((plan) => (
+                          <label key={plan.id} className="flex items-center gap-1.5 text-xs text-white bg-black/40 px-2 py-1 rounded border border-[rgba(243,245,236,0.1)] cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={imgPlanIds.includes(plan.id)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setImgPlanIds([...imgPlanIds, plan.id]);
+                                } else {
+                                  setImgPlanIds(imgPlanIds.filter((id) => id !== plan.id));
+                                }
+                              }}
+                              className="rounded border-zinc-700 bg-zinc-900 text-emerald-400 focus:ring-emerald-400"
+                            />
+                            <span>{plan.name}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -698,7 +752,7 @@ export default function AdminPredictionsPage() {
             </div>
           </div>
 
-          <div className="field mb-0">
+          <div className="field mb-0 space-y-2">
             <label htmlFor="visibility" className="text-xs text-[#85a694] font-semibold uppercase tracking-wider font-mono">
               Subscriber Visibility
             </label>
@@ -712,6 +766,40 @@ export default function AdminPredictionsPage() {
               <option value="plan_specific">Plan-Specific VIPs</option>
               <option value="free_window">Free Window (Promotional)</option>
             </select>
+
+            {visibility === 'plan_specific' && (
+              <div className="p-3 rounded-xl bg-[#0b2216] border border-[rgba(243,245,236,0.14)] space-y-2 mt-2">
+                <label className="text-xs text-[#85a694] font-semibold uppercase tracking-wider font-mono block">
+                  Select Admin-Created Subscription Plans
+                </label>
+                {availablePlans.length === 0 ? (
+                  <p className="text-xs text-[var(--chalk-muted)] italic">
+                    No subscription plans created by admin yet. Create plans in the Membership Plans section.
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                    {availablePlans.map((plan) => (
+                      <label key={plan.id} className="flex items-center gap-2 text-xs text-white bg-[var(--pitch)] p-2 rounded-lg border border-[rgba(243,245,236,0.1)] cursor-pointer hover:border-emerald-500/30">
+                        <input
+                          type="checkbox"
+                          checked={selectedPlanIds.includes(plan.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedPlanIds([...selectedPlanIds, plan.id]);
+                            } else {
+                              setSelectedPlanIds(selectedPlanIds.filter((id) => id !== plan.id));
+                            }
+                          }}
+                          className="rounded border-zinc-700 bg-zinc-900 text-[#f5b335] focus:ring-[#f5b335]"
+                        />
+                        <span className="font-medium">{plan.name}</span>
+                        <span className="text-[10px] text-[#85a694] ml-auto">({plan.durationDays}d)</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Attach Prediction Slip Images */}
@@ -969,7 +1057,9 @@ export default function AdminPredictionsPage() {
                       {p.visibility === 'subscribers'
                         ? 'All Active Subscribers'
                         : p.visibility === 'plan_specific'
-                        ? 'VIP Plan Only'
+                        ? p.planIds && p.planIds.length > 0
+                          ? `Plans: ${p.planIds.map((id) => availablePlans.find((ap) => ap.id === id)?.name || id).join(', ')}`
+                          : 'VIP Plan Only'
                         : 'Free Window'}
                     </span>
                   </div>
