@@ -78,4 +78,17 @@ describe('Rate Limiting Architecture & Fail-Closed Policies', () => {
     expect(normalizeIdentifier('email', '  User.Name+Test@Example.COM ')).toBe('email:user.name+test@example.com');
     expect(normalizeIdentifier('user', ' user-123 ')).toBe('user:user-123');
   });
+
+  it('fails closed (503) for 2FA endpoints when rate limiter / Redis is down', async () => {
+    const { checkRateLimit } = await import('@/lib/ratelimit');
+    const brokenLimiter = {
+      limit: vi.fn().mockRejectedValue(new Error('Redis connection down')),
+      failClosed: true,
+    } as any;
+
+    await expect(checkRateLimit(brokenLimiter, ['127.0.0.1', 'user:user-123'])).rejects.toMatchObject({
+      status: 503,
+      message: 'Security service temporarily unavailable. Please try again shortly.',
+    });
+  });
 });

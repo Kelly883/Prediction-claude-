@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { requireUser, errorResponse } from '@/lib/rbac';
 import { generateSecret, generateOtpAuthUri } from '@/lib/twofactor';
 import { encryptTotpSecret } from '@/lib/encryption';
+import { checkRateLimit, authLimiter, getClientIp } from '@/lib/ratelimit';
 
 export const runtime = 'nodejs';
 
@@ -18,6 +19,12 @@ export const runtime = 'nodejs';
 export async function POST(req: NextRequest) {
   try {
     const user = await requireUser(req);
+    const ip = getClientIp(req);
+    const allowed = await checkRateLimit(authLimiter, [ip, `user:${user.sub}`]);
+    if (!allowed) {
+      return NextResponse.json({ error: 'Too many requests, try again shortly' }, { status: 429 });
+    }
+
     const record = await prisma.user.findUniqueOrThrow({ where: { id: user.sub } });
 
     const secret = generateSecret();

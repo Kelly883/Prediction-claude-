@@ -4,12 +4,19 @@ import { requireUser, errorResponse, ApiError } from '@/lib/rbac';
 import { verifyPassword } from '@/lib/password';
 import { verifyTotpCode } from '@/lib/twofactor';
 import { writeAudit } from '@/lib/audit';
+import { checkRateLimit, authLimiter, getClientIp } from '@/lib/ratelimit';
 
 export const runtime = 'nodejs';
 
 export async function POST(req: NextRequest) {
   try {
     const user = await requireUser(req);
+    const ip = getClientIp(req);
+    const allowed = await checkRateLimit(authLimiter, [ip, `user:${user.sub}`]);
+    if (!allowed) {
+      return NextResponse.json({ error: 'Too many requests, try again shortly' }, { status: 429 });
+    }
+
     const { password, code } = await req.json();
 
     const record = await prisma.user.findUniqueOrThrow({ where: { id: user.sub } });
