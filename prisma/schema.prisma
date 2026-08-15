@@ -25,12 +25,6 @@ enum SubscriptionStatus {
   expired
 }
 
-enum RenewalStatus {
-  idle
-  processing
-  failed
-}
-
 enum PaymentProvider {
   paystack
   flutterwave
@@ -43,10 +37,8 @@ enum Currency {
 
 enum TransactionStatus {
   pending
-  processing
   success
   failed
-  cancelled
 }
 
 enum AccessScope {
@@ -139,15 +131,9 @@ model Subscription {
   lastRenewalError String?
   renewalReminderSentAt DateTime?
 
-  // Atomic renewal locking and idempotency tracking
-  renewalStatus    RenewalStatus    @default(idle)
-  renewalLockedAt  DateTime?
-  renewalReference String?
-
   transactions Transaction[]
 
   @@index([userId, status, endAt])
-  @@index([status, autoRenew, endAt, renewalStatus])
 }
 
 /// Transaction model serves as the Payment Attempt and Idempotency model.
@@ -169,11 +155,8 @@ model Transaction {
   idempotencyKey    String            @unique
   rawPayload        Json?
   createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
-  completedAt       DateTime?
 
   @@index([status])
-  @@index([userId, createdAt])
 }
 
 model PredictionPost {

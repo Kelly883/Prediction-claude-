@@ -351,144 +351,24 @@ textarea:focus-visible {
   margin-bottom: 18px;
 }
 
-/* Dashboard and Admin Header Styles */
-.dashboard-header-root {
-  border-bottom: 1px solid rgba(243, 245, 236, 0.12);
-  background: var(--pitch-dark, #0b2216);
-  width: 100%;
-  position: sticky;
-  top: 0;
-  z-index: 50;
-}
-
-.dashboard-header-container {
-  display: flex;
-  align-items: center;
-  justifyContent: space-between;
-  height: 58px;
-  gap: 8px;
-}
-
-.dashboard-header-brand {
-  text-decoration: none;
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-  min-width: 0;
-}
-
-.dashboard-header-nav {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-}
-
-.dashboard-nav-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 12px;
-  font-weight: 500;
-  text-decoration: none;
-  color: var(--chalk-muted);
-  white-space: nowrap;
-  padding: 6px 10px;
-  border-radius: 6px;
-  transition: background 0.15s ease, color 0.15s ease;
-  min-height: 32px;
-}
-
-.dashboard-nav-item:hover {
-  color: var(--chalk);
-  background: rgba(243, 245, 236, 0.08);
-}
-
-.dashboard-nav-item-active {
-  color: var(--floodlight);
-  background: rgba(245, 179, 53, 0.14);
-  border: 1px solid rgba(245, 179, 53, 0.35);
-  font-weight: 600;
-}
-
-.dashboard-nav-item-secondary {
-  color: var(--chalk);
-  background: rgba(243, 245, 236, 0.06);
-  border: 1px solid rgba(243, 245, 236, 0.12);
-}
-
-.dashboard-nav-item-secondary:hover {
-  background: rgba(243, 245, 236, 0.12);
-}
-
-.dashboard-nav-item-admin-badge {
-  color: #f5b335;
-  background: rgba(245, 179, 53, 0.14);
-  border: 1px solid rgba(245, 179, 53, 0.4);
-  font-weight: 600;
-}
-
-.dashboard-logout-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 6px 10px;
-  font-size: 12px;
-  font-weight: 500;
-  white-space: nowrap;
-  min-height: 32px;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--chalk-muted);
-  border: 1px solid rgba(243, 245, 236, 0.2);
-  cursor: pointer;
-  transition: all 0.15s ease;
-  font-family: inherit;
-}
-
-.dashboard-logout-btn:hover {
-  color: #ff8585;
-  border-color: rgba(239, 68, 68, 0.4);
-  background: rgba(239, 68, 68, 0.08);
-}
-
-@media (max-width: 480px) {
-  .dashboard-header-container {
-    height: 52px;
-    padding-left: 12px;
-    padding-right: 12px;
-  }
-  .dashboard-nav-item {
-    padding: 5px 8px;
-    font-size: 11px;
-  }
-  .dashboard-logout-btn {
-    padding: 5px 8px;
-    font-size: 11px;
-  }
-  .logout-text {
-    display: none;
-  }
-}
-
-/* Dashboard/admin app shell: fixed-width sidebar + fluid content area. */
+/* Dashboard/admin app shell: fixed-width sidebar + fluid content area.
+   Deliberately a real vertical sidebar rather than the horizontal pill
+   nav this replaced — that stopped scaling once the admin section grew
+   past ~5 destinations. */
 .dashboard-shell {
   display: flex;
-  gap: 28px;
+  gap: 32px;
   align-items: flex-start;
-  width: 100%;
 }
-
 .sidebar {
   width: 200px;
   flex-shrink: 0;
   position: sticky;
-  top: 76px;
+  top: 96px;
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
-
 .sidebar-title {
   font-family: var(--font-mono), monospace;
   text-transform: uppercase;
@@ -498,138 +378,81 @@ textarea:focus-visible {
   padding: 0 12px;
   margin-bottom: 10px;
 }
-
-.sidebar-links-wrapper {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  width: 100%;
-}
-
 .sidebar-link {
   padding: 9px 12px;
-  border-radius: 6px;
+  border-radius: 4px;
   font-size: 14px;
   text-decoration: none;
   color: var(--chalk-muted);
-  transition: all 0.15s ease;
-  display: block;
 }
-
 .sidebar-link:hover {
   color: var(--chalk);
   background: var(--turf);
 }
-
 .sidebar-link-active {
-  color: var(--pitch) !important;
-  background: var(--floodlight) !important;
+  color: var(--pitch);
+  background: var(--floodlight);
   font-weight: 600;
 }
-
 .dashboard-content {
   flex: 1;
   min-width: 0; /* lets tables/wide content shrink instead of overflowing the flex item */
 }
 
-@media (max-width: 820px) {
+@media (max-width: 780px) {
   .dashboard-shell {
     flex-direction: column;
     gap: 16px;
   }
   .sidebar {
     width: 100%;
-    position: sticky;
-    top: 52px;
-    z-index: 40;
-    flex-direction: column;
-    overflow-x: auto;
-    background: var(--turf);
-    border: 1px solid rgba(243, 245, 236, 0.14);
-    border-radius: 8px;
-    padding: 6px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
-  }
-  .sidebar-title {
-    display: none;
-  }
-  .sidebar-links-wrapper {
+    position: static;
     flex-direction: row;
     overflow-x: auto;
     gap: 4px;
-    padding: 2px 2px 4px;
+    background: var(--turf);
+    border-radius: 6px;
+    padding: 6px;
     -webkit-overflow-scrolling: touch;
-    scrollbar-width: thin;
-    scrollbar-color: rgba(245, 179, 53, 0.4) transparent;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
   }
-  .sidebar-links-wrapper::-webkit-scrollbar {
-    height: 4px;
+  .sidebar::-webkit-scrollbar {
+    display: none;
   }
-  .sidebar-links-wrapper::-webkit-scrollbar-thumb {
-    background: rgba(245, 179, 53, 0.3);
-    border-radius: 4px;
+  .sidebar-title {
+    display: none;
   }
   .sidebar-link {
     white-space: nowrap;
     flex-shrink: 0;
     font-size: 13px;
     padding: 7px 12px;
-    border-radius: 6px;
   }
 }
 
-/* Responsive utilities for admin tables and grids */
+/* Responsive utilities for admin dashboard */
 .table-container {
   width: 100%;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
-  border-radius: var(--radius-ticket);
-  border: var(--border-hairline);
-  background: var(--turf);
-}
-
-.table-container table {
-  width: 100%;
-  border-collapse: collapse;
-  min-width: 580px;
-}
-
-.table-container th {
-  padding: 12px 14px;
-  text-align: left;
-  font-size: 11px;
-  font-family: var(--font-mono), monospace;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--chalk-muted);
-  border-bottom: var(--border-hairline);
-  background: rgba(0, 0, 0, 0.2);
-}
-
-.table-container td {
-  padding: 12px 14px;
-  font-size: 13px;
-  border-bottom: 1px solid rgba(243, 245, 236, 0.08);
-}
-
-.table-container tr:last-child td {
-  border-bottom: none;
 }
 
 .admin-grid-2col {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 340px;
+  grid-template-columns: 1fr 340px;
   gap: 24px;
 }
 
 .admin-grid-half {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 20px;
+  gap: 24px;
 }
 
-@media (max-width: 960px) {
-  .admin-grid-2col {
+@media (max-width: 900px) {
+  .admin-grid-2col,
+  .admin-grid-half {
     grid-template-columns: 1fr;
     gap: 20px;
   }
@@ -1521,4 +1344,3 @@ textarea:focus-visible {
   line-height: 1.5;
   margin: 0;
 }
-

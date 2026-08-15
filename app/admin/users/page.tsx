@@ -2,10 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { apiJson } from '@/lib/api-client';
-import { Users, Download, ShieldCheck, Mail, Calendar, Globe, Phone } from 'lucide-react';
+import { apiJson, apiFetch } from '@/lib/api-client';
 
-type UserRow = { id: string; name: string; email: string; phone: string | null; country: string; createdAt: string; role?: string };
+type UserRow = { id: string; name: string; email: string; phone: string | null; country: string; createdAt: string };
 
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<UserRow[]>([]);
@@ -35,118 +34,57 @@ export default function AdminUsersPage() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-[rgba(243,245,236,0.1)]">
-        <div>
-          <h1 className="font-bold text-2xl sm:text-3xl text-white">Users & Subscribers</h1>
-          <p className="text-xs sm:text-sm text-[var(--chalk-muted)] mt-1">
-            Manage registered accounts, subscription history, and export subscriber lists.
-          </p>
-        </div>
-        <button
-          onClick={exportCsv}
-          className="btn btn-ghost text-xs sm:text-sm py-2 px-4 inline-flex items-center gap-1.5 self-start sm:self-auto"
-          disabled={exporting}
-        >
-          <Download size={14} />
-          <span>{exporting ? 'Exporting…' : 'Export CSV'}</span>
+    <>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 24 }}>
+        <h1 className="display" style={{ fontSize: 28 }}>Users</h1>
+        <button onClick={exportCsv} className="btn btn-ghost" style={{ padding: '8px 16px', fontSize: 13 }} disabled={exporting}>
+          {exporting ? 'Exporting…' : 'Export CSV'}
         </button>
       </div>
 
-      {/* Filter Tabs */}
-      <div className="flex items-center gap-2 flex-wrap">
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
         {(['', 'paid', 'unpaid'] as const).map((f) => (
           <button
             key={f}
             onClick={() => setFilter(f)}
-            className={`text-xs sm:text-sm py-1.5 px-3.5 rounded-md font-medium transition-all ${
-              filter === f
-                ? 'bg-[var(--floodlight)] text-[var(--pitch)] font-semibold'
-                : 'bg-[var(--turf)] text-[var(--chalk-muted)] hover:text-white border border-[rgba(243,245,236,0.1)]'
-            }`}
+            className={filter === f ? 'btn btn-primary' : 'btn btn-ghost'}
+            style={{ padding: '6px 14px', fontSize: 13 }}
           >
-            {f === '' ? 'All Accounts' : f === 'paid' ? 'Active Paid Subscribers' : 'Free / Trial Users'}
+            {f === '' ? 'All' : f[0].toUpperCase() + f.slice(1)}
           </button>
         ))}
       </div>
 
-      {/* Users List Container */}
-      <div className="card p-4 sm:p-5">
-        <h2 className="text-base font-semibold text-white mb-4 flex items-center justify-between">
-          <span>Registered Accounts ({users.length})</span>
-          <span className="text-xs text-[var(--chalk-muted)] font-mono">Real-time DB</span>
-        </h2>
-
+      <div className="card">
         {loading ? (
-          <div className="p-8 text-center text-sm text-[var(--chalk-muted)]">
-            Loading user directory…
-          </div>
-        ) : users.length === 0 ? (
-          <div className="p-8 text-center border border-dashed border-[rgba(243,245,236,0.14)] rounded-lg">
-            <Users size={28} className="mx-auto mb-2 text-[var(--floodlight)] opacity-80" />
-            <p className="text-sm text-white font-medium">No users found</p>
-            <p className="text-xs text-[var(--chalk-muted)] mt-1">
-              Registered member profiles and subscribers will show here.
-            </p>
-          </div>
+          <p>Loading…</p>
         ) : (
-          <div className="space-y-3">
-            {users.map((u) => (
-              <div
-                key={u.id}
-                className="p-4 rounded-lg bg-[var(--pitch)] border border-[rgba(243,245,236,0.1)] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
-              >
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <Link
-                      href={`/admin/users/${u.id}`}
-                      className="font-semibold text-base text-white hover:text-[var(--floodlight)] transition-colors"
-                    >
-                      {u.name}
-                    </Link>
-                    {u.role === 'admin' && (
-                      <span className="px-2 py-0.5 text-[9px] font-bold uppercase rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                        Admin
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-3 text-xs text-[var(--chalk-muted)] flex-wrap">
-                    <span className="flex items-center gap-1">
-                      <Mail size={12} />
-                      {u.email}
-                    </span>
-                    {u.phone && (
-                      <span className="flex items-center gap-1 font-mono">
-                        <Phone size={12} />
-                        {u.phone}
-                      </span>
-                    )}
-                    <span className="flex items-center gap-1 font-mono">
-                      <Globe size={12} />
-                      {u.country}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3 self-end sm:self-center">
-                  <span className="text-xs text-[var(--chalk-muted)] font-mono flex items-center gap-1">
-                    <Calendar size={12} />
-                    {new Date(u.createdAt).toLocaleDateString()}
-                  </span>
-                  <Link
-                    href={`/admin/users/${u.id}`}
-                    className="btn btn-ghost text-xs py-1.5 px-3"
-                  >
-                    View Details
-                  </Link>
-                </div>
-              </div>
-            ))}
+          <div className="table-container">
+            <table style={{ width: '100%', minWidth: 460, borderCollapse: 'collapse', fontSize: 14 }}>
+              <thead>
+                <tr style={{ textAlign: 'left', color: 'var(--chalk-muted)', fontSize: 12 }}>
+                  <th style={{ padding: '8px 0' }}>Name</th>
+                  <th>Email</th>
+                  <th>Country</th>
+                  <th>Joined</th>
+                </tr>
+              </thead>
+              <tbody>
+                {users.map((u) => (
+                  <tr key={u.id} style={{ borderTop: '1px solid rgba(243,245,236,0.08)' }}>
+                    <td style={{ padding: '8px 0' }}>
+                      <Link href={`/admin/users/${u.id}`} style={{ color: 'var(--chalk)' }}>{u.name}</Link>
+                    </td>
+                    <td>{u.email}</td>
+                    <td>{u.country}</td>
+                    <td>{new Date(u.createdAt).toLocaleDateString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
-    </div>
+    </>
   );
 }
-

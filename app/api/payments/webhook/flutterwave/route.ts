@@ -12,8 +12,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid signature' }, { status: 400 });
     }
 
-    const rawBody = await req.text();
-    const body = JSON.parse(rawBody);
+    const body = await req.json();
     if (body.event !== 'charge.completed') return NextResponse.json({ received: true });
 
     const txRef = body.data?.tx_ref;

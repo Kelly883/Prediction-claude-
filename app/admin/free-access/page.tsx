@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import { apiJson } from '@/lib/api-client';
-import { Gift, ShieldAlert, Check, Plus, Trash2, Calendar, UserCheck } from 'lucide-react';
 
 type Rule = { id: string; type: 'global_trial' | 'promo_window'; trialDays: number | null; startAt: string | null; endAt: string | null; isActive: boolean };
 type Grant = { id: string; expiresAt: string | null; user: { email: string }; post: { title: string } | null };
@@ -71,9 +70,11 @@ export default function FreeAccessPage() {
     setSavingGrant(true);
     setGrantError(null);
     try {
+      // Look up the user by email first — the API takes a userId, and
+      // asking the admin to know a UUID by heart would be unreasonable.
       const users = await apiJson<{ id: string; email: string }[]>(`/api/admin/users`);
       const match = users.find((u) => u.email.toLowerCase() === grantEmail.toLowerCase());
-      if (!match) throw new Error(`No registered user found with email ${grantEmail}`);
+      if (!match) throw new Error(`No user found with email ${grantEmail}`);
 
       await apiJson('/api/admin/complimentary-access', {
         method: 'POST',
@@ -90,220 +91,142 @@ export default function FreeAccessPage() {
   }
 
   async function revokeGrant(id: string) {
-    if (!confirm('Revoke this complimentary access grant?')) return;
+    if (!confirm('Revoke this complimentary access?')) return;
     await apiJson(`/api/admin/complimentary-access/${id}`, { method: 'DELETE' });
     load();
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="pb-2 border-b border-[rgba(243,245,236,0.1)]">
-        <h1 className="font-bold text-2xl sm:text-3xl text-white">Free Access & Promo Rules</h1>
-        <p className="text-xs sm:text-sm text-[var(--chalk-muted)] mt-1">
-          Configure global trial periods, scheduled promotional free windows, and manual VIP complimentary grants.
-        </p>
-      </div>
+    <>
+      <h1 className="display" style={{ fontSize: 28, marginBottom: 8 }}>Free access</h1>
+      <p style={{ color: 'var(--chalk-muted)', fontSize: 14, marginBottom: 24 }}>
+        PRD Section 5 — global trial days, promo windows, and per-user complimentary access, all bypass the paywall independent of a subscription.
+      </p>
 
-      {/* Rules Section */}
-      <div className="admin-grid-2col">
-        <div className="card p-4 sm:p-5">
-          <h2 className="text-base font-semibold text-white mb-4 flex items-center justify-between">
-            <span>Configured Promo & Trial Rules</span>
-            <span className="text-xs text-[var(--chalk-muted)] font-mono">{rules.length} Rules</span>
-          </h2>
-
-          {loading ? (
-            <div className="p-8 text-center text-sm text-[var(--chalk-muted)]">Loading rules…</div>
-          ) : rules.length === 0 ? (
-            <div className="p-6 text-center border border-dashed border-[rgba(243,245,236,0.14)] rounded-lg">
-              <Gift size={24} className="mx-auto mb-2 text-[var(--floodlight)] opacity-70" />
-              <p className="text-sm text-white font-medium">No trial or promo rules active</p>
-              <p className="text-xs text-[var(--chalk-muted)] mt-1">
-                Add a rule to give new users a free trial or schedule open viewing days.
-              </p>
-            </div>
+      <div className="admin-grid-2col" style={{ marginBottom: 24 }}>
+        <div className="card">
+          <h2 style={{ fontSize: 16, marginBottom: 12 }}>Trial & promo rules</h2>
+          {loading ? <p>Loading…</p> : rules.length === 0 ? (
+            <p style={{ color: 'var(--chalk-muted)', fontSize: 14 }}>No rules configured.</p>
           ) : (
-            <div className="space-y-3">
-              {rules.map((r) => (
-                <div
-                  key={r.id}
-                  className="p-3.5 rounded-lg bg-[var(--pitch)] border border-[rgba(243,245,236,0.1)] flex items-center justify-between gap-3 flex-wrap"
-                >
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold text-sm text-white">
-                        {r.type === 'global_trial' ? 'Global Signup Trial' : 'Promotional Window'}
-                      </span>
-                      <span
-                        className={`px-2 py-0.5 text-[9px] font-bold uppercase rounded ${
-                          r.isActive
-                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                            : 'bg-zinc-700/40 text-zinc-400 border border-zinc-700'
-                        }`}
-                      >
-                        {r.isActive ? 'Active' : 'Disabled'}
-                      </span>
-                    </div>
-                    <div className="text-xs text-[var(--chalk-muted)] mt-1 font-mono">
-                      {r.type === 'global_trial'
-                        ? `${r.trialDays} free days on new registration`
-                        : `${new Date(r.startAt!).toLocaleDateString()} → ${new Date(r.endAt!).toLocaleDateString()}`}
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => toggleRule(r)}
-                    className="btn btn-ghost text-xs py-1.5 px-3"
-                  >
-                    {r.isActive ? 'Disable' : 'Enable'}
-                  </button>
-                </div>
-              ))}
+            <div className="table-container">
+              <table style={{ width: '100%', minWidth: 440, borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr style={{ textAlign: 'left', color: 'var(--chalk-muted)', fontSize: 12 }}>
+                    <th style={{ padding: '6px 0' }}>Type</th>
+                    <th>Details</th>
+                    <th>Status</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {rules.map((r) => (
+                    <tr key={r.id} style={{ borderTop: '1px solid rgba(243,245,236,0.08)' }}>
+                      <td style={{ padding: '6px 0' }}>{r.type === 'global_trial' ? 'Global trial' : 'Promo window'}</td>
+                      <td>
+                        {r.type === 'global_trial'
+                          ? `${r.trialDays} days from signup`
+                          : `${new Date(r.startAt!).toLocaleDateString()} → ${new Date(r.endAt!).toLocaleDateString()}`}
+                      </td>
+                      <td style={{ color: r.isActive ? 'var(--floodlight)' : 'var(--chalk-muted)' }}>{r.isActive ? 'Active' : 'Inactive'}</td>
+                      <td style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                        <button onClick={() => toggleRule(r)} className="btn btn-ghost" style={{ padding: '4px 10px', fontSize: 12 }}>
+                          {r.isActive ? 'Disable' : 'Enable'}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </div>
 
-        {/* Rule Form */}
-        <form onSubmit={createRule} className="card p-4 sm:p-5">
-          <h2 className="text-base font-semibold text-white mb-4 flex items-center gap-2">
-            <Plus size={16} className="text-[var(--floodlight)]" />
-            <span>Create Trial / Promo Rule</span>
-          </h2>
-
-          <div className="space-y-4">
-            <div className="field mb-0">
-              <label htmlFor="ruleType" className="text-xs text-[var(--chalk-muted)] font-medium">Rule Type</label>
-              <select
-                id="ruleType"
-                value={ruleType}
-                onChange={(e) => setRuleType(e.target.value as any)}
-                className="w-full bg-[var(--pitch)] border border-[rgba(243,245,236,0.14)] rounded-md p-3 text-sm text-[var(--chalk)]"
-              >
-                <option value="global_trial">Global Trial (All New Signups)</option>
-                <option value="promo_window">Dated Promo Window (Open To All)</option>
-              </select>
-            </div>
-
-            {ruleType === 'global_trial' ? (
-              <div className="field mb-0">
-                <label htmlFor="trialDays" className="text-xs text-[var(--chalk-muted)] font-medium">Trial Duration (Days)</label>
-                <input
-                  id="trialDays"
-                  type="number"
-                  min={1}
-                  required
-                  value={trialDays}
-                  onChange={(e) => setTrialDays(Number(e.target.value))}
-                  className="w-full"
-                />
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <div className="field mb-0">
-                  <label htmlFor="startAt" className="text-xs text-[var(--chalk-muted)] font-medium">Start Date & Time</label>
-                  <input
-                    id="startAt"
-                    type="datetime-local"
-                    required
-                    value={startAt}
-                    onChange={(e) => setStartAt(e.target.value)}
-                    className="w-full"
-                  />
-                </div>
-                <div className="field mb-0">
-                  <label htmlFor="endAt" className="text-xs text-[var(--chalk-muted)] font-medium">End Date & Time</label>
-                  <input
-                    id="endAt"
-                    type="datetime-local"
-                    required
-                    value={endAt}
-                    onChange={(e) => setEndAt(e.target.value)}
-                    className="w-full"
-                  />
-                </div>
-              </div>
-            )}
-
-            {ruleError && <div className="error-text">{ruleError}</div>}
-
-            <button type="submit" className="btn btn-primary w-full py-2.5 text-sm font-semibold" disabled={savingRule}>
-              {savingRule ? 'Saving…' : 'Activate Rule'}
-            </button>
+        <form onSubmit={createRule} className="card">
+          <h2 style={{ fontSize: 16, marginBottom: 16 }}>New rule</h2>
+          <div className="field">
+            <label htmlFor="ruleType">Type</label>
+            <select
+              id="ruleType"
+              value={ruleType}
+              onChange={(e) => setRuleType(e.target.value as any)}
+              style={{ background: 'var(--pitch)', border: '1px solid rgba(243,245,236,0.14)', borderRadius: 4, padding: '12px 14px', color: 'var(--chalk)' }}
+            >
+              <option value="global_trial">Global trial (new signups)</option>
+              <option value="promo_window">Promo window (everyone, dated)</option>
+            </select>
           </div>
+
+          {ruleType === 'global_trial' ? (
+            <div className="field">
+              <label htmlFor="trialDays">Trial days</label>
+              <input id="trialDays" type="number" min={1} required value={trialDays} onChange={(e) => setTrialDays(Number(e.target.value))} />
+            </div>
+          ) : (
+            <>
+              <div className="field">
+                <label htmlFor="startAt">Starts</label>
+                <input id="startAt" type="datetime-local" required value={startAt} onChange={(e) => setStartAt(e.target.value)} />
+              </div>
+              <div className="field">
+                <label htmlFor="endAt">Ends</label>
+                <input id="endAt" type="datetime-local" required value={endAt} onChange={(e) => setEndAt(e.target.value)} />
+              </div>
+            </>
+          )}
+
+          {ruleError && <div className="error-text">{ruleError}</div>}
+          <button type="submit" className="btn btn-primary" style={{ width: '100%' }} disabled={savingRule}>
+            {savingRule ? 'Creating…' : 'Create rule'}
+          </button>
         </form>
       </div>
 
-      {/* Complimentary Access Section */}
       <div className="admin-grid-2col">
-        <div className="card p-4 sm:p-5">
-          <h2 className="text-base font-semibold text-white mb-4 flex items-center justify-between">
-            <span>Complimentary VIP Grants</span>
-            <span className="text-xs text-[var(--chalk-muted)] font-mono">{grants.length} Grants</span>
-          </h2>
-
+        <div className="card">
+          <h2 style={{ fontSize: 16, marginBottom: 12 }}>Complimentary access grants</h2>
           {grants.length === 0 ? (
-            <div className="p-6 text-center border border-dashed border-[rgba(243,245,236,0.14)] rounded-lg">
-              <UserCheck size={24} className="mx-auto mb-2 text-[var(--floodlight)] opacity-70" />
-              <p className="text-sm text-white font-medium">No VIP grants active</p>
-              <p className="text-xs text-[var(--chalk-muted)] mt-1">
-                Grant individual subscribers lifetime or promotional complimentary access.
-              </p>
-            </div>
+            <p style={{ color: 'var(--chalk-muted)', fontSize: 14 }}>No grants yet.</p>
           ) : (
-            <div className="space-y-3">
-              {grants.map((g) => (
-                <div
-                  key={g.id}
-                  className="p-3.5 rounded-lg bg-[var(--pitch)] border border-[rgba(243,245,236,0.1)] flex items-center justify-between gap-3 flex-wrap"
-                >
-                  <div>
-                    <div className="font-semibold text-sm text-white">{g.user?.email}</div>
-                    <div className="text-xs text-[var(--floodlight)] font-mono mt-0.5">
-                      {g.post ? g.post.title : 'Full VIP Access Pass'}
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => revokeGrant(g.id)}
-                    className="btn btn-ghost text-xs py-1.5 px-3 text-red-400 hover:text-red-300"
-                  >
-                    Revoke
-                  </button>
-                </div>
-              ))}
+            <div className="table-container">
+              <table style={{ width: '100%', minWidth: 440, borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr style={{ textAlign: 'left', color: 'var(--chalk-muted)', fontSize: 12 }}>
+                    <th style={{ padding: '6px 0' }}>User</th>
+                    <th>Scope</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {grants.map((g) => (
+                    <tr key={g.id} style={{ borderTop: '1px solid rgba(243,245,236,0.08)' }}>
+                      <td style={{ padding: '6px 0' }}>{g.user.email}</td>
+                      <td>{g.post ? g.post.title : 'Full access'}</td>
+                      <td style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                        <button onClick={() => revokeGrant(g.id)} className="btn btn-ghost" style={{ padding: '4px 10px', fontSize: 12, color: 'var(--card-red)' }}>
+                          Revoke
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </div>
 
-        {/* Grant Form */}
-        <form onSubmit={grantAccess} className="card p-4 sm:p-5">
-          <h2 className="text-base font-semibold text-white mb-4 flex items-center gap-2">
-            <UserCheck size={16} className="text-[var(--floodlight)]" />
-            <span>Grant Complimentary VIP</span>
-          </h2>
-
-          <div className="space-y-4">
-            <div className="field mb-0">
-              <label htmlFor="grantEmail" className="text-xs text-[var(--chalk-muted)] font-medium">User Email Address</label>
-              <input
-                id="grantEmail"
-                type="email"
-                required
-                value={grantEmail}
-                onChange={(e) => setGrantEmail(e.target.value)}
-                placeholder="subscriber@example.com"
-                className="w-full"
-              />
-            </div>
-
-            {grantError && <div className="error-text">{grantError}</div>}
-
-            <button type="submit" className="btn btn-primary w-full py-2.5 text-sm font-semibold" disabled={savingGrant}>
-              {savingGrant ? 'Granting Access…' : 'Grant Full VIP Access'}
-            </button>
+        <form onSubmit={grantAccess} className="card">
+          <h2 style={{ fontSize: 16, marginBottom: 16 }}>Grant full access</h2>
+          <div className="field">
+            <label htmlFor="grantEmail">User email</label>
+            <input id="grantEmail" type="email" required value={grantEmail} onChange={(e) => setGrantEmail(e.target.value)} placeholder="user@example.com" />
           </div>
+          {grantError && <div className="error-text">{grantError}</div>}
+          <button type="submit" className="btn btn-primary" style={{ width: '100%' }} disabled={savingGrant}>
+            {savingGrant ? 'Granting…' : 'Grant access'}
+          </button>
         </form>
       </div>
-    </div>
+    </>
   );
 }
-

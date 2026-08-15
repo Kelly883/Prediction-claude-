@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { hashPassword } from '@/lib/password';
-import { checkRateLimit, authLimiter, getClientIp, normalizeIdentifier } from '@/lib/ratelimit';
+import { checkRateLimit, authLimiter } from '@/lib/ratelimit';
 import { errorResponse, ApiError } from '@/lib/rbac';
 import { RegisterSchema } from '@/lib/schemas';
 
@@ -9,17 +9,12 @@ export const runtime = 'nodejs'; // bcryptjs + Prisma need the Node runtime, not
 
 export async function POST(req: NextRequest) {
   try {
-    const rawBody = await req.json();
-    const { name, email, phone, password, country } = RegisterSchema.parse(rawBody);
-
-    const ip = getClientIp(req);
-    const emailIdentifier = normalizeIdentifier('email', email);
-
-    // Fail-closed dual rate limiting on registration
-    const allowed = await checkRateLimit(authLimiter, [ip, emailIdentifier]);
-    if (!allowed) {
+    const ip = req.headers.get('x-forwarded-for') ?? 'unknown';
+    if (!(await checkRateLimit(authLimiter, ip))) {
       return NextResponse.json({ error: 'Too many attempts, try again shortly' }, { status: 429 });
     }
+
+    const { name, email, phone, password, country } = RegisterSchema.parse(await req.json());
 
     const passwordHash = await hashPassword(password);
     const user = await prisma.user

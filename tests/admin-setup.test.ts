@@ -60,16 +60,10 @@ vi.mock('@/lib/prisma', () => ({
   },
 }));
 
-vi.mock('@/lib/ratelimit', async () => {
-  const actual = await vi.importActual<any>('@/lib/ratelimit');
-  return {
-    ...actual,
-    checkRateLimit: vi.fn(async () => true),
-    authLimiter: {},
-    adminLimiter: {},
-    getClientIp: () => '127.0.0.1',
-  };
-});
+vi.mock('@/lib/ratelimit', () => ({
+  checkRateLimit: vi.fn(async () => true),
+  authLimiter: {},
+}));
 
 describe('One-Time Admin Setup API', () => {
   beforeEach(() => {

@@ -16,8 +16,12 @@ const encoder = new TextEncoder();
  * Fail loudly instead of failing open at request time.
  */
 function requireSecret(name: string, value: string | undefined): Uint8Array {
-  const secret = value && value.length >= 32 ? value : 'predictpro-development-jwt-secret-key-at-least-32-chars-long';
-  return encoder.encode(secret);
+  if (!value || value.length < 32) {
+    throw new Error(
+      `${name} is missing or too short (need >=32 chars) — refusing to start with a weak/empty JWT signing key`,
+    );
+  }
+  return encoder.encode(value);
 }
 
 function getAccessSecret(): Uint8Array {

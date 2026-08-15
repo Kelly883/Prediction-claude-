@@ -203,9 +203,9 @@ export default function AdminPredictionsPage() {
               onChange={(e) => setVisibility(e.target.value as any)}
               className="admin-text-input"
             >
-              <option value="subscribers">All Active Subscribers</option>
-              <option value="plan_specific">Plan-Specific VIPs</option>
-              <option value="free_window">Free Window (Promotional)</option>
+              <option value="subscribers">All subscribers</option>
+              <option value="plan_specific">Specific plans</option>
+              <option value="free_window">Free window</option>
             </select>
           </div>
 

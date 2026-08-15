@@ -1,7 +1,5 @@
 'use client';
 
-import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import DashboardHeader from '@/components/DashboardHeader';
 import Sidebar from '@/components/Sidebar';
 import { DashboardUserProvider, useDashboardUser } from '@/lib/dashboard-user-context';
@@ -14,26 +12,10 @@ const USER_LINKS = [
 ];
 
 function DashboardChrome({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useDashboardUser();
-  const router = useRouter();
-
-  useEffect(() => {
-    if (!loading && user?.role === 'admin') {
-      router.replace('/admin');
-    }
-  }, [user, loading, router]);
-
-  if (!loading && user?.role === 'admin') {
-    return (
-      <div className="p-8 text-center text-sm text-[var(--chalk-muted)]">
-        Redirecting to Admin Portal…
-      </div>
-    );
-  }
-
+  const { user } = useDashboardUser();
   return (
     <>
-      <DashboardHeader isAdmin={false} />
+      <DashboardHeader isAdmin={user?.role === 'admin'} />
       <section className="section-tight">
         <div className="container dashboard-shell">
           <Sidebar title="Account" items={USER_LINKS} />

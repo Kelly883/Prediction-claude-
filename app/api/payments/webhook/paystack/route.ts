@@ -24,7 +24,6 @@ export async function POST(req: NextRequest) {
     if (!body.data?.reference) {
       return NextResponse.json({ error: 'Missing transaction reference' }, { status: 400 });
     }
-
     const customerEmail = body.data?.customer?.email ?? null;
 
     // handleVerifiedWebhook executes atomic state transition (pending/processing -> success)
