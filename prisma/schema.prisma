@@ -136,6 +136,8 @@ model Subscription {
   @@index([userId, status, endAt])
 }
 
+/// Transaction model serves as the Payment Attempt and Idempotency model.
+/// providerReference has a UNIQUE database constraint enforced by PostgreSQL.
 model Transaction {
   id                String            @id @default(uuid())
   userId            String

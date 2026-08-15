@@ -15,6 +15,10 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     if (body.event !== 'charge.completed') return NextResponse.json({ received: true });
 
+    if (!body.data?.tx_ref) {
+      return NextResponse.json({ error: 'Missing transaction reference' }, { status: 400 });
+    }
+
     const result = await handleVerifiedWebhook({
       providerReference: body.data.tx_ref,
       status: body.data.status === 'successful' ? 'success' : 'failed',
