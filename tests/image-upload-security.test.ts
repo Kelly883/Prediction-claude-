@@ -119,6 +119,22 @@ describe('Production Image Upload Security & Validation', () => {
       expect(result.sha256).toBeDefined();
       expect(result.sha256.length).toBe(64);
     });
+
+    it('rejects malicious renamed files (e.g. PHP script or executable renamed to .jpg)', async () => {
+      const phpScript = Buffer.from('<?php system($_GET["cmd"]); ?>');
+      expect(() => inspectMagicBytes(phpScript)).toThrowError(ApiError);
+      await expect(sanitizeAndValidateImage(phpScript, 'image/jpeg')).rejects.toThrowError(
+        'Invalid image format. Only JPG and PNG images are allowed.'
+      );
+    });
+
+    it('rejects spoofed header with invalid image content', async () => {
+      // Valid JPEG header followed by trash / non-decodable content
+      const spoofed = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00]);
+      await expect(sanitizeAndValidateImage(spoofed, 'image/jpeg')).rejects.toThrowError(
+        'Invalid or corrupted image.'
+      );
+    });
   });
 
   describe('Decompression Bomb & Dimension Protections', () => {
