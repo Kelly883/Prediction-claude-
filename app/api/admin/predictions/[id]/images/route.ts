@@ -4,6 +4,7 @@ import { uploadMedia } from '@/lib/media';
 import { writeAudit } from '@/lib/audit';
 import { prisma } from '@/lib/prisma';
 import { checkRateLimit, adminLimiter, getClientIp } from '@/lib/ratelimit';
+import { UpdatePredictionSchema } from '@/lib/schemas';
 
 export const runtime = 'nodejs'; // sharp requires the Node runtime
 
@@ -57,6 +58,24 @@ export async function POST(
     }
 
     const asset = await uploadMedia(postId, file);
+
+    // Optionally update post plan assignment during image upload
+    const visibility = formData.get('visibility') as string | null;
+    const planIdsRaw = formData.get('planIds') as string | null;
+    if (visibility || planIdsRaw) {
+      const updateData = UpdatePredictionSchema.parse({
+        visibility: visibility || undefined,
+        planIds: planIdsRaw ? planIdsRaw.split(',').filter(Boolean) : undefined,
+      });
+      await prisma.predictionPost.update({
+        where: { id: postId },
+        data: {
+          ...(updateData.visibility ? { visibility: updateData.visibility } : {}),
+          ...(updateData.planIds ? { planIds: updateData.planIds } : {}),
+        },
+      });
+    }
+
     await writeAudit({
       actorId: admin.sub,
       action: 'prediction.image_upload',
