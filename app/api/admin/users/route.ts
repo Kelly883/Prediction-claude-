@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAdmin, errorResponse, ApiError } from '@/lib/rbac';
 import { hashPassword } from '@/lib/password';
+import { writeAudit } from '@/lib/audit';
 
 export const runtime = 'nodejs';
 
@@ -137,7 +138,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    await requireAdmin(req);
+    const admin = await requireAdmin(req);
     const body = await req.json();
     const { name, email, phone, country, role, password } = body;
 
@@ -165,6 +166,7 @@ export async function POST(req: NextRequest) {
       select: SAFE_USER_FIELDS,
     });
 
+    await writeAudit({ actorId: admin.sub, action: 'user.create', targetId: newUser.id, metadata: { email, role: newUser.role } });
     return NextResponse.json(newUser, { status: 201 });
   } catch (err) {
     return errorResponse(err);
