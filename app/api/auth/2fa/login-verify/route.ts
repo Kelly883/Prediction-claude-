@@ -13,7 +13,7 @@ export const runtime = 'nodejs';
 export async function POST(req: NextRequest) {
   try {
     const ip = getClientIp(req);
-    const allowed = await checkRateLimit(authLimiter, ip);
+    const allowed = await checkRateLimit(authLimiter, [ip, 'pending-2fa']);
     if (!allowed) {
       return NextResponse.json({ error: 'Too many attempts, try again shortly' }, { status: 429 });
     }
@@ -28,8 +28,16 @@ export async function POST(req: NextRequest) {
       throw new ApiError(400, 'Invalid code');
     }
 
+    // Rate limit by user ID after successful TOTP verification to prevent
+    // distributed attackers from rotating IPs to bypass the IP-based limit.
+    const userAllowed = await checkRateLimit(authLimiter, [`user:${user.id}`]);
+    if (!userAllowed) {
+      await writeAudit({ actorId: user.id, action: 'auth.2fa_failed', metadata: { stage: 'login_verify', reason: 'user_rate_limited' } });
+      return NextResponse.json({ error: 'Too many attempts, try again shortly' }, { status: 429 });
+    }
+
     const accessToken = await issueAccessToken({ sub: user.id, role: user.role });
-    const refreshToken = await issueRefreshToken(user.id);
+    const refreshToken = await issueRefreshToken(user.id, user.tokenVersion, user.refreshTokenVersion);
     await touchSession(user.id, req);
 
     if (user.role === 'admin') {

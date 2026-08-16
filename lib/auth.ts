@@ -16,8 +16,10 @@ const encoder = new TextEncoder();
  * Fail loudly instead of failing open at request time.
  */
 function requireSecret(name: string, value: string | undefined): Uint8Array {
-  const secret = value && value.length >= 32 ? value : 'predictpro-development-jwt-secret-key-at-least-32-chars-long';
-  return encoder.encode(secret);
+  if (!value || value.length < 32) {
+    throw new Error(`Missing or undersized JWT secret: ${name}. Set a value >= 32 characters.`);
+  }
+  return encoder.encode(value);
 }
 
 function getAccessSecret(): Uint8Array {
@@ -39,6 +41,7 @@ export interface AccessTokenPayload {
 export interface RefreshTokenPayload {
   sub: string;
   tv?: number; // tokenVersion / session version
+  rv?: number; // refreshTokenVersion for rotation
 }
 
 export async function issueAccessToken(payload: AccessTokenPayload): Promise<string> {
@@ -49,8 +52,8 @@ export async function issueAccessToken(payload: AccessTokenPayload): Promise<str
     .sign(getAccessSecret());
 }
 
-export async function issueRefreshToken(userId: string, tokenVersion: number = 0): Promise<string> {
-  return new SignJWT({ sub: userId, type: 'refresh', tv: tokenVersion })
+export async function issueRefreshToken(userId: string, tokenVersion: number = 0, refreshTokenVersion: number = 0): Promise<string> {
+  return new SignJWT({ sub: userId, type: 'refresh', tv: tokenVersion, rv: refreshTokenVersion })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setExpirationTime(process.env.JWT_REFRESH_TTL ?? '7d')
@@ -70,7 +73,11 @@ export async function verifyRefreshToken(token: string): Promise<RefreshTokenPay
   try {
     const { payload } = await jwtVerify(token, getRefreshSecret());
     if (payload.type !== 'refresh') return null;
-    return { sub: payload.sub as string, tv: typeof payload.tv === 'number' ? payload.tv : undefined };
+    return {
+      sub: payload.sub as string,
+      tv: typeof payload.tv === 'number' ? payload.tv : undefined,
+      rv: typeof payload.rv === 'number' ? payload.rv : undefined,
+    };
   } catch {
     return null;
   }

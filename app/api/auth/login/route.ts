@@ -13,6 +13,7 @@ export const runtime = 'nodejs';
 const PASSWORD_REHASH_COST = 12;
 const MAX_FAILED_LOGIN_ATTEMPTS = 5;
 const LOCKOUT_DURATION_MINUTES = 30;
+const MAX_ACTIVE_SESSIONS = 5;
 
 function isLocked(lockedUntil: Date | null): boolean {
   if (!lockedUntil) return false;
@@ -95,7 +96,15 @@ export async function POST(req: NextRequest) {
     }
 
     const accessToken = await issueAccessToken({ sub: user.id, role: user.role });
-    const refreshToken = await issueRefreshToken(user.id, user.tokenVersion);
+    const refreshToken = await issueRefreshToken(user.id, user.tokenVersion, user.refreshTokenVersion);
+
+    const activeSessionCount = await prisma.userSession.count({ where: { userId: user.id } });
+    if (activeSessionCount >= MAX_ACTIVE_SESSIONS) {
+      const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      await prisma.userSession.deleteMany({
+        where: { userId: user.id, lastSeenAt: { lt: cutoff } },
+      });
+    }
 
     await touchSession(user.id, req);
 

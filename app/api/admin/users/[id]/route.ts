@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { requireAdmin, errorResponse, ApiError } from '@/lib/rbac';
 import { getDistinctDeviceCount, isAnomalous } from '@/lib/sessions';
 import { writeAudit } from '@/lib/audit';
+import { redactPayload } from '@/lib/redact-payload';
 
 export const runtime = 'nodejs';
 
@@ -24,11 +25,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     ]);
 
     const safeSubscriptions = subscriptions.map(({ renewalAuthCode, ...sub }) => sub);
+    const safeTransactions = transactions.map((tx) => ({ ...tx, rawPayload: redactPayload(tx.rawPayload) }));
 
     return NextResponse.json({
       user,
       subscriptions: safeSubscriptions,
-      transactions,
+      transactions: safeTransactions,
       deviceActivity: { distinctDevicesLast24h: deviceCount, anomalous: await isAnomalous(id) },
     });
   } catch (err) {

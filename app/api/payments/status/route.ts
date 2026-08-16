@@ -18,7 +18,10 @@ export async function GET(req: NextRequest) {
     const tx = await prisma.transaction.findUnique({ where: { providerReference: reference } });
     if (!tx || tx.userId !== user.sub) throw new ApiError(404, 'Not found');
 
-    return NextResponse.json({ status: tx.status, amount: tx.amount, currency: tx.currency });
+    return NextResponse.json(
+      { status: tx.status, amount: tx.amount, currency: tx.currency },
+      { headers: { 'Cache-Control': 'private, no-store' } }
+    );
   } catch (err) {
     return errorResponse(err);
   }

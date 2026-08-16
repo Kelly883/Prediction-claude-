@@ -151,8 +151,11 @@ export async function POST(req: NextRequest) {
       throw new ApiError(409, 'An account with this email already exists');
     }
 
-    const defaultPassword = password || 'PredictPro@2026';
-    const passwordHash = await hashPassword(defaultPassword);
+    if (!password || password.trim().length === 0) {
+      throw new ApiError(400, 'Password is required for new users');
+    }
+
+    const passwordHash = await hashPassword(password);
 
     const newUser = await prisma.user.create({
       data: {
