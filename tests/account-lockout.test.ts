@@ -28,11 +28,19 @@ const mockAudit = vi.hoisted(() => ({
   writeAudit: vi.fn(),
 }));
 
+const mockRatelimit = vi.hoisted(() => ({
+  checkRateLimit: vi.fn().mockResolvedValue(true),
+  authLimiter: {},
+  getClientIp: vi.fn().mockReturnValue('127.0.0.1'),
+  normalizeIdentifier: vi.fn((_type: string, value: string) => value.toLowerCase()),
+}));
+
 vi.mock('@/lib/prisma', () => ({ prisma: mockPrisma }));
 vi.mock('@/lib/password', () => mockPassword);
 vi.mock('@/lib/auth', () => mockAuth);
 vi.mock('@/lib/sessions', () => mockSessions);
 vi.mock('@/lib/audit', () => mockAudit);
+vi.mock('@/lib/ratelimit', () => mockRatelimit);
 
 import { POST } from '@/app/api/auth/login/route';
 
