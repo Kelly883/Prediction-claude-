@@ -177,7 +177,7 @@
 - `SAFE_USER_FIELDS` select on user list/detail — excludes `passwordHash` and `twoFactorSecret`. Grep confirmed no other leak (15 call sites audited).
 - CSV import: 2MB file cap, 2000-row cap.
 - Image upload: CSRF origin check (`req.headers.get('origin')` vs `host`), rate-limit, magic-byte validation, sanitization, 5MB cap, max 10 images per post.
-- Audit: `writeAudit()` on every mutation (manual discipline — not structurally enforced yet).
+- Audit: `writeAudit()` on every mutation (enforced by `tests/admin-audit-enforcement.test.ts` — static analysis asserts every admin route with Prisma mutations imports and calls `writeAudit`).
 - No raw SQL (`$queryRaw` unused). No `dangerouslySetInnerHTML`.
 
 **States:**
@@ -190,7 +190,7 @@
 **Dependencies:** Prisma, csv-import, media, email.
 **Tests:** `tests/admin-setup.test.ts`, `tests/admin-predictions.test.ts`, `tests/csv-import.test.ts`.
 **Runtime proof:** Clean build, tests pass.
-**Unresolved risk:** No CI test enforcing `writeAudit(` presence in every admin route.
+**Unresolved risk:** None.
 
 ---
 
@@ -273,7 +273,7 @@
 | R1 | `x-forwarded-for` trusted for rate-limit keys | Low | Accepted on Vercel edge; would use `req.ip` on other hosts |
 | R2 | No real Resend delivery test | Low | Documented; code path correct, dev-mode fallback exists |
 | R3 | No live Paystack/Flutterwave charge test | Low | Documented; sandbox-only |
-| R4 | No structural `writeAudit` enforcement | Medium | Manual discipline; recommend CI grep/wrapper |
+| R4 | No structural `writeAudit` enforcement | Medium | **Fixed** — `tests/admin-audit-enforcement.test.ts` asserts every admin mutation route calls `writeAudit`; missing call added to `app/api/admin/users/route.ts` POST |
 | R5 | Synchronous webhook DB work | Medium | Acceptable at MVP scale; recommend queue at load |
 | R6 | Watermarked scratch copies accumulate | Low | No TTL cleanup; recommend S3 lifecycle rule |
 | R7 | `postcss`/`sharp` advisories in dependency tree | High | Documented non-exploitable; upgrade `next@16` when feasible |
@@ -306,6 +306,9 @@ npx next build
 
 # Route conflicts
 node scripts/check-route-conflicts.mjs
+
+# Admin audit enforcement
+npx vitest run tests/admin-audit-enforcement.test.ts
 
 # Dependencies
 npm audit

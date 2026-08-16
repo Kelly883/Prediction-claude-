@@ -381,9 +381,9 @@
 **Regression impact:** High — admin controls all content and access.
 **Tests:** `tests/admin-setup.test.ts`, `tests/admin-predictions.test.ts`, `tests/csv-import.test.ts`.
 **Runtime proof:** Clean build, tests pass.
-**Unresolved risk:** No automated enforcement that every admin mutation calls `writeAudit` (documented README Section 9). Currently manual discipline. `AdminNav.tsx` dead code was deleted (good). `middleware.ts` is UX-only, not security boundary — every route independently checks `requireAdmin`.
+**Unresolved risk:** None. Structural enforcement added via `tests/admin-audit-enforcement.test.ts`. `AdminNav.tsx` dead code was deleted (good). `middleware.ts` is UX-only, not security boundary — every route independently checks `requireAdmin`.
 
-**Verdict: PASS (with noted gap: no structural enforcement of writeAudit on admin mutations)**
+**Verdict: PASS**
 
 ---
 
@@ -520,7 +520,7 @@
 | Encryption | `encryption.test.ts` | (present) |
 | Password strength | `password-strength.test.ts` | 6 |
 
-**Total: 19 test files, 120 tests — all passing.**
+**Total: 20 test files, 141 tests — all passing.**
 
 ---
 
@@ -528,9 +528,8 @@
 
 1. **No live integration tests** against real Postgres, Redis, Paystack, Flutterwave, or Resend. All external interactions are mocked or untested in production-like environments.
 2. **Synchronous webhook processing** — both webhook handlers complete DB writes before responding. Recommended: move to a queue (e.g., Upstash QStash) and acknowledge immediately if traffic scales.
-3. **No structural enforcement of `writeAudit`** on admin mutations. A new admin route could silently skip audit logging. Recommendation: centralize admin mutations through a wrapper or add a CI lint/test that greps for `writeAudit(` in admin routes.
-4. **Watermarked image cleanup** — `scratch/` objects accumulate in S3 with no TTL. Recommendation: add lifecycle rules or periodic cleanup.
-5. **npm audit findings** — 3 high-severity advisories in `postcss` and `sharp` (transitive via `next`). README documents they are not exploitable in this app's specific usage, but they remain in the dependency tree. Consider upgrading to `next@16` when feasible, which resolves these.
+3. **Watermarked image cleanup** — `scratch/` objects accumulate in S3 with no TTL. Recommendation: add lifecycle rules or periodic cleanup.
+4. **npm audit findings** — 3 high-severity advisories in `postcss` and `sharp` (transitive via `next`). README documents they are not exploitable in this app's specific usage, but they remain in the dependency tree. Consider upgrading to `next@16` when feasible, which resolves these.
 
 ---
 
