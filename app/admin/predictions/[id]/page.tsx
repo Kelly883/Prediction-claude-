@@ -434,15 +434,15 @@ export default function EditPredictionPage() {
             {/* Upload Box */}
             <div
               onClick={() => fileInputRef.current?.click()}
-              className="p-5 rounded-2xl bg-[var(--pitch)] border-2 border-dashed border-emerald-500/30 hover:border-emerald-400 text-center cursor-pointer transition-all space-y-2 group"
+              className="admin-upload-box"
             >
-              <div className="w-10 h-10 mx-auto rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center group-hover:scale-105 transition-transform">
+              <div className="admin-upload-icon-box">
                 <Upload size={20} />
               </div>
-              <div className="text-xs font-medium text-white">
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#ffffff' }}>
                 Upload Slip Images (JPG/PNG &lt; 5MB)
               </div>
-              <p className="text-[11px] text-[var(--chalk-muted)]">
+              <p style={{ fontSize: 11, color: '#85a694' }}>
                 Click or drop files to attach additional screenshots
               </p>
               <input
@@ -457,18 +457,18 @@ export default function EditPredictionPage() {
             </div>
 
             {uploading && (
-              <p className="text-xs text-emerald-400 font-mono text-center animate-pulse flex items-center justify-center gap-2">
+              <p style={{ fontSize: 12, color: '#10b981', fontFamily: 'var(--font-mono), monospace', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }} className="animate-pulse">
                 <FileImage size={14} />
                 <span>Processing &amp; uploading prediction image…</span>
               </p>
             )}
 
             {/* Uploaded Media Gallery */}
-            <div className="flex flex-col gap-3 pt-2">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, paddingTop: 8 }}>
               {(post.media ?? []).length === 0 ? (
-                <div className="text-center py-6 border border-dashed border-[rgba(243,245,236,0.1)] rounded-xl">
-                  <ImageIcon size={28} className="mx-auto text-[var(--chalk-muted)] mb-2" />
-                  <p className="text-xs text-[var(--chalk-muted)]">
+                <div style={{ textAlign: 'center', padding: '24px 16px', border: '1px dashed rgba(243,245,236,0.1)', borderRadius: 12 }}>
+                  <ImageIcon size={28} style={{ margin: '0 auto 8px', color: '#85a694' }} />
+                  <p style={{ fontSize: 12, color: '#85a694' }}>
                     No screenshot media attached to this prediction.
                   </p>
                 </div>
@@ -478,41 +478,41 @@ export default function EditPredictionPage() {
                   return (
                     <div
                       key={m.id}
-                      className="p-3 rounded-xl bg-[var(--pitch)] border border-[rgba(243,245,236,0.1)] flex items-center justify-between text-xs gap-3 group"
+                      className="admin-media-item"
                     >
-                      <div className="flex items-center gap-3 min-w-0">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
                         {mediaUrl ? (
                           <div
                             onClick={() => setPreviewModalUrl(mediaUrl)}
-                            className="w-12 h-12 rounded-lg overflow-hidden bg-black border border-zinc-700 shrink-0 cursor-pointer relative group/img"
+                            className="admin-media-thumb"
                           >
                             {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={mediaUrl} alt="Slip" className="w-full h-full object-cover" />
-                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 flex items-center justify-center text-white transition-opacity">
+                            <img src={mediaUrl} alt="Slip" />
+                            <div className="admin-media-overlay">
                               <Eye size={12} />
                             </div>
                           </div>
                         ) : (
-                          <div className="w-12 h-12 rounded-lg bg-zinc-800 border border-zinc-700 flex items-center justify-center shrink-0">
-                            <ImageIcon size={16} className="text-emerald-400" />
+                          <div className="admin-media-thumb" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <ImageIcon size={16} style={{ color: '#10b981' }} />
                           </div>
                         )}
 
-                        <div className="min-w-0">
-                          <div className="mono text-white truncate text-xs font-semibold">
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontFamily: 'var(--font-mono), monospace', color: '#ffffff', fontSize: 12, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {m.storageKey.split('/').pop()}
                           </div>
-                          <div className="text-[10px] text-emerald-400 font-mono mt-0.5">
+                          <div style={{ fontSize: 10, color: '#10b981', fontFamily: 'var(--font-mono), monospace', marginTop: 2 }}>
                             Sanitized &amp; Encrypted
                           </div>
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-1 shrink-0">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                         {mediaUrl && (
                           <button
                             onClick={() => setPreviewModalUrl(mediaUrl)}
-                            className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+                            className="admin-media-btn"
                             title="Preview Image"
                           >
                             <Eye size={14} />
@@ -521,7 +521,7 @@ export default function EditPredictionPage() {
                         <button
                           onClick={() => deleteImage(m.id)}
                           disabled={deletingMediaId === m.id}
-                          className="p-1.5 rounded-lg text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                          className="admin-media-btn admin-media-btn-delete"
                           title="Delete image"
                         >
                           <Trash2 size={14} />
@@ -538,11 +538,11 @@ export default function EditPredictionPage() {
 
       {/* Lightbox Modal for Image Previews */}
       {previewModalUrl && (
-        <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="relative max-w-4xl w-full max-h-[90vh] flex flex-col items-center">
+        <div className="admin-lightbox">
+          <div style={{ position: 'relative', maxWidth: 1024, width: '100%', maxHeight: '90vh', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
             <button
               onClick={() => setPreviewModalUrl(null)}
-              className="absolute -top-10 right-0 p-2 text-white/80 hover:text-white bg-transparent border-none cursor-pointer"
+              style={{ position: 'absolute', top: -40, right: 0, padding: 8, color: 'rgba(255,255,255,0.8)', background: 'transparent', border: 'none', cursor: 'pointer' }}
             >
               <X size={24} />
             </button>
@@ -550,7 +550,7 @@ export default function EditPredictionPage() {
             <img
               src={previewModalUrl}
               alt="Prediction slip full view"
-              className="max-h-[85vh] w-auto object-contain rounded-xl border border-zinc-700 shadow-2xl"
+              className="admin-lightbox-img"
             />
           </div>
         </div>

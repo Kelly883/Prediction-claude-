@@ -579,11 +579,11 @@ export default function AdminPredictionsPage() {
 
       {/* Lightbox Modal */}
       {previewImageUrl && (
-        <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="relative max-w-4xl w-full max-h-[90vh] flex flex-col items-center">
+        <div className="admin-lightbox">
+          <div style={{ position: 'relative', maxWidth: 1024, width: '100%', maxHeight: '90vh', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
             <button
               onClick={() => setPreviewImageUrl(null)}
-              className="absolute -top-10 right-0 p-2 text-white/80 hover:text-white bg-transparent border-none cursor-pointer"
+              style={{ position: 'absolute', top: -40, right: 0, padding: 8, color: 'rgba(255,255,255,0.8)', background: 'transparent', border: 'none', cursor: 'pointer' }}
             >
               <X size={24} />
             </button>
@@ -591,7 +591,7 @@ export default function AdminPredictionsPage() {
             <img
               src={previewImageUrl}
               alt="Prediction slip full view"
-              className="max-h-[85vh] w-auto object-contain rounded-xl border border-zinc-700 shadow-2xl"
+              className="admin-lightbox-img"
             />
           </div>
         </div>

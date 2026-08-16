@@ -2658,3 +2658,128 @@ textarea:focus-visible {
   color: rgba(159, 179, 166, 0.5);
 }
 
+/* Edit prediction page - upload & media */
+.admin-upload-box {
+  padding: 20px;
+  border-radius: 16px;
+  background: #0f2b1d;
+  border: 2px dashed rgba(16, 185, 129, 0.3);
+  text-align: center;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  transition: border-color 0.15s ease;
+}
+
+.admin-upload-box:hover {
+  border-color: rgba(16, 185, 129, 0.6);
+}
+
+.admin-upload-icon-box {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: rgba(16, 185, 129, 0.1);
+  color: #10b981;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.15s ease;
+}
+
+.admin-upload-box:hover .admin-upload-icon-box {
+  transform: scale(1.05);
+}
+
+.admin-media-item {
+  padding: 12px;
+  border-radius: 12px;
+  background: #0f2b1d;
+  border: 1px solid rgba(243, 245, 236, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.admin-media-thumb {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #000;
+  border: 1px solid #3f3f46;
+  flex-shrink: 0;
+  cursor: pointer;
+  position: relative;
+}
+
+.admin-media-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.admin-media-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+}
+
+.admin-media-thumb:hover .admin-media-overlay {
+  opacity: 1;
+}
+
+.admin-media-btn {
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: #a1a1aa;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.admin-media-btn:hover {
+  color: #ffffff;
+  background: #3f3f46;
+}
+
+.admin-media-btn-delete:hover {
+  color: #fca5a5;
+  background: rgba(220, 38, 38, 0.1);
+}
+
+.admin-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(0, 0, 0, 0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.admin-lightbox-img {
+  max-height: 85vh;
+  width: auto;
+  object-fit: contain;
+  border-radius: 12px;
+  border: 1px solid #3f3f46;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+}
+
