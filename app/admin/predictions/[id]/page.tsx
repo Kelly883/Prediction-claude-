@@ -4,21 +4,21 @@ import { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { apiJson, apiFetch } from '@/lib/api-client';
-import { 
-  ArrowLeft, 
-  Save, 
-  Upload, 
-  Archive, 
-  CheckCircle2, 
-  Sparkles, 
-  Image as ImageIcon, 
+import {
+  ArrowLeft,
+  Save,
+  Upload,
+  Archive,
+  CheckCircle2,
+  Sparkles,
+  Image as ImageIcon,
   Trash2,
   AlertTriangle,
   ShieldAlert,
   Eye,
   FileImage,
   X,
-  Plus
+  Plus,
 } from 'lucide-react';
 
 type Item = { id: string; match: string; prediction: string };
@@ -201,7 +201,7 @@ export default function EditPredictionPage() {
 
   if (loading) {
     return (
-      <div className="p-12 text-center text-sm text-[var(--chalk-muted)] font-mono animate-pulse">
+      <div className="admin-loading">
         Loading prediction post details…
       </div>
     );
@@ -209,10 +209,10 @@ export default function EditPredictionPage() {
 
   if (!post) {
     return (
-      <div className="p-8 text-center border border-dashed border-[rgba(243,245,236,0.14)] rounded-xl">
-        <AlertTriangle size={28} className="mx-auto mb-2 text-red-400" />
-        <p className="text-sm text-white font-medium">Post not found</p>
-        <Link href="/admin/predictions" className="btn btn-ghost text-xs mt-3 inline-flex items-center gap-1.5">
+      <div className="admin-empty-state">
+        <AlertTriangle size={28} className="text-red-400" style={{ marginBottom: 8 }} />
+        <p className="admin-empty-state-title">Post not found</p>
+        <Link href="/admin/predictions" className="admin-back-btn">
           <ArrowLeft size={13} />
           <span>Back to predictions</span>
         </Link>
@@ -227,7 +227,7 @@ export default function EditPredictionPage() {
         <div className="flex items-center gap-3 min-w-0">
           <Link
             href="/admin/predictions"
-            className="p-2 rounded-xl bg-[var(--turf)] text-[var(--chalk-muted)] hover:text-white border border-[rgba(243,245,236,0.1)] transition-colors shrink-0"
+            className="admin-back-btn"
             title="Back to Predictions"
           >
             <ArrowLeft size={16} />
@@ -238,11 +238,7 @@ export default function EditPredictionPage() {
                 Edit Prediction Post
               </h1>
               <span
-                className={`px-2.5 py-0.5 text-[10px] font-extrabold uppercase rounded-full ${
-                  post.status === 'published'
-                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                    : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                }`}
+                className={`admin-status-pill ${post.status === 'published' ? 'admin-status-pill-success' : 'admin-status-pill-warning'}`}
               >
                 {post.status}
               </span>
@@ -257,7 +253,7 @@ export default function EditPredictionPage() {
           {post.status !== 'published' && (
             <button
               onClick={publish}
-              className="btn btn-ghost text-xs py-2 px-3 inline-flex items-center gap-1.5 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10"
+              className="admin-back-btn border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10"
             >
               <CheckCircle2 size={14} />
               <span>Publish Live</span>
@@ -265,7 +261,7 @@ export default function EditPredictionPage() {
           )}
           <button
             onClick={archive}
-            className="btn btn-ghost text-xs py-2 px-3 inline-flex items-center gap-1.5 text-red-400 border-red-500/30 hover:bg-red-500/10"
+            className="admin-back-btn border-red-500/30 text-red-400 hover:bg-red-500/10"
           >
             <Archive size={14} />
             <span>Archive Post</span>
@@ -276,140 +272,135 @@ export default function EditPredictionPage() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Post Form Column */}
         <div className="lg:col-span-7 space-y-6">
-          <div className="card p-4 sm:p-6 space-y-4">
-            <h2 className="text-base font-bold text-white flex items-center gap-2">
-              <Sparkles size={16} className="text-[var(--floodlight)]" />
-              <span>Post Configuration</span>
-            </h2>
-
-            <div className="field mb-0">
-              <label htmlFor="title" className="text-xs text-[var(--chalk-muted)] font-semibold uppercase tracking-wider font-mono">
-                Title
-              </label>
-              <input
-                id="title"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                className="w-full text-sm font-medium"
-              />
+          <div className="admin-compose-card">
+            <div className="admin-compose-header">
+              <div className="admin-compose-header-icon">
+                <Sparkles size={16} />
+              </div>
+              <h2 className="admin-compose-title" style={{ margin: 0 }}>Post Configuration</h2>
             </div>
 
-            <div className="field mb-0">
-              <label htmlFor="bookingCode" className="text-xs text-[var(--chalk-muted)] font-semibold uppercase tracking-wider font-mono">
-                Betting Booking Code
-              </label>
-              <input
-                id="bookingCode"
-                value={bookingCode}
-                onChange={(e) => setBookingCode(e.target.value)}
-                className="w-full font-mono uppercase text-sm"
-              />
-            </div>
-
-            <div className="field mb-0 space-y-2">
-              <label htmlFor="visibility" className="text-xs text-[var(--chalk-muted)] font-semibold uppercase tracking-wider font-mono">
-                Subscriber Visibility
-              </label>
-              <select
-                id="visibility"
-                value={visibility}
-                onChange={(e) => setVisibility(e.target.value as any)}
-                className="w-full bg-[var(--pitch)] border border-[rgba(243,245,236,0.14)] rounded-md p-3 text-sm text-[var(--chalk)]"
-              >
-                <option value="subscribers">All Active Subscribers</option>
-                <option value="plan_specific">Plan-Specific VIPs</option>
-                <option value="free_window">Free Window (Promotional)</option>
-              </select>
-
-              {visibility === 'plan_specific' && (
-                <div className="p-3 rounded-xl bg-[var(--pitch)] border border-[rgba(243,245,236,0.14)] space-y-2 mt-2">
-                  <label className="text-xs text-[var(--chalk-muted)] font-semibold uppercase tracking-wider font-mono block">
-                    Select Admin-Created Subscription Plans
-                  </label>
-                  {availablePlans.length === 0 ? (
-                    <p className="text-xs text-[var(--chalk-muted)] italic">
-                      No subscription plans created by admin yet. Create plans in the Membership Plans section.
-                    </p>
-                  ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-                      {availablePlans.map((plan) => (
-                        <label key={plan.id} className="flex items-center gap-2 text-xs text-white bg-black/40 p-2 rounded-lg border border-[rgba(243,245,236,0.1)] cursor-pointer hover:border-emerald-500/30">
-                          <input
-                            type="checkbox"
-                            checked={planIds.includes(plan.id)}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setPlanIds([...planIds, plan.id]);
-                              } else {
-                                setPlanIds(planIds.filter((pid) => pid !== plan.id));
-                              }
-                            }}
-                            className="rounded border-zinc-700 bg-zinc-900 text-emerald-400 focus:ring-emerald-400"
-                          />
-                          <span className="font-medium">{plan.name}</span>
-                          <span className="text-[10px] text-[var(--chalk-muted)] ml-auto">({plan.durationDays}d)</span>
-                        </label>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {visibility === 'free_window' && (
-              <div className="field mb-0">
-                <label htmlFor="freeUntil" className="text-xs text-[var(--chalk-muted)] font-semibold uppercase tracking-wider font-mono">
-                  Free Access Until
-                </label>
+            <div className="flex flex-col gap-4">
+              <div className="admin-form-group">
+                <label htmlFor="title" className="admin-form-label">Title</label>
                 <input
-                  id="freeUntil"
-                  type="datetime-local"
-                  value={freeUntil}
-                  onChange={(e) => setFreeUntil(e.target.value)}
-                  className="w-full text-sm"
+                  id="title"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  className="admin-input text-sm font-medium"
                 />
               </div>
-            )}
 
-            <div className="field mb-0">
-              <label htmlFor="bodyNotes" className="text-xs text-[var(--chalk-muted)] font-semibold uppercase tracking-wider font-mono">
-                Analyst Notes & Insights
-              </label>
-              <textarea
-                id="bodyNotes"
-                rows={4}
-                value={bodyNotes}
-                onChange={(e) => setBodyNotes(e.target.value)}
-                placeholder="Add match preview commentary, weather updates, or accumulator tips…"
-                className="w-full bg-[var(--pitch)] border border-[rgba(243,245,236,0.14)] rounded-lg p-3 text-sm text-[var(--chalk)] font-sans focus:border-[var(--floodlight)] outline-none"
-              />
-            </div>
-
-            {error && (
-              <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center gap-2">
-                <ShieldAlert size={16} className="shrink-0" />
-                <span>{error}</span>
+              <div className="admin-form-group">
+                <label htmlFor="bookingCode" className="admin-form-label">Betting Booking Code</label>
+                <input
+                  id="bookingCode"
+                  value={bookingCode}
+                  onChange={(e) => setBookingCode(e.target.value)}
+                  className="admin-input text-sm font-medium mono-text"
+                  style={{ fontFamily: 'var(--font-mono)', textTransform: 'uppercase' }}
+                />
               </div>
-            )}
 
-            <div className="pt-2">
-              <button
-                onClick={save}
-                className="btn btn-primary w-full py-2.5 text-sm font-semibold flex items-center justify-center gap-2"
-                disabled={saving}
-              >
-                <Save size={14} />
-                <span>{saving ? 'Saving Changes…' : 'Save Changes'}</span>
-              </button>
+              <div className="admin-form-group">
+                <label htmlFor="visibility" className="admin-form-label">Subscriber Visibility</label>
+                <select
+                  id="visibility"
+                  value={visibility}
+                  onChange={(e) => setVisibility(e.target.value as any)}
+                  className="admin-select"
+                >
+                  <option value="subscribers">All Active Subscribers</option>
+                  <option value="plan_specific">Plan-Specific VIPs</option>
+                  <option value="free_window">Free Window (Promotional)</option>
+                </select>
+
+                {visibility === 'plan_specific' && (
+                  <div className="p-3 rounded-xl bg-[var(--pitch)] border border-[rgba(243,245,236,0.14)] space-y-2 mt-2">
+                    <label className="text-xs text-[#85a694] font-semibold uppercase tracking-wider font-mono block">
+                      Select Admin-Created Subscription Plans
+                    </label>
+                    {availablePlans.length === 0 ? (
+                      <p className="text-xs text-[#85a694] italic">
+                        No subscription plans created by admin yet. Create plans in the Membership Plans section.
+                      </p>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                        {availablePlans.map((plan) => (
+                          <label key={plan.id} className="flex items-center gap-2 text-xs text-white bg-black/40 p-2 rounded-lg border border-[rgba(243,245,236,0.1)] cursor-pointer hover:border-emerald-500/30">
+                            <input
+                              type="checkbox"
+                              checked={planIds.includes(plan.id)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setPlanIds([...planIds, plan.id]);
+                                } else {
+                                  setPlanIds(planIds.filter((pid) => pid !== plan.id));
+                                }
+                              }}
+                              className="rounded border-zinc-700 bg-zinc-900 text-emerald-400 focus:ring-emerald-400"
+                            />
+                            <span className="font-medium">{plan.name}</span>
+                            <span className="text-[10px] text-[var(--chalk-muted)] ml-auto">({plan.durationDays}d)</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {visibility === 'free_window' && (
+                <div className="admin-form-group">
+                  <label htmlFor="freeUntil" className="admin-form-label">Free Access Until</label>
+                  <input
+                    id="freeUntil"
+                    type="datetime-local"
+                    value={freeUntil}
+                    onChange={(e) => setFreeUntil(e.target.value)}
+                    className="admin-input text-sm"
+                  />
+                </div>
+              )}
+
+              <div className="admin-form-group">
+                <label htmlFor="bodyNotes" className="admin-form-label">Analyst Notes &amp; Insights</label>
+                <textarea
+                  id="bodyNotes"
+                  rows={4}
+                  value={bodyNotes}
+                  onChange={(e) => setBodyNotes(e.target.value)}
+                  placeholder="Add match preview commentary, weather updates, or accumulator tips…"
+                  className="admin-textarea"
+                />
+              </div>
+
+              {error && (
+                <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center gap-2">
+                  <ShieldAlert size={16} className="shrink-0" />
+                  <span>{error}</span>
+                </div>
+              )}
+
+              <div className="pt-2">
+                <button
+                  onClick={save}
+                  className="btn btn-primary w-full py-2.5 text-sm font-semibold flex items-center justify-center gap-2"
+                  disabled={saving}
+                >
+                  <Save size={14} />
+                  <span>{saving ? 'Saving Changes…' : 'Save Changes'}</span>
+                </button>
+              </div>
             </div>
           </div>
 
           {/* Attached Matches Summary */}
-          <div className="card p-4 sm:p-5 space-y-3">
-            <h3 className="text-xs font-semibold text-white uppercase tracking-wider font-mono flex items-center justify-between">
-              <span>Attached Match Picks ({(post.items ?? []).length})</span>
-            </h3>
-            <div className="space-y-2">
+          <div className="admin-compose-card">
+            <div className="admin-card-header">
+              <h2 className="admin-card-title">Attached Match Picks ({(post.items ?? []).length})</h2>
+            </div>
+            <div className="flex flex-col gap-2">
               {(post.items ?? []).length === 0 ? (
                 <p className="text-xs text-[var(--chalk-muted)] py-2">No match picks items attached to this post.</p>
               ) : (
@@ -431,12 +422,12 @@ export default function EditPredictionPage() {
 
         {/* Media & Images Column */}
         <div className="lg:col-span-5 space-y-6">
-          <div className="card p-4 sm:p-6 space-y-4">
-            <div className="flex items-center justify-between pb-2 border-b border-[rgba(243,245,236,0.1)]">
-              <h2 className="text-base font-bold text-white flex items-center gap-2">
+          <div className="admin-compose-card">
+            <div className="admin-card-header">
+              <div className="flex items-center gap-2">
                 <ImageIcon size={18} className="text-emerald-400" />
-                <span>Slip Screenshots ({(post.media ?? []).length})</span>
-              </h2>
+                <h2 className="admin-card-title" style={{ margin: 0 }}>Slip Screenshots ({(post.media ?? []).length})</h2>
+              </div>
               <span className="text-[11px] text-[var(--chalk-muted)] font-mono">Max 10 images</span>
             </div>
 
@@ -468,12 +459,12 @@ export default function EditPredictionPage() {
             {uploading && (
               <p className="text-xs text-emerald-400 font-mono text-center animate-pulse flex items-center justify-center gap-2">
                 <FileImage size={14} />
-                <span>Processing & uploading prediction image…</span>
+                <span>Processing &amp; uploading prediction image…</span>
               </p>
             )}
 
             {/* Uploaded Media Gallery */}
-            <div className="space-y-3 pt-2">
+            <div className="flex flex-col gap-3 pt-2">
               {(post.media ?? []).length === 0 ? (
                 <div className="text-center py-6 border border-dashed border-[rgba(243,245,236,0.1)] rounded-xl">
                   <ImageIcon size={28} className="mx-auto text-[var(--chalk-muted)] mb-2" />
@@ -512,7 +503,7 @@ export default function EditPredictionPage() {
                             {m.storageKey.split('/').pop()}
                           </div>
                           <div className="text-[10px] text-emerald-400 font-mono mt-0.5">
-                            Sanitized & Encrypted
+                            Sanitized &amp; Encrypted
                           </div>
                         </div>
                       </div>
@@ -551,7 +542,7 @@ export default function EditPredictionPage() {
           <div className="relative max-w-4xl w-full max-h-[90vh] flex flex-col items-center">
             <button
               onClick={() => setPreviewModalUrl(null)}
-              className="absolute -top-10 right-0 p-2 text-white/80 hover:text-white"
+              className="absolute -top-10 right-0 p-2 text-white/80 hover:text-white bg-transparent border-none cursor-pointer"
             >
               <X size={24} />
             </button>

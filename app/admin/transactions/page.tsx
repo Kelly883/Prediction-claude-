@@ -29,11 +29,11 @@ export default function AdminTransactionsPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="pb-2 border-b border-[rgba(243,245,236,0.1)]">
-        <h1 className="font-bold text-2xl sm:text-3xl text-white">Payment Transactions</h1>
-        <p className="text-xs sm:text-sm text-[var(--chalk-muted)] mt-1">
-          Real-time logs of Paystack and Flutterwave gateway charge attempts.
-        </p>
+      <div className="admin-page-header">
+        <div className="admin-page-eyebrow">Payment Transactions</div>
+        <h1 className="admin-page-title">Payment Transactions</h1>
+        <p className="admin-page-subtitle">Real-time logs of Paystack and Flutterwave gateway charge attempts.</p>
+        <div className="admin-underline" />
       </div>
 
       {/* Filter Tabs */}
@@ -60,35 +60,31 @@ export default function AdminTransactionsPage() {
 
       {/* Main Content Card */}
       <div className="card p-4 sm:p-5">
-        <h2 className="text-base font-semibold text-white mb-4 flex items-center justify-between">
-          <span>Transactions Archive ({txs.length})</span>
-          <span className="text-xs text-[var(--chalk-muted)] font-mono">Gateway Records</span>
-        </h2>
+        <div className="admin-card-header">
+          <h2 className="admin-card-title">Transactions Archive ({txs.length})</h2>
+          <span className="admin-card-subtitle">Gateway Records</span>
+        </div>
 
         {loading ? (
-          <div className="p-8 text-center text-sm text-[var(--chalk-muted)]">
-            Loading transactions…
-          </div>
+          <div className="admin-loading">Loading transactions…</div>
         ) : txs.length === 0 ? (
-          <div className="p-8 text-center border border-dashed border-[rgba(243,245,236,0.14)] rounded-lg">
-            <CreditCard size={28} className="mx-auto mb-2 text-[var(--floodlight)] opacity-80" />
-            <p className="text-sm text-white font-medium">No transactions found</p>
-            <p className="text-xs text-[var(--chalk-muted)] mt-1">
-              Payment records and gateway webhook events will show here.
-            </p>
+          <div className="admin-empty-state">
+            <CreditCard size={28} className="admin-empty-state-icon" />
+            <p className="admin-empty-state-title">No transactions found</p>
+            <p className="admin-empty-state-desc">Payment records and gateway webhook events will show here.</p>
           </div>
         ) : (
           <>
             {/* Desktop / Tablet Table View */}
-            <div className="hidden md:block table-container">
-              <table className="table-responsive">
+            <div className="hidden md:block admin-table-wrapper">
+              <table className="admin-table">
                 <thead>
                   <tr>
                     <th>Reference</th>
                     <th>Provider</th>
                     <th>Amount</th>
                     <th>Status</th>
-                    <th>Date & Time</th>
+                    <th>Date &amp; Time</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -101,12 +97,12 @@ export default function AdminTransactionsPage() {
                       </td>
                       <td>
                         <span
-                          className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wider ${
+                          className={`admin-status-pill ${
                             t.status === 'success'
-                              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                              ? 'admin-status-pill-success'
                               : t.status === 'failed'
-                              ? 'bg-red-500/20 text-red-400 border border-red-500/30'
-                              : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                              ? 'admin-status-pill-error'
+                              : 'admin-status-pill-warning'
                           }`}
                         >
                           {t.status === 'success' && <CheckCircle2 size={12} />}
@@ -141,12 +137,12 @@ export default function AdminTransactionsPage() {
                       </div>
                     </div>
                     <span
-                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider shrink-0 ${
+                      className={`admin-status-pill ${
                         t.status === 'success'
-                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                          ? 'admin-status-pill-success'
                           : t.status === 'failed'
-                          ? 'bg-red-500/20 text-red-400 border border-red-500/30'
-                          : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                          ? 'admin-status-pill-error'
+                          : 'admin-status-pill-warning'
                       }`}
                     >
                       {t.status}
