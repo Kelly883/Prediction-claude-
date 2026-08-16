@@ -4,6 +4,7 @@ import { requireAdmin, errorResponse, ApiError } from '@/lib/rbac';
 import { getDistinctDeviceCount, isAnomalous } from '@/lib/sessions';
 import { writeAudit } from '@/lib/audit';
 import { redactPayload } from '@/lib/payments';
+import { requireSameOrigin, requireCsrf } from '@/lib/csrf';
 
 export const runtime = 'nodejs';
 
@@ -43,6 +44,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    requireSameOrigin(req);
+    requireCsrf(req);
     const admin = await requireAdmin(req);
     const { id } = await params;
     const body = await req.json();

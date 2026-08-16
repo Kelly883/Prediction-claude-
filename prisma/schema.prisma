@@ -100,6 +100,7 @@ model User {
   cmsEdits            CmsSection[]
   passwordResetTokens PasswordResetToken[]
   emailVerifications  EmailVerificationToken[]
+  recoveryCodes       TwoFactorRecoveryCode[]
 
   @@index([role])
   @@index([email])
@@ -306,6 +307,17 @@ model EmailVerificationToken {
   user      User      @relation(fields: [userId], references: [id])
   tokenHash String    @unique
   expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+model TwoFactorRecoveryCode {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  codeHash  String    @unique
   usedAt    DateTime?
   createdAt DateTime  @default(now())
 

@@ -44,3 +44,17 @@ export function requireCsrf(req: NextRequest): void {
     throw new ApiError(403, 'Invalid CSRF token');
   }
 }
+
+export function requireSameOrigin(req: NextRequest): void {
+  const origin = req.headers.get('origin');
+  const host = req.headers.get('host');
+  if (!origin || !host) return;
+  try {
+    const originHost = new URL(origin).host;
+    if (originHost !== host) {
+      throw new ApiError(403, 'Forbidden cross-origin request');
+    }
+  } catch {
+    throw new ApiError(403, 'Forbidden cross-origin request');
+  }
+}
