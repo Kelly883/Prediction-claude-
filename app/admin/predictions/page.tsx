@@ -79,7 +79,7 @@ export default function AdminPredictionsPage() {
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
 
   function load() {
-    apiJson<Post[]>('/api/predictions')
+    apiJson<Post[]>('/api/admin/predictions')
       .then(setPosts)
       .finally(() => setLoading(false));
     apiJson<SubscriptionPlan[]>('/api/plans')
