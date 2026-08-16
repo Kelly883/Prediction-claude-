@@ -16,7 +16,7 @@ export async function middleware(req: NextRequest) {
   // 1. Admin paths:
   // Non-logged in visitors get redirected to login with next param
   // Logged-in non-admins (regular users) are barred and redirected to /dashboard
-  if (path.startsWith('/admin') && path !== '/admin/setup') {
+  if (path.startsWith('/admin')) {
     if (!payload) {
       const loginUrl = new URL('/login', req.url);
       loginUrl.searchParams.set('next', path);

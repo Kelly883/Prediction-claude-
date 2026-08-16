@@ -84,8 +84,13 @@ export const FreeAccessRuleSchema = z.object({
 
 export const ComplimentaryAccessSchema = z.object({
   userId: z.string().uuid(),
-  postId: z.string().uuid().nullable().optional(), // null/omitted = full access grant, not scoped to one post
+  postId: z.string().uuid().nullable().optional(),
   expiresAt: z.string().datetime().nullable().optional(),
+});
+
+export const ChangePasswordSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(8).max(200),
 });
 
 /** Turns a ZodError into the same { error } shape every route already returns. */

@@ -199,4 +199,45 @@ describe('One-Time Admin Setup API & Bootstrap Security', () => {
     const authRes = await POST(authReq);
     expect(authRes.status).toBe(200);
   });
+
+  it('prevents concurrent bootstrap race from creating multiple admins', async () => {
+    const { POST, GET } = await import('@/app/api/auth/admin-setup/route');
+
+    const req1 = new NextRequest('http://localhost:3000/api/auth/admin-setup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Race Admin 1',
+        email: 'race1@predictpro.com',
+        phone: '+2348011111111',
+        password: 'Password123!',
+        country: 'NG',
+      }),
+    });
+
+    const req2 = new NextRequest('http://localhost:3000/api/auth/admin-setup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Race Admin 2',
+        email: 'race2@predictpro.com',
+        phone: '+2348022222222',
+        password: 'Password123!',
+        country: 'NG',
+      }),
+    });
+
+    const [res1, res2] = await Promise.all([POST(req1), POST(req2)]);
+
+    const successes = [res1, res2].filter((r) => r.status === 200);
+    const failures = [res1, res2].filter((r) => r.status !== 200);
+
+    expect(successes.length).toBeLessThanOrEqual(1);
+    expect(failures.length).toBeGreaterThanOrEqual(1);
+
+    const getRes = await GET(new NextRequest('http://localhost:3000/api/auth/admin-setup'));
+    const getData = await getRes.json();
+    expect(getData.adminCount).toBe(1);
+    expect(getData.isSetupAvailable).toBe(false);
+  });
 });
