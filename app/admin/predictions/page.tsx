@@ -54,6 +54,7 @@ export default function AdminPredictionsPage() {
   const [loading, setLoading] = useState(true);
 
   const [showManualForm, setShowManualForm] = useState(false);
+  const [showUploadPanel, setShowUploadPanel] = useState(false);
 
   const [title, setTitle] = useState('');
   const [scheduledAt, setScheduledAt] = useState('');
@@ -61,13 +62,17 @@ export default function AdminPredictionsPage() {
   const [visibility, setVisibility] = useState<'plan_specific' | 'subscribers' | 'free_window'>('subscribers');
   const [selectedPlanIds, setSelectedPlanIds] = useState<string[]>([]);
   const [items, setItems] = useState([emptyItem()]);
-  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const [filePreviews, setFilePreviews] = useState<string[]>([]);
-  const manualFileInputRef = useRef<HTMLInputElement>(null);
+
+  const [uploadPostId, setUploadPostId] = useState('');
+  const [uploadFiles, setUploadFiles] = useState<File[]>([]);
+  const [uploadPreviews, setUploadPreviews] = useState<string[]>([]);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadSaving, setUploadSaving] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState<string | null>(null);
+  const uploadFileInputRef = useRef<HTMLInputElement>(null);
 
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [uploadStatus, setUploadStatus] = useState<string | null>(null);
 
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
 
@@ -84,11 +89,22 @@ export default function AdminPredictionsPage() {
 
   useEffect(() => {
     return () => {
-      filePreviews.forEach((url) => URL.revokeObjectURL(url));
+      uploadPreviews.forEach((url) => URL.revokeObjectURL(url));
     };
-  }, [filePreviews]);
+  }, [uploadPreviews]);
 
-  function validateFiles(files: File[], currentCount: number): { valid: File[]; error?: string } {
+  function handleVisibilityChange(value: 'plan_specific' | 'subscribers' | 'free_window') {
+    setVisibility(value);
+    if (value === 'plan_specific') {
+      setSelectedPlanIds([]);
+    } else if (value === 'subscribers') {
+      setSelectedPlanIds(availablePlans.map((p) => p.id));
+    } else {
+      setSelectedPlanIds([]);
+    }
+  }
+
+  function validateUploadFiles(files: File[], currentCount: number): { valid: File[]; error?: string } {
     const valid: File[] = [];
     for (const file of files) {
       if (!ALLOWED_MIME_TYPES.includes(file.type.toLowerCase())) {
@@ -105,38 +121,37 @@ export default function AdminPredictionsPage() {
     return { valid };
   }
 
-  function handleFileSelection(e: React.ChangeEvent<HTMLInputElement>) {
-    setError(null);
+  function handleUploadFileSelection(e: React.ChangeEvent<HTMLInputElement>) {
+    setUploadError(null);
     const files = Array.from(e.target.files ?? []);
     if (!files.length) return;
 
-    const { valid, error: valErr } = validateFiles(files, selectedFiles.length);
+    const { valid, error: valErr } = validateUploadFiles(files, uploadFiles.length);
     if (valErr) {
-      setError(valErr);
+      setUploadError(valErr);
       if (!valid.length) return;
     }
 
     const newPreviews = valid.map((f) => URL.createObjectURL(f));
-    setSelectedFiles((prev) => [...prev, ...valid]);
-    setFilePreviews((prev) => [...prev, ...newPreviews]);
+    setUploadFiles((prev) => [...prev, ...valid]);
+    setUploadPreviews((prev) => [...prev, ...newPreviews]);
 
-    if (manualFileInputRef.current) manualFileInputRef.current.value = '';
+    if (uploadFileInputRef.current) uploadFileInputRef.current.value = '';
   }
 
-  function removeSelectedFile(index: number) {
-    URL.revokeObjectURL(filePreviews[index]);
-    setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
-    setFilePreviews((prev) => prev.filter((_, i) => i !== index));
+  function removeUploadFile(index: number) {
+    URL.revokeObjectURL(uploadPreviews[index]);
+    setUploadFiles((prev) => prev.filter((_, i) => i !== index));
+    setUploadPreviews((prev) => prev.filter((_, i) => i !== index));
   }
 
   async function createPost(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
     setError(null);
-    setUploadStatus(null);
 
     try {
-      const newPost = await apiJson<Post>('/api/admin/predictions', {
+      await apiJson<Post>('/api/admin/predictions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -144,43 +159,65 @@ export default function AdminPredictionsPage() {
           scheduledAt: new Date(scheduledAt).toISOString(),
           bookingCode,
           visibility,
-          planIds: visibility === 'plan_specific' ? selectedPlanIds : [],
+          planIds: (visibility === 'subscribers' || visibility === 'plan_specific') ? selectedPlanIds : [],
           items: items.filter((i) => i.match && i.prediction),
         }),
       });
-
-      if (selectedFiles.length > 0) {
-        setUploadStatus(`Uploading ${selectedFiles.length} slip screenshot(s)…`);
-        for (let i = 0; i < selectedFiles.length; i++) {
-          const file = selectedFiles[i];
-          setUploadStatus(`Uploading image ${i + 1} of ${selectedFiles.length}…`);
-          const formData = new FormData();
-          formData.append('file', file);
-          const res = await apiFetch(`/api/admin/predictions/${newPost.id}/images`, {
-            method: 'POST',
-            body: formData,
-          });
-          const data = await res.json();
-          if (!res.ok) {
-            throw new Error(data.error ?? `Failed to upload image "${file.name}"`);
-          }
-        }
-      }
 
       setTitle('');
       setScheduledAt('');
       setBookingCode('');
       setSelectedPlanIds([]);
       setItems([emptyItem()]);
-      setSelectedFiles([]);
-      setFilePreviews([]);
       setShowManualForm(false);
-      setUploadStatus(null);
       load();
     } catch (err) {
       setError((err as Error).message);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function uploadImages() {
+    if (!uploadPostId) {
+      setUploadError('Please select a prediction post first.');
+      return;
+    }
+    if (uploadFiles.length === 0) {
+      setUploadError('Please select at least one image to upload.');
+      return;
+    }
+
+    setUploadSaving(true);
+    setUploadError(null);
+    setUploadStatus(`Uploading ${uploadFiles.length} slip screenshot(s)…`);
+
+    try {
+      for (let i = 0; i < uploadFiles.length; i++) {
+        const file = uploadFiles[i];
+        setUploadStatus(`Uploading image ${i + 1} of ${uploadFiles.length}…`);
+        const formData = new FormData();
+        formData.append('file', file);
+        const res = await apiFetch(`/api/admin/predictions/${uploadPostId}/images`, {
+          method: 'POST',
+          body: formData,
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.error ?? `Failed to upload image "${file.name}"`);
+        }
+      }
+
+      setUploadFiles([]);
+      setUploadPreviews([]);
+      setUploadPostId('');
+      setUploadStatus('Upload complete.');
+      setTimeout(() => setUploadStatus(null), 3000);
+      load();
+    } catch (err) {
+      setUploadError((err as Error).message);
+    } finally {
+      setUploadSaving(false);
       setUploadStatus(null);
     }
   }
@@ -198,141 +235,150 @@ export default function AdminPredictionsPage() {
   return (
     <div className="admin-dash-wrap">
       {/* Page Header */}
-      <div className="admin-dash-header">
-        <h1 className="admin-dash-title">Predictions &amp; Match Tips</h1>
-        <p className="admin-plans-subtitle" style={{ marginTop: 8, maxWidth: 640 }}>
-          Publish match slips, image predictions, booking codes, and scheduled betting insights for your subscribers.
-        </p>
-        <div className="admin-dash-underline" />
+      <div className="admin-page-header">
+        <div className="admin-page-eyebrow">Predictions &amp; Match Tips</div>
+        <h1 className="admin-page-title">Predictions &amp; Match Tips</h1>
+        <p className="admin-page-subtitle">Publish match slips, image predictions, booking codes, and scheduled betting insights for your subscribers.</p>
+        <div className="admin-underline" />
       </div>
 
       {/* Primary Actions */}
-      <div className="admin-dash-actions">
+      <div className="admin-actions-row">
         <Link
           href="/admin/predictions/csv"
-          className="admin-action-btn-secondary"
+          className="admin-action-secondary"
           style={{ textDecoration: 'none' }}
         >
-          <span className="admin-btn-left">
-            <span className="admin-btn-icon-box-gold">
+          <div className="admin-action-left">
+            <div className="admin-action-icon-box-gold">
               <Upload size={16} />
-            </span>
-            <span>
-              <span style={{ display: 'block', fontWeight: 700, fontSize: 15 }}>Import CSV</span>
-              <span style={{ display: 'block', fontSize: 12, opacity: 0.75, marginTop: 2 }}>Bulk upload tips</span>
-            </span>
-          </span>
+            </div>
+            <div>
+              <div style={{ display: 'block', fontWeight: 700, fontSize: 15 }}>Import CSV</div>
+              <div style={{ display: 'block', fontSize: 12, opacity: 0.75, marginTop: 2 }}>Bulk upload tips</div>
+            </div>
+          </div>
           <ChevronRight size={16} style={{ opacity: 0.6 }} />
         </Link>
 
         <button
           type="button"
           onClick={() => setShowManualForm((s) => !s)}
-          className="admin-action-btn-primary"
+          className="admin-action-primary"
         >
-          <span className="admin-btn-left">
-            <span className="admin-btn-icon-box-dark">
+          <div className="admin-action-left">
+            <div className="admin-action-icon-box-dark">
               {showManualForm ? <X size={16} /> : <Plus size={16} />}
-            </span>
-            <span>
-              <span style={{ display: 'block', fontWeight: 700, fontSize: 15 }}>
+            </div>
+            <div>
+              <div style={{ display: 'block', fontWeight: 700, fontSize: 15 }}>
                 {showManualForm ? 'Close Form' : 'New Tip Post'}
-              </span>
-              <span style={{ display: 'block', fontSize: 12, opacity: 0.8, marginTop: 2 }}>
+              </div>
+              <div style={{ display: 'block', fontSize: 12, opacity: 0.8, marginTop: 2 }}>
                 {showManualForm ? 'Cancel editing' : 'Create manually'}
-              </span>
-            </span>
-          </span>
+              </div>
+            </div>
+          </div>
           {!showManualForm && <ChevronRight size={16} style={{ opacity: 0.7 }} />}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setShowUploadPanel((s) => !s)}
+          className="admin-action-secondary"
+        >
+          <div className="admin-action-left">
+            <div className="admin-action-icon-box-gold">
+              <ImageIcon size={16} />
+            </div>
+            <div>
+              <div style={{ display: 'block', fontWeight: 700, fontSize: 15 }}>Upload Slip Images</div>
+              <div style={{ display: 'block', fontSize: 12, opacity: 0.75, marginTop: 2 }}>Attach screenshots</div>
+            </div>
+          </div>
+          {!showUploadPanel && <ChevronRight size={16} style={{ opacity: 0.6 }} />}
         </button>
       </div>
 
       {/* Manual Compose Form */}
       {showManualForm && (
-        <div className="card" style={{ padding: '24px', borderRadius: 18, border: '1px solid rgba(243,245,236,0.14)', background: '#102e20' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
-            <span style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(245,179,53,0.14)', border: '1px solid rgba(245,179,53,0.3)', color: '#f5b335', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div className="admin-compose-card">
+          <div className="admin-compose-header">
+            <div className="admin-compose-header-icon">
               <Plus size={18} />
-            </span>
+            </div>
             <div>
-              <h2 style={{ fontSize: 18, fontWeight: 700, color: '#ffffff', margin: 0 }}>Compose Matchday Prediction Post</h2>
-              <p style={{ fontSize: 12, color: '#85a694', margin: 0 }}>Create a new prediction with match picks and optional slip screenshots.</p>
+              <h2 className="admin-compose-title">Compose Matchday Prediction Post</h2>
+              <p className="admin-compose-subtitle">Create a new prediction with match picks.</p>
             </div>
           </div>
 
-          <form onSubmit={createPost} style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 14 }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <label htmlFor="title" style={{ fontSize: 12, fontWeight: 600, color: '#85a694', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                  Post Title
-                </label>
+          <form onSubmit={createPost} className="flex flex-col gap-4">
+            <div className="grid grid-cols-1 gap-4">
+              <div className="admin-form-group">
+                <label htmlFor="title" className="admin-form-label">Post Title</label>
                 <input
                   id="title"
                   required
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   placeholder="e.g. Saturday European Big 5 Banker"
-                  style={inputStyle}
+                  className="admin-input"
                 />
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  <label htmlFor="scheduledAt" style={{ fontSize: 12, fontWeight: 600, color: '#85a694', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                    Scheduled Match Time
-                  </label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="admin-form-group">
+                  <label htmlFor="scheduledAt" className="admin-form-label">Scheduled Match Time</label>
                   <input
                     id="scheduledAt"
                     type="datetime-local"
                     required
                     value={scheduledAt}
                     onChange={(e) => setScheduledAt(e.target.value)}
-                    style={inputStyle}
+                    className="admin-input"
                   />
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  <label htmlFor="bookingCode" style={{ fontSize: 12, fontWeight: 600, color: '#85a694', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                    Betting Booking Code
-                  </label>
+                <div className="admin-form-group">
+                  <label htmlFor="bookingCode" className="admin-form-label">Betting Booking Code</label>
                   <input
                     id="bookingCode"
                     required
                     value={bookingCode}
                     onChange={(e) => setBookingCode(e.target.value)}
                     placeholder="e.g. BC-98342 or SportyBet code"
-                    style={{ ...inputStyle, fontFamily: 'var(--font-mono)', textTransform: 'uppercase' }}
+                    className="admin-input mono-text"
+                    style={{ fontFamily: 'var(--font-mono)', textTransform: 'uppercase' }}
                   />
                 </div>
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <label htmlFor="visibility" style={{ fontSize: 12, fontWeight: 600, color: '#85a694', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                  Subscriber Visibility
-                </label>
+              <div className="admin-form-group">
+                <label htmlFor="visibility" className="admin-form-label">Subscriber Visibility</label>
                 <select
                   id="visibility"
                   value={visibility}
-                  onChange={(e) => setVisibility(e.target.value as any)}
-                  style={selectStyle}
+                  onChange={(e) => handleVisibilityChange(e.target.value as any)}
+                  className="admin-select"
                 >
                   <option value="subscribers">All Active Subscribers</option>
                   <option value="plan_specific">Plan-Specific VIPs</option>
                   <option value="free_window">Free Window (Promotional)</option>
                 </select>
 
-                {visibility === 'plan_specific' && (
-                  <div style={{ padding: 14, borderRadius: 12, background: '#0b2216', border: '1px solid rgba(243,245,236,0.14)', marginTop: 8 }}>
-                    <label style={{ fontSize: 12, fontWeight: 600, color: '#85a694', textTransform: 'uppercase', letterSpacing: '0.08em', display: 'block', marginBottom: 8 }}>
-                      Select Admin-Created Subscription Plans
+                {(visibility === 'subscribers' || visibility === 'plan_specific') && (
+                  <div className="p-3 rounded-xl bg-[var(--pitch)] border border-[rgba(243,245,236,0.14)] space-y-2 mt-2">
+                    <label className="text-xs text-[#85a694] font-semibold uppercase tracking-wider font-mono block">
+                      {visibility === 'subscribers' ? 'Visible To All Admin-Created Plans' : 'Select Admin-Created Subscription Plans'}
                     </label>
                     {availablePlans.length === 0 ? (
-                      <p style={{ fontSize: 12, color: '#9fb3a6', fontStyle: 'italic' }}>
+                      <p className="text-xs text-[#9fb3a6] italic">
                         No subscription plans created by admin yet. Create plans in the Membership Plans section.
                       </p>
                     ) : (
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 8 }}>
+                      <div className="grid grid-cols-1 gap-2">
                         {availablePlans.map((plan) => (
-                          <label key={plan.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#ffffff', background: '#0f2b1d', padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(243,245,236,0.1)', cursor: 'pointer' }}>
+                          <label key={plan.id} className="flex items-center gap-2 text-xs text-white bg-[#0f2b1d] p-2 rounded-lg border border-[rgba(243,245,236,0.1)] cursor-pointer">
                             <input
                               type="checkbox"
                               checked={selectedPlanIds.includes(plan.id)}
@@ -343,10 +389,10 @@ export default function AdminPredictionsPage() {
                                   setSelectedPlanIds(selectedPlanIds.filter((id) => id !== plan.id));
                                 }
                               }}
-                              style={{ borderRadius: 4, borderColor: '#374151', background: '#111827', color: '#f5b335' }}
+                              className="rounded border-zinc-700 bg-zinc-900 text-[#f5b335] focus:ring-[#f5b335]"
                             />
-                            <span style={{ fontWeight: 500 }}>{plan.name}</span>
-                            <span style={{ fontSize: 11, color: '#85a694', marginLeft: 'auto' }}>({plan.durationDays}d)</span>
+                            <span className="font-medium">{plan.name}</span>
+                            <span className="text-[10px] text-[#85a694] ml-auto">({plan.durationDays}d)</span>
                           </label>
                         ))}
                       </div>
@@ -356,69 +402,16 @@ export default function AdminPredictionsPage() {
               </div>
             </div>
 
-            {/* Attach Slip Screenshots */}
-            <div style={{ padding: 16, borderRadius: 14, background: '#0f2b1d', border: '1px dashed rgba(243,245,236,0.2)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                <label style={{ fontSize: 12, fontWeight: 700, color: '#ffffff', textTransform: 'uppercase', letterSpacing: '0.08em', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ width: 28, height: 28, borderRadius: 7, background: 'rgba(245,179,53,0.14)', border: '1px solid rgba(245,179,53,0.3)', color: '#f5b335', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <ImageIcon size={14} />
-                  </span>
-                  Attach Slip Screenshots ({selectedFiles.length}/10)
-                </label>
-                <span style={{ fontSize: 11, color: '#85a694' }}>JPG, PNG (Max 5MB each)</span>
-              </div>
-
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-                <button
-                  type="button"
-                  onClick={() => manualFileInputRef.current?.click()}
-                  style={{ ...inputStyle, background: 'transparent', border: '1px solid rgba(243,245,236,0.18)', color: '#f3f5ec', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 14px', fontSize: 13, fontWeight: 600 }}
-                >
-                  <FileImage size={15} style={{ color: '#f5b335' }} />
-                  Attach Slip Screenshots
-                </button>
-                <input
-                  ref={manualFileInputRef}
-                  type="file"
-                  multiple
-                  accept="image/jpeg,image/png,image/jpg"
-                  onChange={handleFileSelection}
-                  className="hidden"
-                />
-              </div>
-
-              {selectedFiles.length > 0 && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginTop: 14 }}>
-                  {selectedFiles.map((file, idx) => (
-                    <div key={idx} style={{ position: 'relative', borderRadius: 10, overflow: 'hidden', border: '1px solid rgba(243,245,236,0.15)', background: 'rgba(0,0,0,0.4)', aspectRatio: '16/9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={filePreviews[idx]} alt={file.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                      <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)', opacity: 0, transition: 'opacity 0.15s ease', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, padding: 8 }} className="group-hover:opacity-100">
-                        <span style={{ fontSize: 10, color: '#ffffff', fontFamily: 'var(--font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>{file.name}</span>
-                        <button
-                          type="button"
-                          onClick={() => removeSelectedFile(idx)}
-                          style={{ padding: '6px 10px', borderRadius: 6, background: '#dc2626', color: '#ffffff', border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 600 }}
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
             {/* Dynamic Match Items */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <label style={{ fontSize: 12, fontWeight: 700, color: '#ffffff', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-white uppercase" style={{ letterSpacing: '0.08em' }}>
                   Individual Match Predictions ({items.length})
                 </label>
                 <button
                   type="button"
                   onClick={() => setItems([...items, emptyItem()])}
-                  style={{ fontSize: 12, color: '#f5b335', background: 'transparent', border: 'none', cursor: 'pointer', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                  className="text-xs text-[#f5b335] bg-transparent border-none cursor-pointer font-semibold inline-flex items-center gap-1"
                 >
                   <Plus size={12} />
                   Add Another Match
@@ -426,13 +419,13 @@ export default function AdminPredictionsPage() {
               </div>
 
               {items.map((item, i) => (
-                <div key={i} style={{ padding: 12, borderRadius: 12, background: '#0b2216', border: '1px solid rgba(243,245,236,0.1)', display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
+                <div key={i} className="admin-match-item">
                   <div style={{ flex: 1, minWidth: 200 }}>
                     <input
                       placeholder="Teams (e.g. Arsenal vs Chelsea)"
                       value={item.match}
                       onChange={(e) => setItems(items.map((it, idx) => (idx === i ? { ...it, match: e.target.value } : it)))}
-                      style={{ ...inputStyle, background: 'transparent', border: 'none', padding: '4px 0' }}
+                      className="admin-match-item-input"
                     />
                   </div>
                   <div style={{ width: 180, borderTop: '1px solid rgba(243,245,236,0.1)', paddingTop: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -440,13 +433,13 @@ export default function AdminPredictionsPage() {
                       placeholder="Pick (e.g. Over 2.5 @ 1.85)"
                       value={item.prediction}
                       onChange={(e) => setItems(items.map((it, idx) => (idx === i ? { ...it, prediction: e.target.value } : it)))}
-                      style={{ ...inputStyle, background: 'transparent', border: 'none', padding: '4px 0', color: '#f5b335', fontFamily: 'var(--font-mono)' }}
+                      className="admin-match-item-input-pick"
                     />
                     {items.length > 1 && (
                       <button
                         type="button"
                         onClick={() => setItems(items.filter((_, idx) => idx !== i))}
-                        style={{ background: 'transparent', border: 'none', color: '#9ca3af', cursor: 'pointer', padding: 4 }}
+                        className="p-1 bg-transparent border-none text-zinc-400 cursor-pointer hover:text-red-400 transition-colors"
                       >
                         <Trash2 size={14} />
                       </button>
@@ -457,35 +450,27 @@ export default function AdminPredictionsPage() {
             </div>
 
             {error && (
-              <div style={{ padding: 12, borderRadius: 10, background: 'rgba(220,38,38,0.1)', border: '1px solid rgba(220,38,38,0.3)', color: '#fca5a5', fontSize: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-                <ShieldAlert size={16} style={{ flexShrink: 0 }} />
+              <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center gap-2">
+                <ShieldAlert size={16} className="shrink-0" />
                 <span>{error}</span>
               </div>
             )}
 
-            {uploadStatus && (
-              <div style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: '#f5b335', display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#f5b335', animation: 'pulse 2s cubic-bezier(0.4,0,0.6,1) infinite' }} />
-                <span>{uploadStatus}</span>
-              </div>
-            )}
-
-            <div style={{ display: 'flex', gap: 10, paddingTop: 6 }}>
+            <div className="flex items-center gap-3 pt-1">
               <button
                 type="submit"
                 disabled={saving}
-                style={{ ...primaryButtonStyle, opacity: saving ? 0.7 : 1 }}
+                className="btn btn-primary py-2.5 px-5 text-sm font-semibold flex items-center justify-center gap-2"
+                style={{ opacity: saving ? 0.7 : 1 }}
               >
-                {saving ? 'Saving Post & Media…' : 'Save as Draft'}
+                {saving ? 'Saving Post…' : 'Save as Draft'}
               </button>
               <button
                 type="button"
                 onClick={() => {
                   setShowManualForm(false);
-                  setSelectedFiles([]);
-                  setFilePreviews([]);
                 }}
-                style={{ ...ghostButtonStyle, border: '1px solid rgba(243,245,236,0.14)', color: '#85a694' }}
+                className="btn btn-ghost py-2.5 px-4 text-sm border border-[rgba(243,245,236,0.14)] text-[#85a694]"
               >
                 Cancel
               </button>
@@ -494,62 +479,179 @@ export default function AdminPredictionsPage() {
         </div>
       )}
 
+      {/* Upload Slip Images Panel */}
+      {showUploadPanel && (
+        <div className="admin-compose-card">
+          <div className="admin-compose-header">
+            <div className="admin-compose-header-icon">
+              <ImageIcon size={18} />
+            </div>
+            <div>
+              <h2 className="admin-compose-title">Upload Slip Screenshots</h2>
+              <p className="admin-compose-subtitle">Select a prediction post and attach slip screenshots.</p>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-4">
+            <div className="admin-form-group">
+              <label htmlFor="uploadPost" className="admin-form-label">Select Prediction Post</label>
+              <select
+                id="uploadPost"
+                value={uploadPostId}
+                onChange={(e) => {
+                  setUploadPostId(e.target.value);
+                  setUploadFiles([]);
+                  setUploadPreviews([]);
+                  setUploadError(null);
+                }}
+                className="admin-select"
+              >
+                <option value="">-- Choose a post --</option>
+                {posts.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.title} ({p.status})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="admin-upload-area">
+              <div className="admin-upload-area-header">
+                <label className="admin-upload-area-label">
+                  <span className="admin-upload-area-label-icon">
+                    <FileImage size={14} />
+                  </span>
+                  Attach Slip Screenshots ({uploadFiles.length}/10)
+                </label>
+                <span className="text-[11px] text-[#85a694]">JPG, PNG (Max 5MB each)</span>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => uploadFileInputRef.current?.click()}
+                  className="admin-upload-btn"
+                >
+                  <FileImage size={15} style={{ color: '#f5b335' }} />
+                  Attach Slip Screenshots
+                </button>
+                <input
+                  ref={uploadFileInputRef}
+                  type="file"
+                  multiple
+                  accept="image/jpeg,image/png,image/jpg"
+                  onChange={handleUploadFileSelection}
+                  className="hidden"
+                />
+              </div>
+
+              {uploadFiles.length > 0 && (
+                <div className="admin-upload-grid">
+                  {uploadFiles.map((file, idx) => (
+                    <div key={idx} className="admin-upload-preview">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={uploadPreviews[idx]} alt={file.name} />
+                      <div className="admin-upload-preview-overlay">
+                        <span className="admin-upload-preview-name">{file.name}</span>
+                        <button
+                          type="button"
+                          onClick={() => removeUploadFile(idx)}
+                          className="admin-upload-preview-remove"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {uploadError && (
+              <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center gap-2">
+                <ShieldAlert size={16} className="shrink-0" />
+                <span>{uploadError}</span>
+              </div>
+            )}
+
+            {uploadStatus && (
+              <div className="text-xs flex items-center gap-2" style={{ fontFamily: 'var(--font-mono)', color: '#f5b335' }}>
+                <span className="w-2 h-2 rounded-full bg-[#f5b335] animate-pulse" />
+                <span>{uploadStatus}</span>
+              </div>
+            )}
+
+            <div className="flex items-center gap-3 pt-1">
+              <button
+                type="button"
+                onClick={uploadImages}
+                disabled={uploadSaving}
+                className="btn btn-primary py-2.5 px-5 text-sm font-semibold flex items-center justify-center gap-2"
+                style={{ opacity: uploadSaving ? 0.7 : 1 }}
+              >
+                {uploadSaving ? 'Uploading…' : 'Upload Images'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowUploadPanel(false);
+                  setUploadFiles([]);
+                  setUploadPreviews([]);
+                  setUploadPostId('');
+                  setUploadError(null);
+                  setUploadStatus(null);
+                }}
+                className="btn btn-ghost py-2.5 px-4 text-sm border border-[rgba(243,245,236,0.14)] text-[#85a694]"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Feed Archive Card */}
-      <div className="card" style={{ padding: '28px', borderRadius: 18, background: '#102e20', border: '1px solid rgba(243,245,236,0.14)' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 4 }}>
-          <h2 style={{ fontSize: 20, fontWeight: 700, color: '#ffffff', margin: 0, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-            <span>Feed Archive ({posts.length})</span>
-          </h2>
-          <p style={{ fontSize: 12, color: '#85a694', margin: 0 }}>Live Tips Repository &amp; Published Slips</p>
+      <div className="admin-compose-card">
+        <div className="admin-card-header">
+          <div>
+            <h2 className="admin-card-title">Feed Archive ({posts.length})</h2>
+            <p className="admin-card-subtitle">Live Tips Repository &amp; Published Slips</p>
+          </div>
         </div>
 
         {loading ? (
-          <div style={{ padding: '48px 16px', textAlign: 'center', fontSize: 13, color: '#85a694', fontFamily: 'var(--font-mono)' }} className="animate-pulse">
-            Loading match posts…
-          </div>
+          <div className="admin-loading animate-pulse">Loading match posts…</div>
         ) : posts.length === 0 ? (
           <EmptyState />
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div className="flex flex-col gap-3">
             {posts.map((p) => (
               <div
                 key={p.id}
-                style={{ padding: 18, borderRadius: 14, background: '#0f2b1d', border: '1px solid rgba(243,245,236,0.1)', display: 'flex', flexDirection: 'column', gap: 12, transition: 'border-color 0.15s ease' }}
-                className="group"
+                className="admin-post-card group"
               >
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                    <span style={{ fontWeight: 700, fontSize: 16, color: '#ffffff', transition: 'color 0.15s ease' }} className="group-hover:text-[#f5b335]">
-                      {p.title}
-                    </span>
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center gap-2.5 flex-wrap">
+                    <span className="admin-post-card-title group-hover:text-[#f5b335]">{p.title}</span>
 
                     <span
-                      style={{
-                        padding: '3px 10px',
-                        fontSize: 10,
-                        fontWeight: 800,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.08em',
-                        borderRadius: 9999,
-                        border: '1px solid',
-                        ...(p.status === 'published'
-                          ? { background: 'rgba(16,185,129,0.15)', color: '#34d399', borderColor: 'rgba(52,211,153,0.35)' }
-                          : { background: 'rgba(245,178,61,0.15)', color: '#fbbf24', borderColor: 'rgba(251,191,36,0.35)' }),
-                      }}
+                      className={`admin-tag ${p.status === 'published' ? 'admin-tag-success' : 'admin-tag-warning'}`}
                     >
                       {p.status}
                     </span>
 
                     {p.media && p.media.length > 0 && (
-                      <span style={{ padding: '2px 8px', fontSize: 10, fontFamily: 'var(--font-mono)', fontWeight: 600, background: 'rgba(168,85,247,0.12)', color: '#c084fc', border: '1px solid rgba(168,85,247,0.3)', borderRadius: 6, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      <span className="admin-tag admin-tag-purple">
                         <ImageIcon size={11} />
                         <span>{p.media.length} slip image{p.media.length > 1 ? 's' : ''}</span>
                       </span>
                     )}
 
-                    <span style={{ padding: '2px 8px', fontSize: 10, fontFamily: 'var(--font-mono)', color: '#9fb3a6', background: 'rgba(0,0,0,0.25)', borderRadius: 6 }}>
+                    <span className="admin-tag-mono">
                       {p.visibility === 'subscribers'
-                        ? 'All Active Subscribers'
+                        ? p.planIds && p.planIds.length > 0
+                          ? `Plans: ${p.planIds.map((id) => availablePlans.find((ap) => ap.id === id)?.name || id).join(', ')}`
+                          : 'All Active Subscribers'
                         : p.visibility === 'plan_specific'
                           ? p.planIds && p.planIds.length > 0
                             ? `Plans: ${p.planIds.map((id) => availablePlans.find((ap) => ap.id === id)?.name || id).join(', ')}`
@@ -558,8 +660,8 @@ export default function AdminPredictionsPage() {
                     </span>
                   </div>
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', fontSize: 12, color: '#85a694', fontFamily: 'var(--font-mono)' }}>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                  <div className="admin-post-card-meta">
+                    <span className="inline-flex items-center gap-1.5">
                       <Calendar size={13} style={{ color: '#f5b335' }} />
                       {new Date(p.scheduledAt).toLocaleString()}
                     </span>
@@ -574,10 +676,11 @@ export default function AdminPredictionsPage() {
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 4 }}>
+                <div className="admin-post-card-actions">
                   <Link
                     href={`/admin/predictions/${p.id}`}
-                    style={{ ...ghostButtonStyle, border: '1px solid rgba(243,245,236,0.12)', color: '#f3f5ec', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 12px', fontSize: 12 }}
+                    className="admin-back-btn"
+                    style={{ padding: '8px 12px', fontSize: 12 }}
                   >
                     <Edit size={13} />
                     <span>Edit Post &amp; Slip</span>
@@ -585,7 +688,8 @@ export default function AdminPredictionsPage() {
                   {p.status !== 'published' && (
                     <button
                       onClick={() => publish(p.id)}
-                      style={{ ...primaryButtonStyle, padding: '8px 14px', fontSize: 12 }}
+                      className="btn btn-primary"
+                      style={{ padding: '8px 14px', fontSize: 12 }}
                     >
                       <CheckCircle2 size={13} />
                       <span>Publish</span>
@@ -600,11 +704,11 @@ export default function AdminPredictionsPage() {
 
       {/* Lightbox Modal */}
       {previewImageUrl && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.9)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div className="admin-lightbox">
           <div style={{ position: 'relative', maxWidth: 1024, width: '100%', maxHeight: '90vh', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
             <button
               onClick={() => setPreviewImageUrl(null)}
-              style={{ position: 'absolute', top: -40, right: 0, background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.8)', cursor: 'pointer', padding: 8 }}
+              style={{ position: 'absolute', top: -40, right: 0, padding: 8, color: 'rgba(255,255,255,0.8)', background: 'transparent', border: 'none', cursor: 'pointer' }}
             >
               <X size={24} />
             </button>
@@ -612,7 +716,7 @@ export default function AdminPredictionsPage() {
             <img
               src={previewImageUrl}
               alt="Prediction slip full view"
-              style={{ maxHeight: '85vh', width: 'auto', objectFit: 'contain', borderRadius: 12, border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.5)' }}
+              className="admin-lightbox-img"
             />
           </div>
         </div>
@@ -623,8 +727,8 @@ export default function AdminPredictionsPage() {
 
 function EmptyState() {
   return (
-    <div style={{ padding: '48px 24px', textAlign: 'center', border: '1px dashed rgba(243,245,236,0.14)', borderRadius: 16, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
-      <div style={{ width: 64, height: 64, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#10b981' }}>
+    <div className="admin-empty-state">
+      <div className="admin-empty-state-icon" style={{ width: 64, height: 64 }}>
         <svg width="64" height="64" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
           <rect x="25" y="20" width="50" height="68" rx="8" stroke="#10b981" strokeWidth="2.5" fill="#0c2317" />
           <path d="M40 20V15C40 13.3431 41.3431 12 43 12H57C58.6569 12 60 13.3431 60 15V20" stroke="#10b981" strokeWidth="2.5" />
@@ -637,59 +741,9 @@ function EmptyState() {
       </div>
 
       <div style={{ maxWidth: 420, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <p style={{ fontSize: 14, color: '#9fb3a6', fontWeight: 500, margin: 0 }}>
-          No match predictions found in this category.
-        </p>
-        <p style={{ fontSize: 12, color: 'rgba(159,179,166,0.8)', margin: 0 }}>
-          Click &quot;New Tip Post&quot; or &quot;Import CSV&quot; to publish your match predictions.
-        </p>
+        <p className="admin-empty-state-title">No match predictions found in this category.</p>
+        <p className="admin-empty-state-desc">Click &quot;New Tip Post&quot; or &quot;Import CSV&quot; to publish your match predictions.</p>
       </div>
     </div>
   );
 }
-
-const inputStyle: React.CSSProperties = {
-  width: '100%',
-  background: '#0b2216',
-  border: '1px solid rgba(243,245,236,0.14)',
-  borderRadius: 12,
-  padding: '12px 14px',
-  color: '#f3f5ec',
-  fontSize: 14,
-  fontFamily: 'inherit',
-  outline: 'none',
-};
-
-const selectStyle: React.CSSProperties = {
-  ...inputStyle,
-  appearance: 'none',
-  cursor: 'pointer',
-};
-
-const primaryButtonStyle: React.CSSProperties = {
-  background: '#f5b335',
-  color: '#0a2116',
-  border: 'none',
-  borderRadius: 12,
-  padding: '12px 20px',
-  fontSize: 14,
-  fontWeight: 700,
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  gap: 8,
-  cursor: 'pointer',
-  boxShadow: '0 4px 14px rgba(245,179,53,0.18)',
-  transition: 'filter 0.15s ease, transform 0.1s ease',
-};
-
-const ghostButtonStyle: React.CSSProperties = {
-  background: 'transparent',
-  border: '1px solid transparent',
-  borderRadius: 12,
-  padding: '12px 20px',
-  fontSize: 14,
-  fontWeight: 600,
-  cursor: 'pointer',
-  transition: 'all 0.15s ease',
-};

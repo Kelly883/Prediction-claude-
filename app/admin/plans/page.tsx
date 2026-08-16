@@ -1,21 +1,22 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { apiJson } from '@/lib/api-client';
-import { 
-  Crown, 
-  Sparkles, 
-  Pencil, 
-  X, 
-  Check, 
-  Calendar, 
-  Banknote, 
-  DollarSign, 
-  Clock, 
+import {
+  Crown,
+  Sparkles,
+  Pencil,
+  X,
+  Check,
+  Calendar,
+  Banknote,
+  DollarSign,
+  Clock,
   MoreVertical,
   Plus,
   ShieldAlert,
-  Zap
+  Zap,
 } from 'lucide-react';
 
 type Plan = {
@@ -58,7 +59,6 @@ export default function AdminPlansPage() {
       priceNGN: plan.priceNGN,
       priceUSDOverride: plan.priceUSDOverride ?? '',
     });
-    // Scroll form into view
     const formEl = document.getElementById('plan-form-section');
     if (formEl) {
       formEl.scrollIntoView({ behavior: 'smooth' });
@@ -119,15 +119,15 @@ export default function AdminPlansPage() {
 
   return (
     <div className="admin-plans-wrap">
-      {/* Page Header */}
       <header className="admin-plans-header">
-        <h1 className="admin-plans-title">Membership Plans</h1>
-        <p className="admin-plans-subtitle">
-          Configure subscriber pass durations, pricing in NGN, and optional USD rates.
-        </p>
+        <div className="admin-page-header" style={{ marginBottom: 0 }}>
+          <div className="admin-page-eyebrow">Membership Plans</div>
+          <h1 className="admin-page-title" style={{ fontSize: 34 }}>Membership Plans</h1>
+          <p className="admin-page-subtitle">Configure subscriber pass durations, pricing in NGN, and optional USD rates.</p>
+          <div className="admin-underline" />
+        </div>
       </header>
 
-      {/* Configured Plans Section */}
       <section className="admin-plans-section">
         <div className="admin-plans-section-top">
           <h2 className="admin-plans-section-heading">Configured Plans</h2>
@@ -137,16 +137,12 @@ export default function AdminPlansPage() {
         </div>
 
         {loading ? (
-          <div className="p-8 text-center text-sm text-[#85a694]">
-            Loading membership plans…
-          </div>
+          <div className="admin-loading">Loading membership plans…</div>
         ) : plans.length === 0 ? (
-          <div className="p-8 text-center border border-dashed border-[rgba(243,245,236,0.14)] rounded-2xl bg-[#102e20]/40">
-            <Zap size={28} className="mx-auto mb-2 text-[#f5b335] opacity-80" />
-            <p className="text-sm text-white font-medium">No plans configured yet</p>
-            <p className="text-xs text-[#85a694] mt-1 max-w-sm mx-auto">
-              Create your first plan below so visitors can purchase subscriptions.
-            </p>
+          <div className="admin-empty-state">
+            <Zap size={28} className="admin-empty-state-icon" />
+            <p className="admin-empty-state-title">No plans configured yet</p>
+            <p className="admin-empty-state-desc">Create your first plan below so visitors can purchase subscriptions.</p>
           </div>
         ) : (
           <div className="admin-plans-grid-cards">
@@ -189,7 +185,6 @@ export default function AdminPlansPage() {
                   </div>
                 </div>
 
-                {/* Bottom Action Buttons */}
                 <div className="admin-plan-actions-grid">
                   <button
                     type="button"
@@ -224,7 +219,6 @@ export default function AdminPlansPage() {
         )}
       </section>
 
-      {/* Create / Edit Plan Form Section */}
       <section id="plan-form-section" className="admin-plan-form-card">
         <h2 className="admin-plan-form-title">
           <Sparkles size={20} className="text-[#f5b335]" />
@@ -232,7 +226,6 @@ export default function AdminPlansPage() {
         </h2>
 
         <form onSubmit={submit} className="flex flex-col gap-4">
-          {/* Plan Name */}
           <div className="admin-form-group">
             <label htmlFor="plan-name" className="admin-form-label">
               Plan Name
@@ -249,7 +242,6 @@ export default function AdminPlansPage() {
             </div>
           </div>
 
-          {/* Duration & Price Row */}
           <div className="admin-form-row-2col">
             <div className="admin-form-group">
               <label htmlFor="plan-duration" className="admin-form-label">
@@ -289,7 +281,6 @@ export default function AdminPlansPage() {
             </div>
           </div>
 
-          {/* Fixed USD Price (Optional) */}
           <div className="admin-form-group">
             <label htmlFor="plan-price-usd" className="admin-form-label">
               Fixed USD Price ($) (Optional)
@@ -316,7 +307,6 @@ export default function AdminPlansPage() {
             </div>
           )}
 
-          {/* Submit Action */}
           <div className="flex flex-col gap-2 pt-2">
             <button
               type="submit"

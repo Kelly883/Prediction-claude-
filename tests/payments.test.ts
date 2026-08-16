@@ -41,3 +41,39 @@ describe('resolvePrice', () => {
     expect(result.fxRateUsed).toBeUndefined();
   });
 });
+
+const paymentRefCapture = { current: '' };
+
+describe('payment reference uniqueness', () => {
+  it('generates a reference with the expected pp_ prefix', async () => {
+    const mockPrisma = vi.hoisted(() => ({
+      user: {
+        findUniqueOrThrow: vi.fn(async () => ({ id: 'u-1', email: 'u@test.com', country: 'NG' })),
+      },
+      plan: {
+        findUniqueOrThrow: vi.fn(async () => ({ id: 'p-1', durationDays: 30, priceNGN: 5000, priceUSDOverride: null, fxMarkupPercent: null })),
+      },
+      transaction: {
+        create: vi.fn(async ({ data }: any) => {
+          paymentRefCapture.current = data.providerReference;
+          return { id: 'tx-1', ...data };
+        }),
+      },
+    }));
+
+    const mockPaystack = vi.hoisted(() => ({
+      paystackInitialize: vi.fn().mockResolvedValue({ authorizationUrl: 'https://checkout.paystack.com/test' }),
+    }));
+
+    vi.mock('@/lib/prisma', () => ({ prisma: mockPrisma }));
+    vi.mock('@/lib/providers/paystack', () => mockPaystack);
+
+    process.env.APP_URL = 'http://localhost:3000';
+
+    const { initializePayment } = await import('@/lib/payments');
+    const result = await initializePayment('u-1', 'p-1', 'paystack');
+    expect(result.transactionId).toBe('tx-1');
+    expect(paymentRefCapture.current).toBeDefined();
+    expect(paymentRefCapture.current.startsWith('pp_')).toBe(true);
+  });
+});

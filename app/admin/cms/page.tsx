@@ -63,11 +63,11 @@ export default function AdminCmsPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="pb-2 border-b border-[rgba(243,245,236,0.1)]">
-        <h1 className="font-bold text-2xl sm:text-3xl text-white">Content Management System</h1>
-        <p className="text-xs sm:text-sm text-[var(--chalk-muted)] mt-1">
-          Customize content sections, announcement banners, legal policies, and FAQ articles.
-        </p>
+      <div className="admin-page-header">
+        <div className="admin-page-eyebrow">Content Management System</div>
+        <h1 className="admin-page-title">Content Management System</h1>
+        <p className="admin-page-subtitle">Customize content sections, announcement banners, legal policies, and FAQ articles.</p>
+        <div className="admin-underline" />
       </div>
 
       {/* Page Selector Tabs */}
@@ -93,11 +93,11 @@ export default function AdminCmsPage() {
       <div className="admin-grid-2col">
         {/* Sections List */}
         <div className="card p-4 sm:p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-base font-semibold text-white flex items-center gap-2">
+          <div className="admin-card-header">
+            <div className="flex items-center gap-2">
               <Layers size={16} className="text-[var(--floodlight)]" />
-              <span>Configured Blocks</span>
-            </h2>
+              <h2 className="admin-card-title" style={{ margin: 0 }}>Configured Blocks</h2>
+            </div>
             <button
               onClick={resetForm}
               className="text-xs text-[var(--floodlight)] hover:underline inline-flex items-center gap-1"
@@ -117,19 +117,15 @@ export default function AdminCmsPage() {
           )}
 
           {loading ? (
-            <div className="p-8 text-center text-sm text-[var(--chalk-muted)]">
-              Loading sections…
-            </div>
+            <div className="admin-loading">Loading sections…</div>
           ) : sections.length === 0 ? (
-            <div className="p-6 text-center border border-dashed border-[rgba(243,245,236,0.14)] rounded-lg">
-              <FileEdit size={24} className="mx-auto mb-2 text-[var(--floodlight)] opacity-70" />
-              <p className="text-sm text-white font-medium">No custom sections yet</p>
-              <p className="text-xs text-[var(--chalk-muted)] mt-1">
-                Fill the form on the right to publish content for /{page}.
-              </p>
+            <div className="admin-empty-state">
+              <FileEdit size={24} className="admin-empty-state-icon" />
+              <p className="admin-empty-state-title">No custom sections yet</p>
+              <p className="admin-empty-state-desc">Fill the form on the right to publish content for /{page}.</p>
             </div>
           ) : (
-            <div className="space-y-2">
+            <div className="flex flex-col gap-2">
               {sections.map((s) => {
                 const isSelected = key === s.key;
                 return (
@@ -168,50 +164,46 @@ export default function AdminCmsPage() {
         </div>
 
         {/* Section Edit Form */}
-        <form onSubmit={save} className="card p-4 sm:p-5 space-y-4">
-          <h2 className="text-base font-semibold text-white flex items-center gap-2">
-            <FileEdit size={16} className="text-[var(--floodlight)]" />
-            <span>{key ? `Edit "${key}" Block` : 'Create Section Block'}</span>
-          </h2>
+        <form onSubmit={save} className="card p-4 sm:p-5 flex flex-col gap-4">
+          <div className="admin-card-header">
+            <div className="flex items-center gap-2">
+              <FileEdit size={16} className="text-[var(--floodlight)]" />
+              <h2 className="admin-card-title" style={{ margin: 0 }}>{key ? `Edit "${key}" Block` : 'Create Section Block'}</h2>
+            </div>
+          </div>
 
-          <div className="field mb-0">
-            <label htmlFor="key" className="text-xs text-[var(--chalk-muted)] font-medium">
-              Section Key (unique identifier)
-            </label>
+          <div className="admin-form-group">
+            <label htmlFor="key" className="admin-form-label">Section Key (unique identifier)</label>
             <input
               id="key"
               required
               value={key}
               onChange={(e) => setKey(e.target.value)}
               placeholder="e.g. hero_heading, intro, announcement"
-              className="w-full font-mono text-sm"
+              className="admin-input mono-text"
             />
           </div>
 
-          <div className="field mb-0">
-            <label htmlFor="heading" className="text-xs text-[var(--chalk-muted)] font-medium">
-              Section Heading (optional)
-            </label>
+          <div className="admin-form-group">
+            <label htmlFor="heading" className="admin-form-label">Section Heading (optional)</label>
             <input
               id="heading"
               value={heading}
               onChange={(e) => setHeading(e.target.value)}
-              placeholder="e.g. 1. Terms & Conditions Overview"
-              className="w-full text-sm"
+              placeholder="e.g. 1. Terms &amp; Conditions Overview"
+              className="admin-input"
             />
           </div>
 
-          <div className="field mb-0">
-            <label htmlFor="body" className="text-xs text-[var(--chalk-muted)] font-medium">
-              Content Body (Markdown / Plaintext)
-            </label>
+          <div className="admin-form-group">
+            <label htmlFor="body" className="admin-form-label">Content Body (Markdown / Plaintext)</label>
             <textarea
               id="body"
               value={body}
               onChange={(e) => setBody(e.target.value)}
               rows={8}
               placeholder="Enter markdown copy or HTML description text here…"
-              className="w-full bg-[var(--pitch)] border border-[rgba(243,245,236,0.14)] rounded-lg p-3 text-sm text-[var(--chalk)] font-sans focus:border-[var(--floodlight)] outline-none"
+              className="admin-textarea"
             />
           </div>
 

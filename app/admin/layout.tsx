@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import DashboardHeader from '@/components/DashboardHeader';
 import AdminNavTabs from '@/components/AdminNavTabs';
 import { DashboardUserProvider, useDashboardUser } from '@/lib/dashboard-user-context';
@@ -40,12 +40,6 @@ function AdminChrome({ children }: { children: React.ReactNode }) {
 }
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
-
-  if (pathname === '/admin/setup') {
-    return <>{children}</>;
-  }
-
   return (
     <DashboardUserProvider>
       <AdminChrome>{children}</AdminChrome>

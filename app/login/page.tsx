@@ -20,7 +20,7 @@ function LoginForm() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  async function onSubmitPassword(e: React.FormEvent) {
+  async function onSubmitPassword(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
     setLoading(true);
@@ -42,7 +42,7 @@ function LoginForm() {
         ? (destination && destination.startsWith('/admin') ? destination : '/admin')
         : (destination && destination.startsWith('/dashboard') ? destination : '/dashboard');
 
-      router.push(targetPath);
+      await router.push(targetPath);
       router.refresh();
     } catch (err) {
       setError((err as Error).message);

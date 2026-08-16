@@ -43,6 +43,14 @@ export async function canView(userId: string | null, post: PredictionPost): Prom
 
   if (post.freeUntil && now < post.freeUntil) return true;
 
+  if ((post.visibility === 'subscribers' || post.visibility === 'plan_specific') && post.planIds && post.planIds.length > 0) {
+    const activeSub = await prisma.subscription.findFirst({
+      where: { userId, status: 'active', endAt: { gt: now }, planId: { in: post.planIds } },
+    });
+    if (activeSub) return true;
+    return false;
+  }
+
   const activeSub = await prisma.subscription.findFirst({
     where: { userId, status: 'active', endAt: { gt: now } },
     include: { plan: true },

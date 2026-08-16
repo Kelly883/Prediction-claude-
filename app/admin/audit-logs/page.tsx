@@ -25,37 +25,33 @@ export default function AdminAuditLogPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="pb-2 border-b border-[rgba(243,245,236,0.1)]">
-        <h1 className="font-bold text-2xl sm:text-3xl text-white">Security & Audit Logs</h1>
-        <p className="text-xs sm:text-sm text-[var(--chalk-muted)] mt-1">
-          Immutable audit trail of administrator mutations, plan changes, and security operations.
-        </p>
+      <div className="admin-page-header">
+        <div className="admin-page-eyebrow">Security &amp; Audit Logs</div>
+        <h1 className="admin-page-title">Security &amp; Audit Logs</h1>
+        <p className="admin-page-subtitle">Immutable audit trail of administrator mutations, plan changes, and security operations.</p>
+        <div className="admin-underline" />
       </div>
 
       {/* Main Container Card */}
       <div className="card p-4 sm:p-5">
-        <h2 className="text-base font-semibold text-white mb-4 flex items-center justify-between">
-          <span>Audit Trail ({logs.length})</span>
-          <span className="text-xs text-[var(--chalk-muted)] font-mono">System Trail</span>
-        </h2>
+        <div className="admin-card-header">
+          <h2 className="admin-card-title">Audit Trail ({logs.length})</h2>
+          <span className="admin-card-subtitle">System Trail</span>
+        </div>
 
         {loading ? (
-          <div className="p-8 text-center text-sm text-[var(--chalk-muted)]">
-            Loading audit records…
-          </div>
+          <div className="admin-loading">Loading audit records…</div>
         ) : logs.length === 0 ? (
-          <div className="p-8 text-center border border-dashed border-[rgba(243,245,236,0.14)] rounded-lg">
-            <Shield size={28} className="mx-auto mb-2 text-[var(--floodlight)] opacity-80" />
-            <p className="text-sm text-white font-medium">No audit logs recorded</p>
-            <p className="text-xs text-[var(--chalk-muted)] mt-1">
-              Admin operations and access alterations will be logged here.
-            </p>
+          <div className="admin-empty-state">
+            <Shield size={28} className="admin-empty-state-icon" />
+            <p className="admin-empty-state-title">No audit logs recorded</p>
+            <p className="admin-empty-state-desc">Admin operations and access alterations will be logged here.</p>
           </div>
         ) : (
           <>
             {/* Desktop / Tablet Table */}
-            <div className="hidden md:block table-container">
-              <table className="table-responsive">
+            <div className="hidden md:block admin-table-wrapper">
+              <table className="admin-table">
                 <thead>
                   <tr>
                     <th>Action</th>

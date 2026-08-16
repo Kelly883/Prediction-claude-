@@ -1,21 +1,21 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { apiJson } from '@/lib/api-client';
-import { 
-  ArrowLeft, 
-  User, 
-  Mail, 
-  Phone, 
-  Globe, 
-  Calendar, 
-  ShieldCheck, 
-  CreditCard, 
+import {
+  ArrowLeft,
+  User,
+  Mail,
+  Phone,
+  Globe,
+  Calendar,
+  ShieldCheck,
+  CreditCard,
   AlertTriangle,
   Clock,
-  CheckCircle2
+  CheckCircle2,
 } from 'lucide-react';
 
 type Detail = {
@@ -36,7 +36,7 @@ export default function AdminUserDetailPage() {
 
   if (loading) {
     return (
-      <div className="p-8 text-center text-sm text-[var(--chalk-muted)]">
+      <div className="admin-loading">
         Loading user profile…
       </div>
     );
@@ -44,10 +44,10 @@ export default function AdminUserDetailPage() {
 
   if (!detail) {
     return (
-      <div className="p-8 text-center border border-dashed border-[rgba(243,245,236,0.14)] rounded-lg">
-        <AlertTriangle size={28} className="mx-auto mb-2 text-red-400" />
-        <p className="text-sm text-white font-medium">User account not found</p>
-        <Link href="/admin/users" className="btn btn-ghost text-xs mt-3 inline-flex items-center gap-1.5">
+      <div className="admin-empty-state">
+        <AlertTriangle size={28} className="text-red-400" style={{ marginBottom: 8 }} />
+        <p className="admin-empty-state-title">User account not found</p>
+        <Link href="/admin/users" className="admin-back-btn">
           <ArrowLeft size={13} />
           <span>Back to users</span>
         </Link>
@@ -59,25 +59,22 @@ export default function AdminUserDetailPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-[rgba(243,245,236,0.1)]">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 min-w-0">
           <Link
             href="/admin/users"
-            className="p-2 rounded-lg bg-[var(--turf)] text-[var(--chalk-muted)] hover:text-white border border-[rgba(243,245,236,0.1)] transition-colors"
+            className="admin-back-btn"
             title="Back to Users"
           >
             <ArrowLeft size={16} />
           </Link>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="font-bold text-xl sm:text-2xl text-white truncate max-w-md">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="font-bold text-xl sm:text-2xl text-white truncate">
                 {user.name}
               </h1>
               {user.role === 'admin' && (
-                <span className="px-2 py-0.5 text-[9px] font-bold uppercase rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                  Admin
-                </span>
+                <span className="admin-status-pill admin-status-pill-warning">Admin</span>
               )}
             </div>
             <div className="flex items-center gap-3 text-xs text-[var(--chalk-muted)] mt-1 flex-wrap font-mono">
@@ -110,19 +107,16 @@ export default function AdminUserDetailPage() {
       )}
 
       <div className="admin-grid-half">
-        {/* Subscriptions History */}
-        <div className="card p-4 sm:p-5 space-y-4">
-          <h2 className="text-base font-semibold text-white flex items-center justify-between">
-            <span>Subscriptions ({subscriptions.length})</span>
-            <span className="text-xs text-[var(--chalk-muted)] font-mono">Pass History</span>
-          </h2>
+        <div className="admin-compose-card">
+          <div className="admin-card-header">
+            <h2 className="admin-card-title">Subscriptions ({subscriptions.length})</h2>
+            <span className="admin-card-subtitle">Pass History</span>
+          </div>
 
           {subscriptions.length === 0 ? (
-            <p className="text-xs text-[var(--chalk-muted)] py-4 text-center">
-              No subscription history for this user.
-            </p>
+            <p className="text-xs text-[var(--chalk-muted)] py-4 text-center">No subscription history for this user.</p>
           ) : (
-            <div className="space-y-2.5">
+            <div className="flex flex-col gap-2.5">
               {subscriptions.map((s) => (
                 <div
                   key={s.id}
@@ -135,11 +129,7 @@ export default function AdminUserDetailPage() {
                     </div>
                   </div>
                   <span
-                    className={`px-2 py-0.5 text-[10px] font-bold uppercase rounded ${
-                      s.status === 'active'
-                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                        : 'bg-zinc-700/40 text-zinc-400 border border-zinc-700'
-                    }`}
+                    className={`admin-status-pill ${s.status === 'active' ? 'admin-status-pill-success' : 'admin-status-pill-neutral'}`}
                   >
                     {s.status}
                   </span>
@@ -149,19 +139,16 @@ export default function AdminUserDetailPage() {
           )}
         </div>
 
-        {/* Transactions History */}
-        <div className="card p-4 sm:p-5 space-y-4">
-          <h2 className="text-base font-semibold text-white flex items-center justify-between">
-            <span>Transactions ({transactions.length})</span>
-            <span className="text-xs text-[var(--chalk-muted)] font-mono">Charge Attempts</span>
-          </h2>
+        <div className="admin-compose-card">
+          <div className="admin-card-header">
+            <h2 className="admin-card-title">Transactions ({transactions.length})</h2>
+            <span className="admin-card-subtitle">Charge Attempts</span>
+          </div>
 
           {transactions.length === 0 ? (
-            <p className="text-xs text-[var(--chalk-muted)] py-4 text-center">
-              No transactions on record.
-            </p>
+            <p className="text-xs text-[var(--chalk-muted)] py-4 text-center">No transactions on record.</p>
           ) : (
-            <div className="space-y-2.5">
+            <div className="flex flex-col gap-2.5">
               {transactions.map((t) => (
                 <div
                   key={t.id}
@@ -176,12 +163,12 @@ export default function AdminUserDetailPage() {
                     </div>
                   </div>
                   <span
-                    className={`px-2 py-0.5 text-[10px] font-bold uppercase rounded ${
+                    className={`admin-status-pill ${
                       t.status === 'success'
-                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                        ? 'admin-status-pill-success'
                         : t.status === 'failed'
-                        ? 'bg-red-500/20 text-red-400 border border-red-500/30'
-                        : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                        ? 'admin-status-pill-error'
+                        : 'admin-status-pill-warning'
                     }`}
                   >
                     {t.status}
