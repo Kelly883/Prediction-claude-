@@ -4,8 +4,10 @@ import { hashPassword } from '@/lib/password';
 import { checkRateLimit, authLimiter, getClientIp, normalizeIdentifier } from '@/lib/ratelimit';
 import { errorResponse, ApiError } from '@/lib/rbac';
 import { RegisterSchema } from '@/lib/schemas';
+import { writeAudit } from '@/lib/audit';
+import crypto from 'crypto';
 
-export const runtime = 'nodejs'; // bcryptjs + Prisma need the Node runtime, not Edge
+export const runtime = 'nodejs';
 
 export async function POST(req: NextRequest) {
   try {
@@ -15,24 +17,46 @@ export async function POST(req: NextRequest) {
     const ip = getClientIp(req);
     const emailIdentifier = normalizeIdentifier('email', email);
 
-    // Fail-closed dual rate limiting on registration
     const allowed = await checkRateLimit(authLimiter, [ip, emailIdentifier]);
     if (!allowed) {
       return NextResponse.json({ error: 'Too many attempts, try again shortly' }, { status: 429 });
     }
 
     const passwordHash = await hashPassword(password);
-    const user = await prisma.user
-      .create({ data: { name, email, phone, passwordHash, country } })
-      .catch((err: any) => {
-        // Unlike login/password-reset (where hiding whether an email exists
-        // matters for anti-enumeration), a signup form conventionally does
-        // tell you the email's taken — that's normal, expected UX here.
-        if (err?.code === 'P2002') throw new ApiError(409, 'An account with this email already exists');
-        throw err;
-      });
+    const token = crypto.randomBytes(32).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24h TTL
 
-    return NextResponse.json({ id: user.id, name: user.name, email: user.email });
+    const user = await prisma.user.create({
+      data: {
+        name,
+        email,
+        phone,
+        passwordHash,
+        country,
+        emailVerifiedAt: null,
+        emailVerifications: {
+          create: {
+            tokenHash,
+            expiresAt,
+          },
+        },
+      },
+      select: { id: true, name: true, email: true },
+    });
+
+    await writeAudit({
+      action: 'auth.register',
+      targetId: user.id,
+      metadata: { email, country },
+    });
+
+    return NextResponse.json({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      message: 'Account created. Please check your email to verify your account.',
+    });
   } catch (err) {
     return errorResponse(err);
   }

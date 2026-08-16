@@ -7,7 +7,7 @@ export const RegisterSchema = z.object({
   name: z.string().min(1).max(120),
   email: z.string().email(),
   phone: z.string().min(5).max(32),
-  password: z.string().min(8).max(200),
+  password: z.string().min(12).max(200).regex(/[A-Z]/, 'uppercase').regex(/[a-z]/, 'lowercase').regex(/[0-9]/, 'number'),
   country: z.string().min(2).max(56),
 });
 
@@ -90,7 +90,7 @@ export const ComplimentaryAccessSchema = z.object({
 
 export const ChangePasswordSchema = z.object({
   currentPassword: z.string().min(1),
-  newPassword: z.string().min(8).max(200),
+  newPassword: z.string().min(12).max(200).regex(/[A-Z]/, 'uppercase').regex(/[a-z]/, 'lowercase').regex(/[0-9]/, 'number'),
 });
 
 /** Turns a ZodError into the same { error } shape every route already returns. */

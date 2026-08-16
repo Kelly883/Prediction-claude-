@@ -12,15 +12,15 @@ export const runtime = 'nodejs';
 /** Step 2 of login for 2FA-enabled accounts — exchanges challengeToken + a valid TOTP code for real session cookies. */
 export async function POST(req: NextRequest) {
   try {
-    const ip = getClientIp(req);
-    const allowed = await checkRateLimit(authLimiter, ip);
-    if (!allowed) {
-      return NextResponse.json({ error: 'Too many attempts, try again shortly' }, { status: 429 });
-    }
-
     const { challengeToken, code } = await req.json();
     const challenge = await verifyTwoFactorChallengeToken(challengeToken);
     if (!challenge) throw new ApiError(401, 'Login challenge expired — log in again');
+
+    const ip = getClientIp(req);
+    const allowed = await checkRateLimit(authLimiter, [ip, `user:${challenge.sub}`]);
+    if (!allowed) {
+      return NextResponse.json({ error: 'Too many attempts, try again shortly' }, { status: 429 });
+    }
 
     const user = await prisma.user.findUniqueOrThrow({ where: { id: challenge.sub } });
     if (!user.twoFactorSecret || !verifyTotpCode(user.twoFactorSecret, code)) {

@@ -17,7 +17,8 @@ export async function POST(req: NextRequest) {
     await writeAudit({ actorId: admin.sub, action: 'user.export', metadata: { count: users.length } });
 
     const header = 'id,name,email,phone,country,createdAt';
-    const rows = users.map((u: any) => `${u.id},"${u.name.replace(/"/g, '""')}",${u.email},${u.phone ?? ''},${u.country},${u.createdAt instanceof Date ? u.createdAt.toISOString() : new Date(u.createdAt).toISOString()}`);
+    const escapeCsv = (val: string) => `"${val.replace(/"/g, '""').replace(/\n/g, ' ').replace(/\r/g, '')}"`;
+    const rows = users.map((u: any) => `${u.id},${escapeCsv(u.name)},${u.email},${escapeCsv(u.phone ?? '')},${u.country},${u.createdAt instanceof Date ? u.createdAt.toISOString() : new Date(u.createdAt).toISOString()}`);
     return NextResponse.json({ csv: [header, ...rows].join('\n') });
   } catch (err) {
     return errorResponse(err);
