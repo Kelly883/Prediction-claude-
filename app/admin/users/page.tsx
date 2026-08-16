@@ -155,15 +155,18 @@ export default function AdminUsersPage() {
   return (
     <div className="admin-users-wrap">
       <header className="admin-users-header">
-        <div className="admin-page-header" style={{ marginBottom: 0 }}>
-          <div className="admin-page-eyebrow">Users &amp; Subscribers</div>
-          <h1 className="admin-page-title" style={{ fontSize: 38 }}>Users &amp; Subscribers</h1>
-          <p className="admin-page-subtitle">Manage registered accounts, subscription history, and export subscriber lists.</p>
-          <div className="admin-underline" />
+        <div className="admin-users-header-left">
+          <div className="admin-page-header" style={{ marginBottom: 0 }}>
+            <div className="admin-page-eyebrow">Users &amp; Subscribers</div>
+            <h1 className="admin-page-title" style={{ fontSize: 34 }}>Users &amp; Subscribers</h1>
+            <p className="admin-page-subtitle">Manage registered accounts, subscription history, and export subscriber lists.</p>
+            <div className="admin-underline" />
+          </div>
         </div>
 
-        <div className="flex items-center gap-3 flex-wrap" style={{ marginTop: 16 }}>
+        <div className="admin-users-actions">
           <button
+            type="button"
             onClick={exportCsv}
             disabled={exporting}
             className="admin-users-export-btn"
@@ -173,41 +176,15 @@ export default function AdminUsersPage() {
           </button>
 
           <button
+            type="button"
             onClick={() => setShowAddModal(true)}
-            className="admin-users-export-btn admin-action-primary"
-            style={{ minHeight: 40, padding: '10px 18px', fontSize: 14 }}
+            className="admin-users-add-btn"
           >
             <UserPlus size={16} />
             <span>Add User</span>
           </button>
         </div>
       </header>
-
-      <nav className="admin-users-segmented-nav" aria-label="Account Filters">
-        <button
-          onClick={() => setActiveTab('all')}
-          className={`admin-users-segment-tab ${activeTab === 'all' ? 'admin-users-segment-tab-active' : ''}`}
-        >
-          <Users size={16} />
-          <span>All Accounts</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('paid')}
-          className={`admin-users-segment-tab ${activeTab === 'paid' ? 'admin-users-segment-tab-active' : ''}`}
-        >
-          <Crown size={16} />
-          <span>Active Paid Subscribers</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('free')}
-          className={`admin-users-segment-tab ${activeTab === 'free' ? 'admin-users-segment-tab-active' : ''}`}
-        >
-          <Gift size={16} />
-          <span>Free / Trial Users</span>
-        </button>
-      </nav>
 
       <div className="admin-users-stats-grid">
         <div className="admin-users-stat-card">
@@ -253,13 +230,50 @@ export default function AdminUsersPage() {
 
       <section className="admin-users-list-section">
         <div className="admin-users-list-header">
-          <h2 className="admin-users-list-title">
-            Registered Accounts ({users.length})
-          </h2>
+          <div>
+            <h2 className="admin-users-list-title">
+              Registered Accounts ({users.length})
+            </h2>
+            <p className="text-xs text-[#85a694] mt-0.5">Directory of members, roles, and plan statuses</p>
+          </div>
           <div className="admin-users-db-pill">
             <span>Real-time DB</span>
             <span className="admin-users-db-dot" />
           </div>
+        </div>
+
+        <div className="admin-users-segmented-nav-wrapper">
+          <nav className="admin-users-segmented-nav" aria-label="Account Filters">
+            <button
+              type="button"
+              onClick={() => setActiveTab('all')}
+              className={`admin-users-segment-tab ${activeTab === 'all' ? 'admin-users-segment-tab-active' : ''}`}
+            >
+              <Users size={15} />
+              <span>All Accounts</span>
+              <span className="admin-users-tab-count">{stats.totalUsers}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('paid')}
+              className={`admin-users-segment-tab ${activeTab === 'paid' ? 'admin-users-segment-tab-active' : ''}`}
+            >
+              <Crown size={15} />
+              <span>Active Paid</span>
+              <span className="admin-users-tab-count">{stats.activeSubscribers}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('free')}
+              className={`admin-users-segment-tab ${activeTab === 'free' ? 'admin-users-segment-tab-active' : ''}`}
+            >
+              <Gift size={15} />
+              <span>Free / Trial</span>
+              <span className="admin-users-tab-count">{stats.freeTrialUsers}</span>
+            </button>
+          </nav>
         </div>
 
         <div className="relative w-full">
