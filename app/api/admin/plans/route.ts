@@ -10,7 +10,7 @@ export async function POST(req: NextRequest) {
   try {
     const admin = await requireAdmin(req);
     const dto = CreatePlanSchema.parse(await req.json());
-    const plan = await prisma.plan.create({ data: { isActive: true, ...dto } });
+    const plan = await prisma.plan.create({ data: { isActive: true, createdById: admin.sub, ...dto } });
     await writeAudit({ actorId: admin.sub, action: 'plan.create', targetId: plan.id, metadata: dto });
     return NextResponse.json(plan);
   } catch (err) {

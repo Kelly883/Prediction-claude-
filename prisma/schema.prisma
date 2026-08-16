@@ -97,6 +97,7 @@ model User {
   sessions            UserSession[]
   cmsEdits            CmsSection[]
   passwordResetTokens PasswordResetToken[]
+  createdPlans        Plan[]           @relation("CreatedPlans")
 
   @@index([role])
   @@index([email])
@@ -112,6 +113,8 @@ model Plan {
   accessScope      AccessScope @default(all)
   categoryIds      String[]    @default([])
   isActive         Boolean     @default(true)
+  createdById      String?
+  createdBy        User?       @relation("CreatedPlans", fields: [createdById], references: [id])
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt
 
@@ -119,6 +122,7 @@ model Plan {
   transactions  Transaction[]
 
   @@index([isActive])
+  @@index([createdById])
 }
 
 model Subscription {
