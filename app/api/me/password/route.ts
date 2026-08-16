@@ -31,6 +31,7 @@ export async function PATCH(req: NextRequest) {
         data: {
           passwordHash: newHash,
           tokenVersion: { increment: 1 },
+          refreshTokenVersion: { increment: 1 },
         },
       });
 

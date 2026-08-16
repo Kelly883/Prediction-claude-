@@ -77,6 +77,7 @@ describe('One-Time Admin Setup API & Bootstrap Security', () => {
   beforeEach(() => {
     fakeDb = makeFakeDb();
     delete process.env.ADMIN_BOOTSTRAP_SECRET;
+    process.env.ALLOW_ADMIN_BOOTSTRAP_WITHOUT_SECRET = 'true';
   });
 
   it('reports isSetupAvailable=true when no admin exists in the database', async () => {
@@ -86,10 +87,9 @@ describe('One-Time Admin Setup API & Bootstrap Security', () => {
     const data = await res.json();
     expect(res.status).toBe(200);
     expect(data.isSetupAvailable).toBe(true);
-    expect(data.adminCount).toBe(0);
   });
 
-  it('provisions the initial admin and logs them in', async () => {
+  it('provisions the initial admin without auto-login and requires password change', async () => {
     const { POST, GET } = await import('@/app/api/auth/admin-setup/route');
 
     const req = new NextRequest('http://localhost:3000/api/auth/admin-setup', {
@@ -111,23 +111,20 @@ describe('One-Time Admin Setup API & Bootstrap Security', () => {
     expect(data.success).toBe(true);
     expect(data.role).toBe('admin');
     expect(data.email).toBe('admin@predictpro.com');
+    expect(data.requirePasswordChange).toBe(true);
 
-    // Cookies should be set for instant login
-    expect(res.cookies.get('access_token')).toBeDefined();
-    expect(res.cookies.get('refresh_token')).toBeDefined();
+    expect(res.cookies.get('access_token')).toBeUndefined();
+    expect(res.cookies.get('refresh_token')).toBeUndefined();
 
-    // After creation, setup status must report isSetupAvailable=false
     const getReq = new NextRequest('http://localhost:3000/api/auth/admin-setup');
     const getRes = await GET(getReq);
     const getData = await getRes.json();
     expect(getData.isSetupAvailable).toBe(false);
-    expect(getData.adminCount).toBe(1);
   });
 
   it('rejects subsequent admin registrations once an admin exists', async () => {
     const { POST } = await import('@/app/api/auth/admin-setup/route');
 
-    // Create first admin
     const firstReq = new NextRequest('http://localhost:3000/api/auth/admin-setup', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -142,7 +139,6 @@ describe('One-Time Admin Setup API & Bootstrap Security', () => {
     const firstRes = await POST(firstReq);
     expect(firstRes.status).toBe(200);
 
-    // Attempt second admin registration
     const secondReq = new NextRequest('http://localhost:3000/api/auth/admin-setup', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -166,7 +162,6 @@ describe('One-Time Admin Setup API & Bootstrap Security', () => {
 
     const { POST } = await import('@/app/api/auth/admin-setup/route');
 
-    // Attempt without secret header
     const unauthReq = new NextRequest('http://localhost:3000/api/auth/admin-setup', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -181,7 +176,6 @@ describe('One-Time Admin Setup API & Bootstrap Security', () => {
     const unauthRes = await POST(unauthReq);
     expect(unauthRes.status).toBe(403);
 
-    // Attempt with correct secret header
     const authReq = new NextRequest('http://localhost:3000/api/auth/admin-setup', {
       method: 'POST',
       headers: {
@@ -237,7 +231,6 @@ describe('One-Time Admin Setup API & Bootstrap Security', () => {
 
     const getRes = await GET(new NextRequest('http://localhost:3000/api/auth/admin-setup'));
     const getData = await getRes.json();
-    expect(getData.adminCount).toBe(1);
     expect(getData.isSetupAvailable).toBe(false);
   });
 });

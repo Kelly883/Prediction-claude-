@@ -4,8 +4,6 @@ import { hashPassword } from '@/lib/password';
 import { checkRateLimit, adminLimiter, getClientIp } from '@/lib/ratelimit';
 import { errorResponse, ApiError } from '@/lib/rbac';
 import { RegisterSchema } from '@/lib/schemas';
-import { issueAccessToken, issueRefreshToken, cookieOptions } from '@/lib/auth';
-import { touchSession } from '@/lib/sessions';
 import { writeAudit } from '@/lib/audit';
 import { timingSafeStringEqual } from '@/lib/timing-safe';
 
@@ -14,8 +12,7 @@ export const runtime = 'nodejs';
 function verifyBootstrapSecret(req: NextRequest): boolean {
   const secret = process.env.ADMIN_BOOTSTRAP_SECRET;
   if (!secret) {
-    // If not set, in production bootstrap is disabled entirely
-    return process.env.NODE_ENV !== 'production';
+    return process.env.ALLOW_ADMIN_BOOTSTRAP_WITHOUT_SECRET === 'true';
   }
 
   const headerSecret =
@@ -28,22 +25,26 @@ function verifyBootstrapSecret(req: NextRequest): boolean {
 
 export async function GET(req: NextRequest) {
   try {
-    const isProduction = process.env.NODE_ENV === 'production';
     const hasSecretConfigured = Boolean(process.env.ADMIN_BOOTSTRAP_SECRET);
-
-    if (isProduction && !hasSecretConfigured) {
+    if (hasSecretConfigured) {
       return NextResponse.json({
         isSetupAvailable: false,
-        message: 'Public admin setup is disabled in production. Use operator CLI.',
+        message: 'Public admin setup is disabled. Use operator CLI with bootstrap secret.',
+      });
+    }
+
+    if (process.env.ALLOW_ADMIN_BOOTSTRAP_WITHOUT_SECRET !== 'true') {
+      return NextResponse.json({
+        isSetupAvailable: false,
+        message: 'Public admin setup is disabled. Set ADMIN_BOOTSTRAP_SECRET or ALLOW_ADMIN_BOOTSTRAP_WITHOUT_SECRET=true to enable.',
       });
     }
 
     const adminCount = await prisma.user.count({ where: { role: 'admin' } });
-    const isSetupAvailable = adminCount === 0 && (!isProduction || verifyBootstrapSecret(req));
+    const isSetupAvailable = adminCount === 0;
 
     return NextResponse.json({
       isSetupAvailable,
-      adminCount,
     });
   } catch (err) {
     return NextResponse.json({ isSetupAvailable: false, error: 'Database unavailable' }, { status: 500 });
@@ -96,28 +97,16 @@ export async function POST(req: NextRequest) {
       });
     });
 
-    // Auto-login: issue access and refresh tokens
-    const accessToken = await issueAccessToken({ sub: admin.id, role: 'admin' });
-    const refreshToken = await issueRefreshToken(admin.id);
-
-    await touchSession(admin.id, req);
-    await writeAudit({
-      actorId: admin.id,
-      action: 'auth.admin_initial_setup',
-      targetId: admin.id,
-      metadata: { email: admin.email, country: admin.country },
-    });
-
+    // Auto-login removed for security: admin must set password on first login
+    // The frontend should redirect to /reset-password or force password change
     const res = NextResponse.json({
       success: true,
       id: admin.id,
       name: admin.name,
       email: admin.email,
       role: admin.role,
+      requirePasswordChange: true,
     });
-
-    res.cookies.set('access_token', accessToken, cookieOptions(15 * 60));
-    res.cookies.set('refresh_token', refreshToken, cookieOptions(7 * 24 * 60 * 60));
 
     return res;
   } catch (err) {

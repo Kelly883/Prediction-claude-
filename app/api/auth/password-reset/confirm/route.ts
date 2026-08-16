@@ -17,8 +17,8 @@ export async function POST(req: NextRequest) {
     }
 
     const { token, newPassword } = await req.json();
-    if (!token || !newPassword || newPassword.length < 8) {
-      throw new ApiError(400, 'token and a newPassword of at least 8 characters are required');
+    if (!token || !newPassword || newPassword.length < 12) {
+      throw new ApiError(400, 'token and a newPassword of at least 12 characters are required');
     }
 
     const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
@@ -26,6 +26,11 @@ export async function POST(req: NextRequest) {
 
     if (!record || record.usedAt || record.expiresAt < new Date()) {
       throw new ApiError(400, 'Reset link is invalid or has expired');
+    }
+
+    const userAllowed = await checkRateLimit(authLimiter, [`user:${record.userId}`]);
+    if (!userAllowed) {
+      return NextResponse.json({ error: 'Too many attempts, try again shortly' }, { status: 429 });
     }
 
     const passwordHash = await hashPassword(newPassword);
@@ -40,6 +45,7 @@ export async function POST(req: NextRequest) {
         data: {
           passwordHash,
           tokenVersion: { increment: 1 },
+          refreshTokenVersion: { increment: 1 },
         },
       });
 

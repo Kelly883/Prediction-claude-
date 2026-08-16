@@ -28,8 +28,9 @@ export async function GET(req: NextRequest) {
     const roleParam = searchParams.get('role'); // 'admin', 'user', or null
     const queryParam = searchParams.get('q')?.trim().toLowerCase() || '';
 
-    // Fetch all users with safe fields
+    // Fetch all non-deleted users with safe fields
     const users = await prisma.user.findMany({
+      where: { deletedAt: null },
       select: SAFE_USER_FIELDS,
       orderBy: { createdAt: 'desc' },
     });
@@ -151,8 +152,11 @@ export async function POST(req: NextRequest) {
       throw new ApiError(409, 'An account with this email already exists');
     }
 
-    const defaultPassword = password || 'PredictPro@2026';
-    const passwordHash = await hashPassword(defaultPassword);
+    if (!password || password.trim().length === 0) {
+      throw new ApiError(400, 'Password is required for new users');
+    }
+
+    const passwordHash = await hashPassword(password);
 
     const newUser = await prisma.user.create({
       data: {

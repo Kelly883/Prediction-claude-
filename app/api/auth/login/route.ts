@@ -13,6 +13,7 @@ export const runtime = 'nodejs';
 const PASSWORD_REHASH_COST = 12;
 const MAX_FAILED_LOGIN_ATTEMPTS = 5;
 const LOCKOUT_DURATION_MINUTES = 30;
+const MAX_ACTIVE_SESSIONS = 5;
 
 function isLocked(lockedUntil: Date | null): boolean {
   if (!lockedUntil) return false;
@@ -35,9 +36,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Too many attempts, try again shortly' }, { status: 429 });
     }
 
-    const user = await prisma.user.findUnique({ where: { email } });
+    const user = await prisma.user.findFirst({ where: { email, deletedAt: null } });
 
-    if (user && isLocked(user.lockedUntil)) {
+    if (!user) {
+      await writeAudit({
+        actorId: null,
+        action: 'auth.login_failure',
+        metadata: { ip, emailNormalized: email.toLowerCase() },
+      });
+      throw new ApiError(401, 'Invalid credentials');
+    }
+
+    if (isLocked(user.lockedUntil)) {
       await writeAudit({
         actorId: user.id,
         action: 'auth.login_locked',
@@ -75,6 +85,16 @@ export async function POST(req: NextRequest) {
       data: { failedLoginAttempts: 0, lockedUntil: null },
     });
 
+    // Check email verification
+    if (!user.emailVerifiedAt) {
+      await writeAudit({
+        actorId: user.id,
+        action: 'auth.login_failed',
+        metadata: { ip, reason: 'email_not_verified' },
+      });
+      throw new ApiError(403, 'Please verify your email before logging in. Check your inbox for the verification link.');
+    }
+
     // Password rehash: if the stored hash was created with a lower cost factor,
     // rehash with the current default so that password security improves over time
     // without forcing a reset.
@@ -95,7 +115,15 @@ export async function POST(req: NextRequest) {
     }
 
     const accessToken = await issueAccessToken({ sub: user.id, role: user.role });
-    const refreshToken = await issueRefreshToken(user.id, user.tokenVersion);
+    const refreshToken = await issueRefreshToken(user.id, user.tokenVersion, user.refreshTokenVersion);
+
+    const activeSessionCount = await prisma.userSession.count({ where: { userId: user.id } });
+    if (activeSessionCount >= MAX_ACTIVE_SESSIONS) {
+      const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      await prisma.userSession.deleteMany({
+        where: { userId: user.id, lastSeenAt: { lt: cutoff } },
+      });
+    }
 
     await touchSession(user.id, req);
 
