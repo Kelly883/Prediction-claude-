@@ -4,15 +4,18 @@ import { requireUser, errorResponse, ApiError } from '@/lib/rbac';
 import { hashPassword, verifyPassword } from '@/lib/password';
 import { ChangePasswordSchema } from '@/lib/schemas';
 import { writeAudit } from '@/lib/audit';
+import { requireCsrf } from '@/lib/csrf';
 
 export const runtime = 'nodejs';
 
 export async function PATCH(req: NextRequest) {
   try {
+    requireCsrf(req);
     const user = await requireUser(req);
     const { currentPassword, newPassword } = ChangePasswordSchema.parse(await req.json());
 
     const record = await prisma.user.findUniqueOrThrow({ where: { id: user.sub } });
+    if (record.deletedAt) throw new ApiError(403, 'Account has been deactivated');
 
     if (!(await verifyPassword(currentPassword, record.passwordHash))) {
       await writeAudit({

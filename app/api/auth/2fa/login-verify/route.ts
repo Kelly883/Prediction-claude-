@@ -23,6 +23,7 @@ export async function POST(req: NextRequest) {
     }
 
     const user = await prisma.user.findUniqueOrThrow({ where: { id: challenge.sub } });
+    if (user.deletedAt) throw new ApiError(403, 'Account has been deactivated');
     if (!user.twoFactorSecret || !verifyTotpCode(user.twoFactorSecret, code)) {
       await writeAudit({ actorId: user.id, action: 'auth.2fa_failed', metadata: { stage: 'login_verify' } });
       throw new ApiError(400, 'Invalid code');

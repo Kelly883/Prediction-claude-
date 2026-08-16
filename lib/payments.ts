@@ -125,6 +125,12 @@ export async function handleVerifiedWebhook(params: {
   /** Reusable authorization code / card token, if the provider returned one on this charge. */
   renewalToken?: string | null;
 }) {
+  const MAX_RAW_PAYLOAD_SIZE = 64 * 1024; // 64KB limit
+  const rawPayloadStr = JSON.stringify(params.rawPayload);
+  if (Buffer.byteLength(rawPayloadStr, 'utf8') > MAX_RAW_PAYLOAD_SIZE) {
+    params.rawPayload = { error: 'Payload exceeded maximum size limit', size: Buffer.byteLength(rawPayloadStr, 'utf8') };
+  }
+
   const tx = await prisma.transaction.findUnique({
     where: { providerReference: params.providerReference },
     include: { user: true },

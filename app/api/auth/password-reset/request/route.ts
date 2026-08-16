@@ -23,6 +23,12 @@ export async function POST(req: NextRequest) {
     }
 
     const user = email ? await prisma.user.findUnique({ where: { email } }) : null;
+    if (user?.deletedAt) {
+      await writeAudit({
+        action: 'auth.password_reset_soft_deleted',
+        metadata: { ip, emailNormalized: email.toLowerCase() },
+      });
+    }
 
     await writeAudit({
       actorId: user?.id ?? null,

@@ -21,6 +21,7 @@ export async function POST(req: NextRequest) {
     const { code } = TwoFactorVerifySchema.parse(await req.json());
 
     const record = await prisma.user.findUniqueOrThrow({ where: { id: user.sub } });
+    if (record.deletedAt) throw new ApiError(403, 'Account has been deactivated');
     if (!record.twoFactorSecret) throw new ApiError(400, 'Call /api/auth/2fa/setup first');
 
     if (!verifyTotpCode(record.twoFactorSecret, code)) {

@@ -366,6 +366,7 @@ export async function getSignedUrlForViewer(userId: string, mediaId: string): Pr
   }
 
   const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+  if (user.deletedAt) throw new ApiError(403, 'Account has been deactivated');
   const watermarkedKey = await buildWatermarkedCopy(asset.storageKey, user.email);
   return getSignedUrl(s3, new GetObjectCommand({ Bucket: bucket, Key: watermarkedKey }), {
     expiresIn: SIGNED_URL_TTL,

@@ -9,7 +9,7 @@ export async function POST(req: NextRequest) {
   try {
     const admin = await requireAdmin(req);
     const users = await prisma.user.findMany({
-      where: { role: 'user' },
+      where: { role: 'user', deletedAt: null },
       select: { id: true, name: true, email: true, phone: true, country: true, createdAt: true },
     });
 

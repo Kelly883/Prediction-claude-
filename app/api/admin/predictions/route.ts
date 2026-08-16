@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { requireAdmin, errorResponse } from '@/lib/rbac';
 import { writeAudit } from '@/lib/audit';
+import { requireCsrf } from '@/lib/csrf';
 
 export const runtime = 'nodejs';
 
@@ -26,6 +27,7 @@ const CreatePredictionSchema = z.object({
 
 export async function POST(req: NextRequest) {
   try {
+    requireCsrf(req);
     const admin = await requireAdmin(req);
     const dto = CreatePredictionSchema.parse(await req.json());
 

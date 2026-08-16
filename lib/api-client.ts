@@ -1,13 +1,31 @@
 'use client';
 
-/**
- * Thin fetch wrapper for client components: on a 401, tries /api/auth/refresh
- * once and retries the original request before giving up. Without this, the
- * refresh endpoint existing doesn't actually help anyone — something has to
- * call it. If refresh also fails, redirects to /login.
- */
+let csrfPromise: Promise<string> | null = null;
+
+async function getCsrfToken(): Promise<string> {
+  if (!csrfPromise) {
+    csrfPromise = fetch('/api/csrf-token', { credentials: 'same-origin' })
+      .then((res) => res.json())
+      .then((data) => data.csrfToken)
+      .catch(() => '');
+  }
+  return csrfPromise;
+}
+
 export async function apiFetch(input: string, init: RequestInit = {}): Promise<Response> {
-  const res = await fetch(input, { ...init, credentials: 'same-origin' });
+  const method = (init.method || 'GET').toUpperCase();
+  const isStateChanging = ['POST', 'PATCH', 'PUT', 'DELETE'].includes(method);
+
+  let headers = new Headers(init.headers);
+
+  if (isStateChanging) {
+    const token = await getCsrfToken();
+    if (token) {
+      headers.set('x-csrf-token', token);
+    }
+  }
+
+  const res = await fetch(input, { ...init, headers, credentials: 'same-origin' });
   if (res.status !== 401) return res;
 
   const refreshRes = await fetch('/api/auth/refresh', { method: 'POST', credentials: 'same-origin' });
@@ -16,7 +34,15 @@ export async function apiFetch(input: string, init: RequestInit = {}): Promise<R
     return res;
   }
 
-  return fetch(input, { ...init, credentials: 'same-origin' });
+  const retryHeaders = new Headers(init.headers);
+  if (isStateChanging) {
+    const token = await getCsrfToken();
+    if (token) {
+      retryHeaders.set('x-csrf-token', token);
+    }
+  }
+
+  return fetch(input, { ...init, headers: retryHeaders, credentials: 'same-origin' });
 }
 
 export async function apiJson<T = any>(input: string, init: RequestInit = {}): Promise<T> {
