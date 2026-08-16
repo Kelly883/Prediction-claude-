@@ -14,9 +14,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
     const user = await prisma.user.findUnique({
       where: { id },
-      select: { id: true, name: true, email: true, phone: true, country: true, role: true, twoFactorEnabled: true, createdAt: true, failedLoginAttempts: true, lockedUntil: true },
+      select: { id: true, name: true, email: true, phone: true, country: true, role: true, twoFactorEnabled: true, createdAt: true, failedLoginAttempts: true, lockedUntil: true, deletedAt: true },
     });
-    if (!user) throw new ApiError(404, 'Not found');
+    if (!user || user.deletedAt) throw new ApiError(404, 'Not found');
 
     const [subscriptions, transactions, deviceCount] = await Promise.all([
       prisma.subscription.findMany({ where: { userId: id }, include: { plan: true }, orderBy: { createdAt: 'desc' } }),
@@ -64,6 +64,25 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       });
 
       return NextResponse.json({ ok: true, message: 'Account unlocked' });
+    }
+
+    if (body.action === 'restore') {
+      const user = await prisma.user.findUnique({ where: { id } });
+      if (!user) throw new ApiError(404, 'User not found');
+
+      await prisma.user.update({
+        where: { id },
+        data: { deletedAt: null },
+      });
+
+      await writeAudit({
+        actorId: admin.sub,
+        action: 'user.restore',
+        targetId: id,
+        metadata: { targetEmail: user.email },
+      });
+
+      return NextResponse.json({ ok: true, message: 'Account restored' });
     }
 
     throw new ApiError(400, 'Unsupported action');

@@ -37,6 +37,15 @@ export async function POST(req: NextRequest) {
 
     const user = await prisma.user.findUnique({ where: { email } });
 
+    if (user?.deletedAt) {
+      await writeAudit({
+        actorId: user.id,
+        action: 'auth.login_soft_deleted',
+        metadata: { ip, emailNormalized: email.toLowerCase() },
+      });
+      throw new ApiError(403, 'Account has been deactivated');
+    }
+
     if (user && isLocked(user.lockedUntil)) {
       await writeAudit({
         actorId: user.id,

@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
     if (!payload) throw new ApiError(401, 'Refresh token invalid or expired');
 
     const user = await prisma.user.findUnique({ where: { id: payload.sub } });
-    if (!user) throw new ApiError(401, 'User no longer exists');
+    if (!user || user.deletedAt) throw new ApiError(401, 'User no longer exists');
 
     // Token version check: If token version in token does not match user's current version
     // (e.g. after a password reset), reject and log security event.

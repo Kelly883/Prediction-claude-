@@ -29,8 +29,9 @@ export async function GET(req: NextRequest) {
     const roleParam = searchParams.get('role'); // 'admin', 'user', or null
     const queryParam = searchParams.get('q')?.trim().toLowerCase() || '';
 
-    // Fetch all users with safe fields
+    // Fetch all non-soft-deleted users with safe fields
     const users = await prisma.user.findMany({
+      where: { deletedAt: null },
       select: SAFE_USER_FIELDS,
       orderBy: { createdAt: 'desc' },
     });
@@ -169,6 +170,26 @@ export async function POST(req: NextRequest) {
 
     await writeAudit({ actorId: admin.sub, action: 'user.create', targetId: newUser.id, metadata: { email, role: newUser.role } });
     return NextResponse.json(newUser, { status: 201 });
+  } catch (err) {
+    return errorResponse(err);
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const admin = await requireAdmin(req);
+    const { id } = await req.json();
+
+    const user = await prisma.user.findUnique({ where: { id } });
+    if (!user) throw new ApiError(404, 'User not found');
+
+    await prisma.user.update({
+      where: { id },
+      data: { deletedAt: new Date() },
+    });
+
+    await writeAudit({ actorId: admin.sub, action: 'user.soft_delete', targetId: id, metadata: { email: user.email } });
+    return NextResponse.json({ ok: true, message: 'User soft-deleted' });
   } catch (err) {
     return errorResponse(err);
   }

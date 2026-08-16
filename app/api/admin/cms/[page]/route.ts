@@ -3,11 +3,13 @@ import { prisma } from '@/lib/prisma';
 import { requireAdmin, errorResponse } from '@/lib/rbac';
 import { writeAudit } from '@/lib/audit';
 import { CmsSectionUpdateSchema } from '@/lib/schemas';
+import { requireCsrf } from '@/lib/csrf';
 
 export const runtime = 'nodejs';
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ page: string }> }) {
   try {
+    requireCsrf(req);
     const admin = await requireAdmin(req);
     const { page } = await params;
     const { key, content } = CmsSectionUpdateSchema.parse(await req.json());

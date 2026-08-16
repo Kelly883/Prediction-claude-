@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireUser, errorResponse } from '@/lib/rbac';
+import { requireUser, errorResponse, ApiError } from '@/lib/rbac';
 import { generateSecret, generateOtpAuthUri } from '@/lib/twofactor';
 import { encryptTotpSecret } from '@/lib/encryption';
 import { checkRateLimit, authLimiter, getClientIp } from '@/lib/ratelimit';
@@ -26,6 +26,7 @@ export async function POST(req: NextRequest) {
     }
 
     const record = await prisma.user.findUniqueOrThrow({ where: { id: user.sub } });
+    if (record.deletedAt) throw new ApiError(403, 'Account has been deactivated');
 
     const secret = generateSecret();
     const encryptedSecret = encryptTotpSecret(secret);

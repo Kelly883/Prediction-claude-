@@ -12,7 +12,7 @@ export async function canView(userId: string | null, post: PredictionPost): Prom
   if (!userId) return false;
 
   const user = await prisma.user.findUnique({ where: { id: userId } });
-  if (!user) return false;
+  if (!user || user.deletedAt) return false;
   if (user.role === 'admin') return true;
 
   const now = new Date();
