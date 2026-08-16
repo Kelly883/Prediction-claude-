@@ -72,6 +72,17 @@ export default function EditPredictionPage() {
   // File input ref
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  function handleVisibilityChange(value: 'plan_specific' | 'subscribers' | 'free_window') {
+    setVisibility(value);
+    if (value === 'plan_specific') {
+      setPlanIds([]);
+    } else if (value === 'subscribers') {
+      setPlanIds(availablePlans.map((p) => p.id));
+    } else {
+      setPlanIds([]);
+    }
+  }
+
   function load() {
     apiJson<Post>(`/api/predictions/${id}`)
       .then((p) => {
@@ -91,6 +102,13 @@ export default function EditPredictionPage() {
   }
 
   useEffect(load, [id]);
+
+  // When plans load and visibility is subscribers, default to all plans selected
+  useEffect(() => {
+    if (visibility === 'subscribers' && availablePlans.length > 0 && planIds.length === 0) {
+      setPlanIds(availablePlans.map((p) => p.id));
+    }
+  }, [availablePlans, visibility, planIds.length]);
 
   // Fetch signed media URLs for previews
   useEffect(() => {
@@ -115,7 +133,7 @@ export default function EditPredictionPage() {
           bookingCode,
           bodyNotes,
           visibility,
-          planIds: visibility === 'plan_specific' ? planIds : [],
+          planIds: (visibility === 'subscribers' || visibility === 'plan_specific') ? planIds : [],
           freeUntil: visibility === 'free_window' && freeUntil ? new Date(freeUntil).toISOString() : null,
         }),
       });
@@ -307,7 +325,7 @@ export default function EditPredictionPage() {
                 <select
                   id="visibility"
                   value={visibility}
-                  onChange={(e) => setVisibility(e.target.value as any)}
+                  onChange={(e) => handleVisibilityChange(e.target.value as any)}
                   className="admin-select"
                 >
                   <option value="subscribers">All Active Subscribers</option>
@@ -315,10 +333,10 @@ export default function EditPredictionPage() {
                   <option value="free_window">Free Window (Promotional)</option>
                 </select>
 
-                {visibility === 'plan_specific' && (
+                {(visibility === 'subscribers' || visibility === 'plan_specific') && (
                   <div className="p-3 rounded-xl bg-[var(--pitch)] border border-[rgba(243,245,236,0.14)] space-y-2 mt-2">
                     <label className="text-xs text-[#85a694] font-semibold uppercase tracking-wider font-mono block">
-                      Select Admin-Created Subscription Plans
+                      {visibility === 'subscribers' ? 'Visible To All Admin-Created Plans' : 'Select Admin-Created Subscription Plans'}
                     </label>
                     {availablePlans.length === 0 ? (
                       <p className="text-xs text-[#85a694] italic">

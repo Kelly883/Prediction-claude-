@@ -88,6 +88,17 @@ export default function AdminPredictionsPage() {
     };
   }, [filePreviews]);
 
+  function handleVisibilityChange(value: 'plan_specific' | 'subscribers' | 'free_window') {
+    setVisibility(value);
+    if (value === 'plan_specific') {
+      setSelectedPlanIds([]);
+    } else if (value === 'subscribers') {
+      setSelectedPlanIds(availablePlans.map((p) => p.id));
+    } else {
+      setSelectedPlanIds([]);
+    }
+  }
+
   function validateFiles(files: File[], currentCount: number): { valid: File[]; error?: string } {
     const valid: File[] = [];
     for (const file of files) {
@@ -144,7 +155,7 @@ export default function AdminPredictionsPage() {
           scheduledAt: new Date(scheduledAt).toISOString(),
           bookingCode,
           visibility,
-          planIds: visibility === 'plan_specific' ? selectedPlanIds : [],
+          planIds: (visibility === 'subscribers' || visibility === 'plan_specific') ? selectedPlanIds : [],
           items: items.filter((i) => i.match && i.prediction),
         }),
       });
@@ -304,7 +315,7 @@ export default function AdminPredictionsPage() {
                 <select
                   id="visibility"
                   value={visibility}
-                  onChange={(e) => setVisibility(e.target.value as any)}
+                  onChange={(e) => handleVisibilityChange(e.target.value as any)}
                   className="admin-select"
                 >
                   <option value="subscribers">All Active Subscribers</option>
@@ -312,10 +323,10 @@ export default function AdminPredictionsPage() {
                   <option value="free_window">Free Window (Promotional)</option>
                 </select>
 
-                {visibility === 'plan_specific' && (
+                {(visibility === 'subscribers' || visibility === 'plan_specific') && (
                   <div className="p-3 rounded-xl bg-[var(--pitch)] border border-[rgba(243,245,236,0.14)] space-y-2 mt-2">
                     <label className="text-xs text-[#85a694] font-semibold uppercase tracking-wider font-mono block">
-                      Select Admin-Created Subscription Plans
+                      {visibility === 'subscribers' ? 'Visible To All Admin-Created Plans' : 'Select Admin-Created Subscription Plans'}
                     </label>
                     {availablePlans.length === 0 ? (
                       <p className="text-xs text-[#9fb3a6] italic">
@@ -526,7 +537,9 @@ export default function AdminPredictionsPage() {
 
                     <span className="admin-tag-mono">
                       {p.visibility === 'subscribers'
-                        ? 'All Active Subscribers'
+                        ? p.planIds && p.planIds.length > 0
+                          ? `Plans: ${p.planIds.map((id) => availablePlans.find((ap) => ap.id === id)?.name || id).join(', ')}`
+                          : 'All Active Subscribers'
                         : p.visibility === 'plan_specific'
                           ? p.planIds && p.planIds.length > 0
                             ? `Plans: ${p.planIds.map((id) => availablePlans.find((ap) => ap.id === id)?.name || id).join(', ')}`
