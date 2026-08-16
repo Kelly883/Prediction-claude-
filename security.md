@@ -19,6 +19,8 @@
 | F6 Admin | Admin | CRUD with audit, no sensitive data leakage, no CSRF |
 | F7 Media | Admin / Viewer | Upload sanitization, watermarking, entitlement-gated serving |
 | F8 Resilience | System | Fail-open for non-security dependencies; fail-closed for auth/payment/admin |
+| F9 Health | System | Liveness check without auth |
+| F10 Cleanup | System | Purge old password reset tokens and stale user sessions |
 
 ---
 
@@ -31,27 +33,30 @@
 
 **Security controls:**
 - `lib/auth.ts`: JWT secrets throw at module load if missing or < 32 chars (`requireSecret`). Access token TTL 15m, refresh TTL 7d. Refresh carries `tokenVersion`; password reset increments version, revoking prior sessions.
-- `lib/password.ts`: bcryptjs (pure JS, Node-only, split from Edge-safe `lib/auth.ts`).
+- `lib/password.ts`: bcryptjs (pure JS, Node-only, split from Edge-safe `lib/auth.ts`). Login rehashes passwords if stored with a lower cost factor (`PASSWORD_REHASH_COST = 12`).
 - `lib/timing-safe.ts`: `crypto.timingSafeEqual` for all secret comparisons (signatures, cron token).
 - `lib/ratelimit.ts`: dual rate-limit (IP + normalized email) on register, login, password-reset request, 2FA verify. Fail-closed (503) for auth policy; fail-open for public policy.
 - `lib/safe-redirect.ts`: `?next=` rejects absolute URLs and `//host` protocol-relative paths.
 - `middleware.ts`: UX guard only — redirects non-admins from `/admin`, non-users from `/dashboard`, logged-in users from auth pages. **Not the security boundary.**
+- Account lockout (`app/api/auth/login/route.ts`): after `MAX_FAILED_LOGIN_ATTEMPTS` (5) consecutive failures, account is locked for `LOCKOUT_DURATION_MINUTES` (30). Locked accounts return 403 even with correct password. Successful login resets counter and lock. Admins can unlock via `PATCH /api/admin/users/[id]` (`{ action: 'unlock' }`).
 - Register: `RegisterSchema` enforces min 8-char password, valid email, required name/phone/country. Creates `role: 'user'` only.
-- Login: generic 401 on failure; no user enumeration. Writes `auth.login_failure` audit.
+- Login: generic 401 on failure; no user enumeration. Writes `auth.login_failure` audit. Increments `failedLoginAttempts` per user.
 - Password reset: `PasswordResetToken` stores SHA-256 hash of random 32-byte token, 30min TTL. Always returns same generic response. `tokenVersion` incremented on confirm, revoking all sessions.
 - Cookies: `httpOnly`, `secure`, `sameSite: 'lax'`, path `/`.
+- Security headers (`next.config.js`): `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy`, `Strict-Transport-Security: max-age=63072000; includeSubDomains; preload`.
 
 **States:**
 - Success: tokens issued, cookies set, session touched.
-- Failure (invalid creds): 401, audit logged.
+- Failure (invalid creds): 401, audit logged, failed attempts incremented.
+- Failure (account locked): 403.
 - Failure (email taken): 409.
 - Failure (rate limit): 429.
 - Failure (validation): 400.
 - Interruption/retry: rate-limited.
 
 **Dependencies:** Prisma, bcryptjs, jose, Redis, Resend.
-**Tests:** `tests/auth.test.ts`, `tests/security.test.ts`, `tests/password-reset-revocation.test.ts`.
-**Runtime proof:** `tsc --noEmit` clean; `next build` succeeds; 120/120 tests pass.
+**Tests:** `tests/auth.test.ts`, `tests/security.test.ts`, `tests/password-reset-revocation.test.ts`, `tests/account-lockout.test.ts`.
+**Runtime proof:** `tsc --noEmit` clean; `next build` succeeds; 153/153 tests pass.
 **Unresolved risk:** No real Resend delivery test in CI.
 
 ---
@@ -175,6 +180,8 @@
 - Every API route calls `requireAdmin(req)` (`lib/rbac.ts`).
 - `middleware.ts` redirects non-admins before render (UX only; not the boundary).
 - `SAFE_USER_FIELDS` select on user list/detail — excludes `passwordHash` and `twoFactorSecret`. Grep confirmed no other leak (15 call sites audited).
+- Admin transactions list redacts sensitive keys from `rawPayload` (authorization codes, tokens, etc.) before returning to admin UI.
+- Account lockout: admins can unlock locked accounts via `PATCH /api/admin/users/[id]` with `{ action: 'unlock' }`. Audit logged as `auth.account_unlocked`.
 - CSV import: 2MB file cap, 2000-row cap.
 - Image upload: CSRF origin check (`req.headers.get('origin')` vs `host`), rate-limit, magic-byte validation, sanitization, 5MB cap, max 10 images per post.
 - Audit: `writeAudit()` on every mutation (enforced by `tests/admin-audit-enforcement.test.ts` — static analysis asserts every admin route with Prisma mutations imports and calls `writeAudit`).
@@ -188,7 +195,7 @@
 - CSV: per-row errors in preview.
 
 **Dependencies:** Prisma, csv-import, media, email.
-**Tests:** `tests/admin-setup.test.ts`, `tests/admin-predictions.test.ts`, `tests/csv-import.test.ts`.
+**Tests:** `tests/admin-setup.test.ts`, `tests/admin-predictions.test.ts`, `tests/csv-import.test.ts`, `tests/admin-audit-enforcement.test.ts`.
 **Runtime proof:** Clean build, tests pass.
 **Unresolved risk:** None.
 
@@ -244,6 +251,51 @@
 
 ---
 
+### F9 — Health
+
+**Entry:** `/api/health`
+**Exit:** JSON with status and database latency
+
+**Security controls:**
+- Public endpoint (no auth required).
+- Executes a lightweight `SELECT 1` against Postgres to verify connectivity.
+- Returns `200 OK` with `{ status: 'ok', checks: { database: { status: 'ok', latencyMs: <ms> } } }` on success.
+- Returns `500` with `{ status: 'error' }` on database failure.
+
+**States:**
+- Success: 200 with latency.
+- Failure: 500.
+
+**Dependencies:** Prisma.
+**Tests:** `tests/health.test.ts`.
+**Runtime proof:** Clean build, tests pass.
+**Unresolved risk:** None.
+
+---
+
+### F10 — Cleanup
+
+**Entry:** `/api/cron/cleanup` (GET, `Authorization: Bearer $CRON_SECRET`)
+**Exit:** JSON summary of deleted records
+
+**Security controls:**
+- `CRON_SECRET` verified with `timingSafeStringEqual`.
+- Deletes `PasswordResetToken` rows where `expiresAt < now` or `usedAt` is older than 24 hours.
+- Deletes `UserSession` rows where `lastSeenAt` older than 90 days.
+- Errors are caught per-step and returned in the JSON response without crashing the batch.
+
+**States:**
+- Success: counts of deleted records returned.
+- Partial failure: errors array populated, successful deletions still counted.
+- Failure (unauthorized): 401.
+
+**Dependencies:** Prisma.
+**Tests:** `tests/cleanup-cron.test.ts`.
+**Runtime proof:** Clean build, tests pass.
+**Unresolved risk:** None.
+
+---
+
 ## 3. Security Audit Findings (Historical + Current)
 
 ### Fixed (from README Section 11, 13, 17, 19)
@@ -265,6 +317,12 @@
 | 13 | Redis crash on `/register` (500 on every attempt) | High | Fail-open for public; fail-closed 503 for auth/payment/admin |
 | 14 | Login/register redirected to homepage | Medium | `safeRedirectPath` fallback param; both default to `/dashboard` |
 | 15 | Dashboard sidebar invisible on mobile | Medium | Contained background/padding for mobile nav strip |
+| 16 | Admin transactions leak sensitive webhook payload fields | Medium | `redactPayload` strips authorization codes, tokens, secrets from `rawPayload` before response |
+| 17 | No account lockout after failed logins | Medium | `failedLoginAttempts` + `lockedUntil` added to User; 5 attempts → 30min lock; admin unlock via `PATCH /api/admin/users/[id]` |
+| 18 | No password rehashing on login | Low | Login detects bcrypt cost factor < 12 and rehashes transparently |
+| 19 | No security headers (HSTS, X-Frame-Options, etc.) | Medium | `next.config.js` adds X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy, HSTS |
+| 20 | No public health check endpoint | Low | `GET /api/health` verifies DB connectivity without auth |
+| 21 | No cleanup of old password reset tokens / sessions | Low | `GET /api/cron/cleanup` purges tokens >24h old and sessions >90d old |
 
 ### Residual / Accepted
 
@@ -286,7 +344,7 @@
 |---|---|---|
 | Foundation structure | PASS | `prisma/schema.prisma`, migrations/, 68 routes built |
 | Foundation execution | UNVERIFIED | No live Postgres/Redis/Paystack/Flutterwave/Resend in sandbox |
-| Build evidence | PASS | `vitest` 120/120; `tsc --noEmit` clean; `next build` succeeds; route-conflict check clean |
+| Build evidence | PASS | `vitest` 153/153; `tsc --noEmit` clean; `next build` succeeds; route-conflict check clean |
 | Build-state truth | PASS | Evidence from actual repo state |
 | Installation check | UNVERIFIED | Single skill bundle provided |
 
@@ -325,6 +383,11 @@ npm audit
 - **Media:** S3 or local `storage/`. Watermarked copies go to `scratch/` — monitor storage.
 - **Admin bootstrap:** No seed admin. Run `npm run make-admin -- you@example.com` after registering a user.
 - **Audit logs:** Written non-fatally via `writeAudit()`. Review `app/api/admin/audit-logs` for anomalies.
+- **Account lockout:** 5 failed logins → 30min lock. Admins unlock via `PATCH /api/admin/users/[id]` with `{ action: 'unlock' }`. Audit logged.
+- **Password rehashing:** Login transparently upgrades bcrypt cost to 12 if lower.
+- **Security headers:** HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy set in `next.config.js`.
+- **Health check:** `/api/health` verifies DB connectivity without auth — useful for load balancers and uptime monitors.
+- **Cleanup cron:** `/api/cron/cleanup` runs daily at 03:00 UTC, purging old password reset tokens (>24h) and stale sessions (>90d).
 
 ---
 

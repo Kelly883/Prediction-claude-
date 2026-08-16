@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { issueAccessToken, issueRefreshToken, issueTwoFactorChallengeToken, cookieOptions } from '@/lib/auth';
-import { verifyPassword } from '@/lib/password';
+import { verifyPassword, hashPassword } from '@/lib/password';
 import { checkRateLimit, authLimiter, getClientIp, normalizeIdentifier } from '@/lib/ratelimit';
 import { errorResponse, ApiError } from '@/lib/rbac';
 import { touchSession, isAnomalous } from '@/lib/sessions';
@@ -9,6 +9,15 @@ import { LoginSchema } from '@/lib/schemas';
 import { writeAudit } from '@/lib/audit';
 
 export const runtime = 'nodejs';
+
+const PASSWORD_REHASH_COST = 12;
+const MAX_FAILED_LOGIN_ATTEMPTS = 5;
+const LOCKOUT_DURATION_MINUTES = 30;
+
+function isLocked(lockedUntil: Date | null): boolean {
+  if (!lockedUntil) return false;
+  return lockedUntil > new Date();
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -27,13 +36,54 @@ export async function POST(req: NextRequest) {
     }
 
     const user = await prisma.user.findUnique({ where: { email } });
+
+    if (user && isLocked(user.lockedUntil)) {
+      await writeAudit({
+        actorId: user.id,
+        action: 'auth.login_locked',
+        metadata: { ip, emailNormalized: email.toLowerCase(), lockedUntil: user.lockedUntil?.toISOString() },
+      });
+      return NextResponse.json(
+        { error: `Account locked due to too many failed attempts. Try again later.` },
+        { status: 403 }
+      );
+    }
+
     if (!user || !(await verifyPassword(password, user.passwordHash))) {
+      if (user) {
+        const newAttempts = user.failedLoginAttempts + 1;
+        const updates: any = { failedLoginAttempts: newAttempts };
+
+        if (newAttempts >= MAX_FAILED_LOGIN_ATTEMPTS) {
+          updates.lockedUntil = new Date(Date.now() + LOCKOUT_DURATION_MINUTES * 60 * 1000);
+        }
+
+        await prisma.user.update({ where: { id: user.id }, data: updates });
+      }
+
       await writeAudit({
         actorId: user?.id ?? null,
         action: 'auth.login_failure',
         metadata: { ip, emailNormalized: email.toLowerCase() },
       });
       throw new ApiError(401, 'Invalid credentials');
+    }
+
+    // Reset lockout state on successful authentication
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { failedLoginAttempts: 0, lockedUntil: null },
+    });
+
+    // Password rehash: if the stored hash was created with a lower cost factor,
+    // rehash with the current default so that password security improves over time
+    // without forcing a reset.
+    const hashCostMatch = user.passwordHash.match(/\$(\d+)\$/);
+    const hashCost = hashCostMatch ? parseInt(hashCostMatch[1], 10) : 0;
+
+    if (hashCost < PASSWORD_REHASH_COST) {
+      const newHash = await hashPassword(password);
+      await prisma.user.update({ where: { id: user.id }, data: { passwordHash: newHash } });
     }
 
     // Step 1 of 2 for accounts with 2FA enabled: don't issue real session
