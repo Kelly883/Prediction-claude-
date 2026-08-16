@@ -18,6 +18,7 @@ import {
   Search,
   UserPlus,
   X,
+  ShieldAlert,
 } from 'lucide-react';
 
 type UserRow = {
@@ -59,14 +60,11 @@ export default function AdminUsersPage() {
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
 
-  // Active filter tab: 'all' | 'paid' | 'free'
   const [activeTab, setActiveTab] = useState<'all' | 'paid' | 'free'>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Dropdown menu state
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
-  // Add user modal state
   const [showAddModal, setShowAddModal] = useState(false);
   const [modalForm, setModalForm] = useState({
     name: '',
@@ -148,27 +146,23 @@ export default function AdminUsersPage() {
     }
   }
 
-  // Calculate "This Month" count dynamically based on createdAt
   const now = new Date();
-  const currentMonth = now.getMonth();
-  const currentYear = now.getFullYear();
   const thisMonthCount = users.filter((u) => {
     const created = new Date(u.createdAt);
-    return created.getMonth() === currentMonth && created.getFullYear() === currentYear;
+    return created.getMonth() === now.getMonth() && created.getFullYear() === now.getFullYear();
   }).length;
 
   return (
     <div className="admin-users-wrap">
-      {/* Header Bar */}
       <header className="admin-users-header">
-        <div>
-          <h1 className="admin-users-title">Users &amp; Subscribers</h1>
-          <p className="admin-users-subtitle">
-            Manage registered accounts, subscription history, and export subscriber lists.
-          </p>
+        <div className="admin-page-header" style={{ marginBottom: 0 }}>
+          <div className="admin-page-eyebrow">Users &amp; Subscribers</div>
+          <h1 className="admin-page-title" style={{ fontSize: 38 }}>Users &amp; Subscribers</h1>
+          <p className="admin-page-subtitle">Manage registered accounts, subscription history, and export subscriber lists.</p>
+          <div className="admin-underline" />
         </div>
 
-        <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-3 flex-wrap" style={{ marginTop: 16 }}>
           <button
             onClick={exportCsv}
             disabled={exporting}
@@ -180,8 +174,8 @@ export default function AdminUsersPage() {
 
           <button
             onClick={() => setShowAddModal(true)}
-            className="admin-users-export-btn"
-            style={{ background: '#f5b335', color: '#0a2116', borderColor: '#f5b335' }}
+            className="admin-users-export-btn admin-action-primary"
+            style={{ minHeight: 40, padding: '10px 18px', fontSize: 14 }}
           >
             <UserPlus size={16} />
             <span>Add User</span>
@@ -189,7 +183,6 @@ export default function AdminUsersPage() {
         </div>
       </header>
 
-      {/* Segmented Filter Pills */}
       <nav className="admin-users-segmented-nav" aria-label="Account Filters">
         <button
           onClick={() => setActiveTab('all')}
@@ -216,9 +209,7 @@ export default function AdminUsersPage() {
         </button>
       </nav>
 
-      {/* Stats Summary Grid (4 Cards matching reference mockup) */}
       <div className="admin-users-stats-grid">
-        {/* Card 1: Total Users */}
         <div className="admin-users-stat-card">
           <div className="admin-users-stat-header">
             <div className="admin-users-stat-icon">
@@ -229,7 +220,6 @@ export default function AdminUsersPage() {
           <div className="admin-users-stat-label">Total Users</div>
         </div>
 
-        {/* Card 2: Paid Subscribers */}
         <div className="admin-users-stat-card">
           <div className="admin-users-stat-header">
             <div className="admin-users-stat-icon">
@@ -240,7 +230,6 @@ export default function AdminUsersPage() {
           <div className="admin-users-stat-label">Paid Subscribers</div>
         </div>
 
-        {/* Card 3: Free / Trial Users */}
         <div className="admin-users-stat-card">
           <div className="admin-users-stat-header">
             <div className="admin-users-stat-icon">
@@ -251,7 +240,6 @@ export default function AdminUsersPage() {
           <div className="admin-users-stat-label">Free / Trial Users</div>
         </div>
 
-        {/* Card 4: This Month */}
         <div className="admin-users-stat-card">
           <div className="admin-users-stat-header">
             <div className="admin-users-stat-icon">
@@ -263,9 +251,7 @@ export default function AdminUsersPage() {
         </div>
       </div>
 
-      {/* Registered Accounts Section */}
       <section className="admin-users-list-section">
-        {/* Section Header */}
         <div className="admin-users-list-header">
           <h2 className="admin-users-list-title">
             Registered Accounts ({users.length})
@@ -276,7 +262,6 @@ export default function AdminUsersPage() {
           </div>
         </div>
 
-        {/* Search Input Bar */}
         <div className="relative w-full">
           <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#85a694]" />
           <input
@@ -284,20 +269,18 @@ export default function AdminUsersPage() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Filter accounts by name, email, or phone..."
-            className="w-full bg-[#0b2216] text-white text-sm pl-10 pr-4 py-2.5 rounded-xl border border-[rgba(243,245,236,0.12)] focus:outline-none focus:border-[#f5b335] transition-colors placeholder:text-[#557564]"
+            className="admin-input"
+            style={{ paddingLeft: 40 }}
           />
         </div>
 
-        {/* User Cards Feed Stack */}
         {loading ? (
-          <div className="p-8 text-center text-sm text-[#85a694]">
-            Loading user directory…
-          </div>
+          <div className="admin-loading">Loading user directory…</div>
         ) : users.length === 0 ? (
-          <div className="p-8 text-center border border-dashed border-[rgba(243,245,236,0.12)] rounded-xl">
-            <Users size={32} className="mx-auto mb-2 text-[#f5b335] opacity-80" />
-            <p className="text-base text-white font-semibold">No accounts match criteria</p>
-            <p className="text-xs text-[#85a694] mt-1">Try adjusting search query or tab filters.</p>
+          <div className="admin-empty-state">
+            <Users size={32} className="admin-empty-state-icon" />
+            <p className="admin-empty-state-title">No accounts match criteria</p>
+            <p className="admin-empty-state-desc">Try adjusting search query or tab filters.</p>
           </div>
         ) : (
           <div className="admin-users-cards-stack">
@@ -311,14 +294,12 @@ export default function AdminUsersPage() {
 
               return (
                 <div key={u.id} className="admin-user-item-card">
-                  {/* Left Column: Avatar + User details */}
                   <div className="admin-user-card-left">
                     <div className="admin-user-avatar">
                       <User size={22} />
                     </div>
 
                     <div className="admin-user-info-stack">
-                      {/* Name & Status Pill */}
                       <div className="admin-user-title-row">
                         <span className="admin-user-name">{u.name}</span>
                         {u.status === 'Active' ? (
@@ -328,7 +309,6 @@ export default function AdminUsersPage() {
                         )}
                       </div>
 
-                      {/* Contact & Location Meta Row */}
                       <div className="admin-user-meta-row">
                         <div className="admin-user-meta-item">
                           <Mail size={14} className="text-[#85a694]" />
@@ -348,7 +328,6 @@ export default function AdminUsersPage() {
                         </div>
                       </div>
 
-                      {/* Joined / Expires Date Row */}
                       <div className="admin-user-meta-row" style={{ marginTop: '2px' }}>
                         <div className="admin-user-meta-item">
                           <Calendar size={14} className="text-[#85a694]" />
@@ -359,7 +338,6 @@ export default function AdminUsersPage() {
                     </div>
                   </div>
 
-                  {/* Right Column: Actions */}
                   <div className="admin-user-card-right">
                     <Link
                       href={`/admin/users/${u.id}`}
@@ -406,9 +384,8 @@ export default function AdminUsersPage() {
         )}
       </section>
 
-      {/* Add User Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fadeIn">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
           <div className="bg-[#102e20] border border-[rgba(243,245,236,0.16)] rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl p-6">
             <div className="flex items-center justify-between pb-4 border-b border-[rgba(243,245,236,0.1)] mb-4">
               <h3 className="font-bold text-lg text-white">Add New User Account</h3>
@@ -420,58 +397,63 @@ export default function AdminUsersPage() {
               </button>
             </div>
 
-            <form onSubmit={handleCreateUser} className="space-y-4">
-              <div className="space-y-1">
-                <label className="text-xs text-[#85a694] font-medium">Full Name *</label>
+            <form onSubmit={handleCreateUser} className="flex flex-col gap-4">
+              <div className="admin-form-group">
+                <label htmlFor="name" className="admin-form-label">Full Name *</label>
                 <input
+                  id="name"
                   type="text"
                   required
                   value={modalForm.name}
                   onChange={(e) => setModalForm({ ...modalForm, name: e.target.value })}
                   placeholder="Kelechi Eme"
-                  className="w-full bg-[#0b2216] text-white text-sm px-3.5 py-2.5 rounded-xl border border-[rgba(243,245,236,0.12)] focus:outline-none focus:border-[#f5b335]"
+                  className="admin-input"
                 />
               </div>
 
-              <div className="space-y-1">
-                <label className="text-xs text-[#85a694] font-medium">Email Address *</label>
+              <div className="admin-form-group">
+                <label htmlFor="email" className="admin-form-label">Email Address *</label>
                 <input
+                  id="email"
                   type="email"
                   required
                   value={modalForm.email}
                   onChange={(e) => setModalForm({ ...modalForm, email: e.target.value })}
                   placeholder="emekelechi883@gmail.com"
-                  className="w-full bg-[#0b2216] text-white text-sm px-3.5 py-2.5 rounded-xl border border-[rgba(243,245,236,0.12)] focus:outline-none focus:border-[#f5b335]"
+                  className="admin-input"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-xs text-[#85a694] font-medium">Phone</label>
+              <div className="admin-form-row-2col">
+                <div className="admin-form-group">
+                  <label htmlFor="phone" className="admin-form-label">Phone</label>
                   <input
+                    id="phone"
                     type="text"
                     value={modalForm.phone}
                     onChange={(e) => setModalForm({ ...modalForm, phone: e.target.value })}
                     placeholder="+2348057531862"
-                    className="w-full bg-[#0b2216] text-white text-sm px-3.5 py-2.5 rounded-xl border border-[rgba(243,245,236,0.12)] focus:outline-none focus:border-[#f5b335]"
+                    className="admin-input"
                   />
                 </div>
 
-                <div className="space-y-1">
-                  <label className="text-xs text-[#85a694] font-medium">Country</label>
+                <div className="admin-form-group">
+                  <label htmlFor="country" className="admin-form-label">Country</label>
                   <input
+                    id="country"
                     type="text"
                     value={modalForm.country}
                     onChange={(e) => setModalForm({ ...modalForm, country: e.target.value })}
                     placeholder="Nigeria"
-                    className="w-full bg-[#0b2216] text-white text-sm px-3.5 py-2.5 rounded-xl border border-[rgba(243,245,236,0.12)] focus:outline-none focus:border-[#f5b335]"
+                    className="admin-input"
                   />
                 </div>
               </div>
 
               {modalError && (
-                <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-xs">
-                  {modalError}
+                <div className="admin-form-error">
+                  <ShieldAlert size={15} className="shrink-0" />
+                  <span>{modalError}</span>
                 </div>
               )}
 
@@ -479,14 +461,14 @@ export default function AdminUsersPage() {
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="px-4 py-2 text-xs font-semibold text-[#85a694] hover:text-white"
+                  className="btn btn-ghost py-2 px-4 text-sm"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={modalSaving}
-                  className="px-5 py-2 text-xs font-bold bg-[#f5b335] text-[#0a2116] rounded-xl hover:brightness-105"
+                  className="btn btn-primary py-2 px-5 text-sm font-semibold"
                 >
                   {modalSaving ? 'Creating…' : 'Create User'}
                 </button>

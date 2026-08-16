@@ -97,34 +97,30 @@ export default function FreeAccessPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="pb-2 border-b border-[rgba(243,245,236,0.1)]">
-        <h1 className="font-bold text-2xl sm:text-3xl text-white">Free Access & Promo Rules</h1>
-        <p className="text-xs sm:text-sm text-[var(--chalk-muted)] mt-1">
-          Configure global trial periods, scheduled promotional free windows, and manual VIP complimentary grants.
-        </p>
+      <div className="admin-page-header">
+        <div className="admin-page-eyebrow">Free Access &amp; Promo Rules</div>
+        <h1 className="admin-page-title">Free Access &amp; Promo Rules</h1>
+        <p className="admin-page-subtitle">Configure global trial periods, scheduled promotional free windows, and manual VIP complimentary grants.</p>
+        <div className="admin-underline" />
       </div>
 
-      {/* Rules Section */}
       <div className="admin-grid-2col">
         <div className="card p-4 sm:p-5">
-          <h2 className="text-base font-semibold text-white mb-4 flex items-center justify-between">
-            <span>Configured Promo & Trial Rules</span>
-            <span className="text-xs text-[var(--chalk-muted)] font-mono">{rules.length} Rules</span>
-          </h2>
+          <div className="admin-card-header">
+            <h2 className="admin-card-title">Configured Promo &amp; Trial Rules</h2>
+            <span className="admin-card-subtitle">{rules.length} Rules</span>
+          </div>
 
           {loading ? (
-            <div className="p-8 text-center text-sm text-[var(--chalk-muted)]">Loading rules…</div>
+            <div className="admin-loading">Loading rules…</div>
           ) : rules.length === 0 ? (
-            <div className="p-6 text-center border border-dashed border-[rgba(243,245,236,0.14)] rounded-lg">
-              <Gift size={24} className="mx-auto mb-2 text-[var(--floodlight)] opacity-70" />
-              <p className="text-sm text-white font-medium">No trial or promo rules active</p>
-              <p className="text-xs text-[var(--chalk-muted)] mt-1">
-                Add a rule to give new users a free trial or schedule open viewing days.
-              </p>
+            <div className="admin-empty-state">
+              <Gift size={24} className="admin-empty-state-icon" />
+              <p className="admin-empty-state-title">No trial or promo rules active</p>
+              <p className="admin-empty-state-desc">Add a rule to give new users a free trial or schedule open viewing days.</p>
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="flex flex-col gap-3">
               {rules.map((r) => (
                 <div
                   key={r.id}
@@ -136,11 +132,7 @@ export default function FreeAccessPage() {
                         {r.type === 'global_trial' ? 'Global Signup Trial' : 'Promotional Window'}
                       </span>
                       <span
-                        className={`px-2 py-0.5 text-[9px] font-bold uppercase rounded ${
-                          r.isActive
-                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                            : 'bg-zinc-700/40 text-zinc-400 border border-zinc-700'
-                        }`}
+                        className={`admin-status-pill ${r.isActive ? 'admin-status-pill-success' : 'admin-status-pill-neutral'}`}
                       >
                         {r.isActive ? 'Active' : 'Disabled'}
                       </span>
@@ -163,21 +155,22 @@ export default function FreeAccessPage() {
           )}
         </div>
 
-        {/* Rule Form */}
         <form onSubmit={createRule} className="card p-4 sm:p-5">
-          <h2 className="text-base font-semibold text-white mb-4 flex items-center gap-2">
-            <Plus size={16} className="text-[var(--floodlight)]" />
-            <span>Create Trial / Promo Rule</span>
-          </h2>
+          <div className="admin-card-header">
+            <div className="flex items-center gap-2">
+              <Plus size={16} className="text-[var(--floodlight)]" />
+              <h2 className="admin-card-title" style={{ margin: 0 }}>Create Trial / Promo Rule</h2>
+            </div>
+          </div>
 
-          <div className="space-y-4">
-            <div className="field mb-0">
-              <label htmlFor="ruleType" className="text-xs text-[var(--chalk-muted)] font-medium">Rule Type</label>
+          <div className="flex flex-col gap-4">
+            <div className="admin-form-group">
+              <label htmlFor="ruleType" className="admin-form-label">Rule Type</label>
               <select
                 id="ruleType"
                 value={ruleType}
                 onChange={(e) => setRuleType(e.target.value as any)}
-                className="w-full bg-[var(--pitch)] border border-[rgba(243,245,236,0.14)] rounded-md p-3 text-sm text-[var(--chalk)]"
+                className="admin-select"
               >
                 <option value="global_trial">Global Trial (All New Signups)</option>
                 <option value="promo_window">Dated Promo Window (Open To All)</option>
@@ -185,8 +178,8 @@ export default function FreeAccessPage() {
             </div>
 
             {ruleType === 'global_trial' ? (
-              <div className="field mb-0">
-                <label htmlFor="trialDays" className="text-xs text-[var(--chalk-muted)] font-medium">Trial Duration (Days)</label>
+              <div className="admin-form-group">
+                <label htmlFor="trialDays" className="admin-form-label">Trial Duration (Days)</label>
                 <input
                   id="trialDays"
                   type="number"
@@ -194,37 +187,37 @@ export default function FreeAccessPage() {
                   required
                   value={trialDays}
                   onChange={(e) => setTrialDays(Number(e.target.value))}
-                  className="w-full"
+                  className="admin-input"
                 />
               </div>
             ) : (
-              <div className="space-y-3">
-                <div className="field mb-0">
-                  <label htmlFor="startAt" className="text-xs text-[var(--chalk-muted)] font-medium">Start Date & Time</label>
+              <div className="flex flex-col gap-3">
+                <div className="admin-form-group">
+                  <label htmlFor="startAt" className="admin-form-label">Start Date &amp; Time</label>
                   <input
                     id="startAt"
                     type="datetime-local"
                     required
                     value={startAt}
                     onChange={(e) => setStartAt(e.target.value)}
-                    className="w-full"
+                    className="admin-input"
                   />
                 </div>
-                <div className="field mb-0">
-                  <label htmlFor="endAt" className="text-xs text-[var(--chalk-muted)] font-medium">End Date & Time</label>
+                <div className="admin-form-group">
+                  <label htmlFor="endAt" className="admin-form-label">End Date &amp; Time</label>
                   <input
                     id="endAt"
                     type="datetime-local"
                     required
                     value={endAt}
                     onChange={(e) => setEndAt(e.target.value)}
-                    className="w-full"
+                    className="admin-input"
                   />
                 </div>
               </div>
             )}
 
-            {ruleError && <div className="error-text">{ruleError}</div>}
+            {ruleError && <div className="admin-form-error"><span>{ruleError}</span></div>}
 
             <button type="submit" className="btn btn-primary w-full py-2.5 text-sm font-semibold" disabled={savingRule}>
               {savingRule ? 'Saving…' : 'Activate Rule'}
@@ -233,24 +226,21 @@ export default function FreeAccessPage() {
         </form>
       </div>
 
-      {/* Complimentary Access Section */}
       <div className="admin-grid-2col">
         <div className="card p-4 sm:p-5">
-          <h2 className="text-base font-semibold text-white mb-4 flex items-center justify-between">
-            <span>Complimentary VIP Grants</span>
-            <span className="text-xs text-[var(--chalk-muted)] font-mono">{grants.length} Grants</span>
-          </h2>
+          <div className="admin-card-header">
+            <h2 className="admin-card-title">Complimentary VIP Grants</h2>
+            <span className="admin-card-subtitle">{grants.length} Grants</span>
+          </div>
 
           {grants.length === 0 ? (
-            <div className="p-6 text-center border border-dashed border-[rgba(243,245,236,0.14)] rounded-lg">
-              <UserCheck size={24} className="mx-auto mb-2 text-[var(--floodlight)] opacity-70" />
-              <p className="text-sm text-white font-medium">No VIP grants active</p>
-              <p className="text-xs text-[var(--chalk-muted)] mt-1">
-                Grant individual subscribers lifetime or promotional complimentary access.
-              </p>
+            <div className="admin-empty-state">
+              <UserCheck size={24} className="admin-empty-state-icon" />
+              <p className="admin-empty-state-title">No VIP grants active</p>
+              <p className="admin-empty-state-desc">Grant individual subscribers lifetime or promotional complimentary access.</p>
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="flex flex-col gap-3">
               {grants.map((g) => (
                 <div
                   key={g.id}
@@ -274,16 +264,17 @@ export default function FreeAccessPage() {
           )}
         </div>
 
-        {/* Grant Form */}
         <form onSubmit={grantAccess} className="card p-4 sm:p-5">
-          <h2 className="text-base font-semibold text-white mb-4 flex items-center gap-2">
-            <UserCheck size={16} className="text-[var(--floodlight)]" />
-            <span>Grant Complimentary VIP</span>
-          </h2>
+          <div className="admin-card-header">
+            <div className="flex items-center gap-2">
+              <UserCheck size={16} className="text-[var(--floodlight)]" />
+              <h2 className="admin-card-title" style={{ margin: 0 }}>Grant Complimentary VIP</h2>
+            </div>
+          </div>
 
-          <div className="space-y-4">
-            <div className="field mb-0">
-              <label htmlFor="grantEmail" className="text-xs text-[var(--chalk-muted)] font-medium">User Email Address</label>
+          <div className="flex flex-col gap-4">
+            <div className="admin-form-group">
+              <label htmlFor="grantEmail" className="admin-form-label">User Email Address</label>
               <input
                 id="grantEmail"
                 type="email"
@@ -291,11 +282,11 @@ export default function FreeAccessPage() {
                 value={grantEmail}
                 onChange={(e) => setGrantEmail(e.target.value)}
                 placeholder="subscriber@example.com"
-                className="w-full"
+                className="admin-input"
               />
             </div>
 
-            {grantError && <div className="error-text">{grantError}</div>}
+            {grantError && <div className="admin-form-error"><span>{grantError}</span></div>}
 
             <button type="submit" className="btn btn-primary w-full py-2.5 text-sm font-semibold" disabled={savingGrant}>
               {savingGrant ? 'Granting Access…' : 'Grant Full VIP Access'}
@@ -306,4 +297,3 @@ export default function FreeAccessPage() {
     </div>
   );
 }
-
