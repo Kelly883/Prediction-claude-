@@ -84,7 +84,7 @@ export default function EditPredictionPage() {
   }
 
   function load() {
-    apiJson<Post>(`/api/predictions/${id}`)
+    apiJson<Post>(`/api/admin/predictions/${id}`)
       .then((p) => {
         setPost(p);
         setTitle(p.title);

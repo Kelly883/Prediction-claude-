@@ -1,10 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAdmin, errorResponse } from '@/lib/rbac';
+import { requireAdmin, errorResponse, ApiError } from '@/lib/rbac';
 import { writeAudit } from '@/lib/audit';
 import { UpdatePredictionSchema } from '@/lib/schemas';
 
 export const runtime = 'nodejs';
+
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    await requireAdmin(req);
+    const { id } = await params;
+    const post = await prisma.predictionPost.findUnique({
+      where: { id },
+      include: { items: true, media: true },
+    });
+    if (!post) throw new ApiError(404, 'Not found');
+    return NextResponse.json(post);
+  } catch (err) {
+    return errorResponse(err);
+  }
+}
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {

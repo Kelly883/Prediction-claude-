@@ -64,6 +64,8 @@ export default function AdminPredictionsPage() {
   const [items, setItems] = useState([emptyItem()]);
 
   const [uploadPostId, setUploadPostId] = useState('');
+  const [uploadVisibility, setUploadVisibility] = useState<'subscribers' | 'plan_specific' | 'free_window'>('subscribers');
+  const [selectedUploadPlanIds, setSelectedUploadPlanIds] = useState<string[]>([]);
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
   const [uploadPreviews, setUploadPreviews] = useState<string[]>([]);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -77,7 +79,7 @@ export default function AdminPredictionsPage() {
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
 
   function load() {
-    apiJson<Post[]>('/api/predictions')
+    apiJson<Post[]>('/api/admin/predictions')
       .then(setPosts)
       .finally(() => setLoading(false));
     apiJson<SubscriptionPlan[]>('/api/plans')
@@ -198,6 +200,8 @@ export default function AdminPredictionsPage() {
         setUploadStatus(`Uploading image ${i + 1} of ${uploadFiles.length}…`);
         const formData = new FormData();
         formData.append('file', file);
+        formData.append('visibility', uploadVisibility);
+        formData.append('planIds', selectedUploadPlanIds.join(','));
         const res = await apiFetch(`/api/admin/predictions/${uploadPostId}/images`, {
           method: 'POST',
           body: formData,
@@ -499,10 +503,19 @@ export default function AdminPredictionsPage() {
                 id="uploadPost"
                 value={uploadPostId}
                 onChange={(e) => {
-                  setUploadPostId(e.target.value);
+                  const postId = e.target.value;
+                  setUploadPostId(postId);
                   setUploadFiles([]);
                   setUploadPreviews([]);
                   setUploadError(null);
+
+                  if (postId) {
+                    const post = posts.find((p) => p.id === postId);
+                    if (post) {
+                      setUploadVisibility(post.visibility || 'subscribers');
+                      setSelectedUploadPlanIds(post.planIds || []);
+                    }
+                  }
                 }}
                 className="admin-select"
               >
@@ -513,6 +526,64 @@ export default function AdminPredictionsPage() {
                   </option>
                 ))}
               </select>
+            </div>
+
+            <div className="admin-form-group">
+              <label htmlFor="uploadVisibility" className="admin-form-label">Subscriber Visibility</label>
+              <select
+                id="uploadVisibility"
+                value={uploadVisibility}
+                onChange={(e) => {
+                  const value = e.target.value as 'subscribers' | 'plan_specific' | 'free_window';
+                  setUploadVisibility(value);
+                  if (value === 'plan_specific') {
+                    setSelectedUploadPlanIds([]);
+                  } else if (value === 'subscribers') {
+                    setSelectedUploadPlanIds(availablePlans.map((p) => p.id));
+                  } else {
+                    setSelectedUploadPlanIds([]);
+                  }
+                }}
+                className="admin-select"
+              >
+                <option value="subscribers">All Active Subscribers</option>
+                <option value="plan_specific">Plan-Specific VIPs</option>
+                <option value="free_window">Free Window (Promotional)</option>
+              </select>
+
+              {(uploadVisibility === 'subscribers' || uploadVisibility === 'plan_specific') && (
+                <div className="p-3 rounded-xl bg-[var(--pitch)] border border-[rgba(243,245,236,0.14)] space-y-2 mt-2">
+                  <label className="text-xs text-[#85a694] font-semibold uppercase tracking-wider font-mono block">
+                    {uploadVisibility === 'subscribers' ? 'Visible To All Admin-Created Plans' : 'Select Admin-Created Subscription Plans'}
+                  </label>
+                  {availablePlans.length === 0 ? (
+                    <p className="text-xs text-[#9fb3a6] italic">
+                      No subscription plans created by admin yet. Create plans in the Membership Plans section.
+                    </p>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-2">
+                      {availablePlans.map((plan) => (
+                        <label key={plan.id} className="flex items-center gap-2 text-xs text-white bg-[#0f2b1d] p-2 rounded-lg border border-[rgba(243,245,236,0.1)] cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={selectedUploadPlanIds.includes(plan.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedUploadPlanIds([...selectedUploadPlanIds, plan.id]);
+                              } else {
+                                setSelectedUploadPlanIds(selectedUploadPlanIds.filter((id) => id !== plan.id));
+                              }
+                            }}
+                            className="rounded border-zinc-700 bg-zinc-900 text-[#f5b335] focus:ring-[#f5b335]"
+                          />
+                          <span className="font-medium">{plan.name}</span>
+                          <span className="text-[10px] text-[#85a694] ml-auto">({plan.durationDays}d)</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="admin-upload-area">
@@ -598,6 +669,8 @@ export default function AdminPredictionsPage() {
                   setUploadFiles([]);
                   setUploadPreviews([]);
                   setUploadPostId('');
+                  setUploadVisibility('subscribers');
+                  setSelectedUploadPlanIds([]);
                   setUploadError(null);
                   setUploadStatus(null);
                 }}

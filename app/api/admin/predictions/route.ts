@@ -25,6 +25,19 @@ const CreatePredictionSchema = z.object({
   items: z.array(PredictionItemSchema),
 });
 
+export async function GET(req: NextRequest) {
+  try {
+    await requireAdmin(req);
+    const posts = await prisma.predictionPost.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: { items: true, media: true },
+    });
+    return NextResponse.json(posts);
+  } catch (err) {
+    return errorResponse(err);
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     requireCsrf(req);
