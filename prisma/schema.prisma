@@ -82,6 +82,7 @@ model User {
   role             Role     @default(user)
   twoFactorEnabled Boolean  @default(false)
   twoFactorSecret  String?
+  emailVerifiedAt  DateTime?
   tokenVersion     Int      @default(0)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
@@ -97,6 +98,7 @@ model User {
   sessions            UserSession[]
   cmsEdits            CmsSection[]
   passwordResetTokens PasswordResetToken[]
+  emailVerifications  EmailVerificationToken[]
 
   @@index([role])
   @@index([email])
@@ -286,6 +288,18 @@ model UserSession {
 }
 
 model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+model EmailVerificationToken {
   id        String    @id @default(uuid())
   userId    String
   user      User      @relation(fields: [userId], references: [id])

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { verifyRefreshToken, issueAccessToken, cookieOptions } from '@/lib/auth';
+import { verifyRefreshToken, issueAccessToken, issueRefreshToken, cookieOptions } from '@/lib/auth';
 import { errorResponse, ApiError } from '@/lib/rbac';
 import { writeAudit } from '@/lib/audit';
 
@@ -9,6 +9,8 @@ export const runtime = 'nodejs';
 /**
  * Silently exchanges a valid refresh_token cookie for a new access_token.
  * Enforces tokenVersion validity — if password reset occurred, older tokens are rejected.
+ * Implements refresh token rotation: the old refresh token is marked as used
+ * and a new one is issued alongside the new access token.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -32,10 +34,18 @@ export async function POST(req: NextRequest) {
       throw new ApiError(401, 'Session revoked. Please log in again.');
     }
 
+    // Refresh token rotation: mark the old jti as used to prevent reuse
+    if (payload.jti) {
+      const { usedRefreshJtis } = await import('@/lib/auth');
+      usedRefreshJtis.add(payload.jti);
+    }
+
     const accessToken = await issueAccessToken({ sub: user.id, role: user.role });
+    const newRefreshToken = await issueRefreshToken(user.id, user.tokenVersion);
 
     const res = NextResponse.json({ ok: true });
     res.cookies.set('access_token', accessToken, cookieOptions(15 * 60));
+    res.cookies.set('refresh_token', newRefreshToken, cookieOptions(7 * 24 * 60 * 60));
     return res;
   } catch (err) {
     return errorResponse(err);

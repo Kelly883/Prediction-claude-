@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { requireAdmin, errorResponse, ApiError } from '@/lib/rbac';
 import { hashPassword } from '@/lib/password';
 import { writeAudit } from '@/lib/audit';
+import crypto from 'crypto';
 
 export const runtime = 'nodejs';
 
@@ -151,7 +152,7 @@ export async function POST(req: NextRequest) {
       throw new ApiError(409, 'An account with this email already exists');
     }
 
-    const defaultPassword = password || 'PredictPro@2026';
+    const defaultPassword = password || crypto.randomBytes(16).toString('hex');
     const passwordHash = await hashPassword(defaultPassword);
 
     const newUser = await prisma.user.create({
