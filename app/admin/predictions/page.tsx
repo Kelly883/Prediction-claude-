@@ -54,6 +54,7 @@ export default function AdminPredictionsPage() {
   const [loading, setLoading] = useState(true);
 
   const [showManualForm, setShowManualForm] = useState(false);
+  const [showUploadPanel, setShowUploadPanel] = useState(false);
 
   const [title, setTitle] = useState('');
   const [scheduledAt, setScheduledAt] = useState('');
@@ -61,13 +62,17 @@ export default function AdminPredictionsPage() {
   const [visibility, setVisibility] = useState<'plan_specific' | 'subscribers' | 'free_window'>('subscribers');
   const [selectedPlanIds, setSelectedPlanIds] = useState<string[]>([]);
   const [items, setItems] = useState([emptyItem()]);
-  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const [filePreviews, setFilePreviews] = useState<string[]>([]);
-  const manualFileInputRef = useRef<HTMLInputElement>(null);
+
+  const [uploadPostId, setUploadPostId] = useState('');
+  const [uploadFiles, setUploadFiles] = useState<File[]>([]);
+  const [uploadPreviews, setUploadPreviews] = useState<string[]>([]);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadSaving, setUploadSaving] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState<string | null>(null);
+  const uploadFileInputRef = useRef<HTMLInputElement>(null);
 
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [uploadStatus, setUploadStatus] = useState<string | null>(null);
 
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
 
@@ -84,9 +89,9 @@ export default function AdminPredictionsPage() {
 
   useEffect(() => {
     return () => {
-      filePreviews.forEach((url) => URL.revokeObjectURL(url));
+      uploadPreviews.forEach((url) => URL.revokeObjectURL(url));
     };
-  }, [filePreviews]);
+  }, [uploadPreviews]);
 
   function handleVisibilityChange(value: 'plan_specific' | 'subscribers' | 'free_window') {
     setVisibility(value);
@@ -99,7 +104,7 @@ export default function AdminPredictionsPage() {
     }
   }
 
-  function validateFiles(files: File[], currentCount: number): { valid: File[]; error?: string } {
+  function validateUploadFiles(files: File[], currentCount: number): { valid: File[]; error?: string } {
     const valid: File[] = [];
     for (const file of files) {
       if (!ALLOWED_MIME_TYPES.includes(file.type.toLowerCase())) {
@@ -116,38 +121,37 @@ export default function AdminPredictionsPage() {
     return { valid };
   }
 
-  function handleFileSelection(e: React.ChangeEvent<HTMLInputElement>) {
-    setError(null);
+  function handleUploadFileSelection(e: React.ChangeEvent<HTMLInputElement>) {
+    setUploadError(null);
     const files = Array.from(e.target.files ?? []);
     if (!files.length) return;
 
-    const { valid, error: valErr } = validateFiles(files, selectedFiles.length);
+    const { valid, error: valErr } = validateUploadFiles(files, uploadFiles.length);
     if (valErr) {
-      setError(valErr);
+      setUploadError(valErr);
       if (!valid.length) return;
     }
 
     const newPreviews = valid.map((f) => URL.createObjectURL(f));
-    setSelectedFiles((prev) => [...prev, ...valid]);
-    setFilePreviews((prev) => [...prev, ...newPreviews]);
+    setUploadFiles((prev) => [...prev, ...valid]);
+    setUploadPreviews((prev) => [...prev, ...newPreviews]);
 
-    if (manualFileInputRef.current) manualFileInputRef.current.value = '';
+    if (uploadFileInputRef.current) uploadFileInputRef.current.value = '';
   }
 
-  function removeSelectedFile(index: number) {
-    URL.revokeObjectURL(filePreviews[index]);
-    setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
-    setFilePreviews((prev) => prev.filter((_, i) => i !== index));
+  function removeUploadFile(index: number) {
+    URL.revokeObjectURL(uploadPreviews[index]);
+    setUploadFiles((prev) => prev.filter((_, i) => i !== index));
+    setUploadPreviews((prev) => prev.filter((_, i) => i !== index));
   }
 
   async function createPost(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
     setError(null);
-    setUploadStatus(null);
 
     try {
-      const newPost = await apiJson<Post>('/api/admin/predictions', {
+      await apiJson<Post>('/api/admin/predictions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -160,38 +164,60 @@ export default function AdminPredictionsPage() {
         }),
       });
 
-      if (selectedFiles.length > 0) {
-        setUploadStatus(`Uploading ${selectedFiles.length} slip screenshot(s)…`);
-        for (let i = 0; i < selectedFiles.length; i++) {
-          const file = selectedFiles[i];
-          setUploadStatus(`Uploading image ${i + 1} of ${selectedFiles.length}…`);
-          const formData = new FormData();
-          formData.append('file', file);
-          const res = await apiFetch(`/api/admin/predictions/${newPost.id}/images`, {
-            method: 'POST',
-            body: formData,
-          });
-          const data = await res.json();
-          if (!res.ok) {
-            throw new Error(data.error ?? `Failed to upload image "${file.name}"`);
-          }
-        }
-      }
-
       setTitle('');
       setScheduledAt('');
       setBookingCode('');
       setSelectedPlanIds([]);
       setItems([emptyItem()]);
-      setSelectedFiles([]);
-      setFilePreviews([]);
       setShowManualForm(false);
-      setUploadStatus(null);
       load();
     } catch (err) {
       setError((err as Error).message);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function uploadImages() {
+    if (!uploadPostId) {
+      setUploadError('Please select a prediction post first.');
+      return;
+    }
+    if (uploadFiles.length === 0) {
+      setUploadError('Please select at least one image to upload.');
+      return;
+    }
+
+    setUploadSaving(true);
+    setUploadError(null);
+    setUploadStatus(`Uploading ${uploadFiles.length} slip screenshot(s)…`);
+
+    try {
+      for (let i = 0; i < uploadFiles.length; i++) {
+        const file = uploadFiles[i];
+        setUploadStatus(`Uploading image ${i + 1} of ${uploadFiles.length}…`);
+        const formData = new FormData();
+        formData.append('file', file);
+        const res = await apiFetch(`/api/admin/predictions/${uploadPostId}/images`, {
+          method: 'POST',
+          body: formData,
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.error ?? `Failed to upload image "${file.name}"`);
+        }
+      }
+
+      setUploadFiles([]);
+      setUploadPreviews([]);
+      setUploadPostId('');
+      setUploadStatus('Upload complete.');
+      setTimeout(() => setUploadStatus(null), 3000);
+      load();
+    } catch (err) {
+      setUploadError((err as Error).message);
+    } finally {
+      setUploadSaving(false);
       setUploadStatus(null);
     }
   }
@@ -255,6 +281,23 @@ export default function AdminPredictionsPage() {
           </div>
           {!showManualForm && <ChevronRight size={16} style={{ opacity: 0.7 }} />}
         </button>
+
+        <button
+          type="button"
+          onClick={() => setShowUploadPanel((s) => !s)}
+          className="admin-action-secondary"
+        >
+          <div className="admin-action-left">
+            <div className="admin-action-icon-box-gold">
+              <ImageIcon size={16} />
+            </div>
+            <div>
+              <div style={{ display: 'block', fontWeight: 700, fontSize: 15 }}>Upload Slip Images</div>
+              <div style={{ display: 'block', fontSize: 12, opacity: 0.75, marginTop: 2 }}>Attach screenshots</div>
+            </div>
+          </div>
+          {!showUploadPanel && <ChevronRight size={16} style={{ opacity: 0.6 }} />}
+        </button>
       </div>
 
       {/* Manual Compose Form */}
@@ -266,7 +309,7 @@ export default function AdminPredictionsPage() {
             </div>
             <div>
               <h2 className="admin-compose-title">Compose Matchday Prediction Post</h2>
-              <p className="admin-compose-subtitle">Create a new prediction with match picks and optional slip screenshots.</p>
+              <p className="admin-compose-subtitle">Create a new prediction with match picks.</p>
             </div>
           </div>
 
@@ -359,59 +402,6 @@ export default function AdminPredictionsPage() {
               </div>
             </div>
 
-            {/* Attach Slip Screenshots */}
-            <div className="admin-upload-area">
-              <div className="admin-upload-area-header">
-                <label className="admin-upload-area-label">
-                  <span className="admin-upload-area-label-icon">
-                    <ImageIcon size={14} />
-                  </span>
-                  Attach Slip Screenshots ({selectedFiles.length}/10)
-                </label>
-                <span className="text-[11px] text-[#85a694]">JPG, PNG (Max 5MB each)</span>
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => manualFileInputRef.current?.click()}
-                  className="admin-upload-btn"
-                >
-                  <FileImage size={15} style={{ color: '#f5b335' }} />
-                  Attach Slip Screenshots
-                </button>
-                <input
-                  ref={manualFileInputRef}
-                  type="file"
-                  multiple
-                  accept="image/jpeg,image/png,image/jpg"
-                  onChange={handleFileSelection}
-                  className="hidden"
-                />
-              </div>
-
-              {selectedFiles.length > 0 && (
-                <div className="admin-upload-grid">
-                  {selectedFiles.map((file, idx) => (
-                    <div key={idx} className="admin-upload-preview">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={filePreviews[idx]} alt={file.name} />
-                      <div className="admin-upload-preview-overlay">
-                        <span className="admin-upload-preview-name">{file.name}</span>
-                        <button
-                          type="button"
-                          onClick={() => removeSelectedFile(idx)}
-                          className="admin-upload-preview-remove"
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
             {/* Dynamic Match Items */}
             <div className="flex flex-col gap-3">
               <div className="flex items-center justify-between">
@@ -466,6 +456,124 @@ export default function AdminPredictionsPage() {
               </div>
             )}
 
+            <div className="flex items-center gap-3 pt-1">
+              <button
+                type="submit"
+                disabled={saving}
+                className="btn btn-primary py-2.5 px-5 text-sm font-semibold flex items-center justify-center gap-2"
+                style={{ opacity: saving ? 0.7 : 1 }}
+              >
+                {saving ? 'Saving Post…' : 'Save as Draft'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowManualForm(false);
+                }}
+                className="btn btn-ghost py-2.5 px-4 text-sm border border-[rgba(243,245,236,0.14)] text-[#85a694]"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Upload Slip Images Panel */}
+      {showUploadPanel && (
+        <div className="admin-compose-card">
+          <div className="admin-compose-header">
+            <div className="admin-compose-header-icon">
+              <ImageIcon size={18} />
+            </div>
+            <div>
+              <h2 className="admin-compose-title">Upload Slip Screenshots</h2>
+              <p className="admin-compose-subtitle">Select a prediction post and attach slip screenshots.</p>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-4">
+            <div className="admin-form-group">
+              <label htmlFor="uploadPost" className="admin-form-label">Select Prediction Post</label>
+              <select
+                id="uploadPost"
+                value={uploadPostId}
+                onChange={(e) => {
+                  setUploadPostId(e.target.value);
+                  setUploadFiles([]);
+                  setUploadPreviews([]);
+                  setUploadError(null);
+                }}
+                className="admin-select"
+              >
+                <option value="">-- Choose a post --</option>
+                {posts.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.title} ({p.status})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="admin-upload-area">
+              <div className="admin-upload-area-header">
+                <label className="admin-upload-area-label">
+                  <span className="admin-upload-area-label-icon">
+                    <FileImage size={14} />
+                  </span>
+                  Attach Slip Screenshots ({uploadFiles.length}/10)
+                </label>
+                <span className="text-[11px] text-[#85a694]">JPG, PNG (Max 5MB each)</span>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => uploadFileInputRef.current?.click()}
+                  className="admin-upload-btn"
+                >
+                  <FileImage size={15} style={{ color: '#f5b335' }} />
+                  Attach Slip Screenshots
+                </button>
+                <input
+                  ref={uploadFileInputRef}
+                  type="file"
+                  multiple
+                  accept="image/jpeg,image/png,image/jpg"
+                  onChange={handleUploadFileSelection}
+                  className="hidden"
+                />
+              </div>
+
+              {uploadFiles.length > 0 && (
+                <div className="admin-upload-grid">
+                  {uploadFiles.map((file, idx) => (
+                    <div key={idx} className="admin-upload-preview">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={uploadPreviews[idx]} alt={file.name} />
+                      <div className="admin-upload-preview-overlay">
+                        <span className="admin-upload-preview-name">{file.name}</span>
+                        <button
+                          type="button"
+                          onClick={() => removeUploadFile(idx)}
+                          className="admin-upload-preview-remove"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {uploadError && (
+              <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center gap-2">
+                <ShieldAlert size={16} className="shrink-0" />
+                <span>{uploadError}</span>
+              </div>
+            )}
+
             {uploadStatus && (
               <div className="text-xs flex items-center gap-2" style={{ fontFamily: 'var(--font-mono)', color: '#f5b335' }}>
                 <span className="w-2 h-2 rounded-full bg-[#f5b335] animate-pulse" />
@@ -475,26 +583,30 @@ export default function AdminPredictionsPage() {
 
             <div className="flex items-center gap-3 pt-1">
               <button
-                type="submit"
-                disabled={saving}
+                type="button"
+                onClick={uploadImages}
+                disabled={uploadSaving}
                 className="btn btn-primary py-2.5 px-5 text-sm font-semibold flex items-center justify-center gap-2"
-                style={{ opacity: saving ? 0.7 : 1 }}
+                style={{ opacity: uploadSaving ? 0.7 : 1 }}
               >
-                {saving ? 'Saving Post & Media…' : 'Save as Draft'}
+                {uploadSaving ? 'Uploading…' : 'Upload Images'}
               </button>
               <button
                 type="button"
                 onClick={() => {
-                  setShowManualForm(false);
-                  setSelectedFiles([]);
-                  setFilePreviews([]);
+                  setShowUploadPanel(false);
+                  setUploadFiles([]);
+                  setUploadPreviews([]);
+                  setUploadPostId('');
+                  setUploadError(null);
+                  setUploadStatus(null);
                 }}
                 className="btn btn-ghost py-2.5 px-4 text-sm border border-[rgba(243,245,236,0.14)] text-[#85a694]"
               >
-                Cancel
+                Close
               </button>
             </div>
-          </form>
+          </div>
         </div>
       )}
 

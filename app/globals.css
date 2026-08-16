@@ -2125,15 +2125,22 @@ textarea:focus-visible {
 /* Primary / secondary actions */
 .admin-actions-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: 14px;
   margin-top: 4px;
 }
 
-@media (max-width: 640px) {
+@media (min-width: 640px) {
   .admin-actions-row {
-    grid-template-columns: 1fr;
-    gap: 10px;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 14px;
+  }
+}
+
+@media (min-width: 960px) {
+  .admin-actions-row {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
   }
 }
 
