@@ -36,9 +36,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Too many attempts, try again shortly' }, { status: 429 });
     }
 
-    const user = await prisma.user.findUnique({ where: { email } });
+    const user = await prisma.user.findFirst({ where: { email, deletedAt: null } });
 
-    if (user && isLocked(user.lockedUntil)) {
+    if (!user) {
+      await writeAudit({
+        actorId: null,
+        action: 'auth.login_failure',
+        metadata: { ip, emailNormalized: email.toLowerCase() },
+      });
+      throw new ApiError(401, 'Invalid credentials');
+    }
+
+    if (isLocked(user.lockedUntil)) {
       await writeAudit({
         actorId: user.id,
         action: 'auth.login_locked',
@@ -75,6 +84,16 @@ export async function POST(req: NextRequest) {
       where: { id: user.id },
       data: { failedLoginAttempts: 0, lockedUntil: null },
     });
+
+    // Check email verification
+    if (!user.emailVerifiedAt) {
+      await writeAudit({
+        actorId: user.id,
+        action: 'auth.login_failed',
+        metadata: { ip, reason: 'email_not_verified' },
+      });
+      throw new ApiError(403, 'Please verify your email before logging in. Check your inbox for the verification link.');
+    }
 
     // Password rehash: if the stored hash was created with a lower cost factor,
     // rehash with the current default so that password security improves over time

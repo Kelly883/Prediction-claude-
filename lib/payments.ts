@@ -12,6 +12,15 @@ import { writeAudit } from './audit';
 // Implements design doc Section 5.2 (Payment + Entitlement Activation) and
 // the early-renewal rule from PRD Section 9: newEnd = max(currentEnd, now) + planDuration.
 
+const MAX_RAW_PAYLOAD_SIZE_BYTES = 64 * 1024; // 64KB limit
+
+function validateRawPayloadSize(payload: unknown): void {
+  const serialized = JSON.stringify(payload);
+  if (serialized.length > MAX_RAW_PAYLOAD_SIZE_BYTES) {
+    throw new Error(`Payment payload exceeds maximum allowed size of ${MAX_RAW_PAYLOAD_SIZE_BYTES} bytes`);
+  }
+}
+
 export async function initializePayment(
   userId: string,
   planId: string,
@@ -94,6 +103,8 @@ export async function handleVerifiedWebhook(params: {
   /** Reusable authorization code / card token, if the provider returned one on this charge. */
   renewalToken?: string | null;
 }) {
+  validateRawPayloadSize(params.rawPayload);
+
   const tx = await prisma.transaction.findUnique({
     where: { providerReference: params.providerReference },
     include: { user: true },

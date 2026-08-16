@@ -28,8 +28,9 @@ export async function GET(req: NextRequest) {
     const roleParam = searchParams.get('role'); // 'admin', 'user', or null
     const queryParam = searchParams.get('q')?.trim().toLowerCase() || '';
 
-    // Fetch all users with safe fields
+    // Fetch all non-deleted users with safe fields
     const users = await prisma.user.findMany({
+      where: { deletedAt: null },
       select: SAFE_USER_FIELDS,
       orderBy: { createdAt: 'desc' },
     });
