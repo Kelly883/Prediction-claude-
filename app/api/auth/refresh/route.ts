@@ -3,12 +3,14 @@ import { prisma } from '@/lib/prisma';
 import { verifyRefreshToken, issueAccessToken, issueRefreshToken, cookieOptions } from '@/lib/auth';
 import { errorResponse, ApiError } from '@/lib/rbac';
 import { writeAudit } from '@/lib/audit';
+import { isSessionInactive, deleteInactiveSessions, touchSession } from '@/lib/sessions';
 
 export const runtime = 'nodejs';
 
 /**
  * Silently exchanges a valid refresh_token cookie for a new access_token.
  * Enforces tokenVersion validity — if password reset occurred, older tokens are rejected.
+ * Enforces inactivity timeout — if the user's session is inactive for >30 days, rejects refresh.
  * Implements refresh token rotation: the old refresh token is marked as used
  * and a new one is issued alongside the new access token.
  */
@@ -34,6 +36,17 @@ export async function POST(req: NextRequest) {
       throw new ApiError(401, 'Session revoked. Please log in again.');
     }
 
+    // Inactivity check: if the user's session is inactive for >30 days, terminate session
+    if (await isSessionInactive(user.id)) {
+      await deleteInactiveSessions(user.id);
+      await writeAudit({
+        actorId: user.id,
+        action: 'auth.session_inactive',
+        metadata: { reason: '30_day_inactivity_timeout' },
+      });
+      throw new ApiError(401, 'Session expired due to inactivity. Please log in again.');
+    }
+
     // Refresh token rotation: mark the old jti as used to prevent reuse
     if (payload.jti) {
       const { usedRefreshJtis } = await import('@/lib/auth');
@@ -42,6 +55,9 @@ export async function POST(req: NextRequest) {
 
     const accessToken = await issueAccessToken({ sub: user.id, role: user.role });
     const newRefreshToken = await issueRefreshToken(user.id, user.tokenVersion);
+
+    // Update session activity on refresh to implement sliding inactivity window
+    await touchSession(user.id, req);
 
     const res = NextResponse.json({ ok: true });
     res.cookies.set('access_token', accessToken, cookieOptions(15 * 60));

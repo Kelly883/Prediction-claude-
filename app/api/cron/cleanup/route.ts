@@ -8,6 +8,7 @@ export const maxDuration = 60;
 
 const PASSWORD_RESET_TOKEN_RETENTION_HOURS = 24;
 const USER_SESSION_RETENTION_DAYS = 90;
+const USER_SESSION_INACTIVITY_DAYS = 30;
 
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get('authorization');
@@ -17,7 +18,7 @@ export async function GET(req: NextRequest) {
   }
 
   const now = new Date();
-  const results = { passwordResetTokensDeleted: 0, sessionsDeleted: 0, errors: [] as string[] };
+  const results = { passwordResetTokensDeleted: 0, sessionsDeleted: 0, inactiveSessionsDeleted: 0, errors: [] as string[] };
 
   try {
     const oldResetCutoff = new Date(now.getTime() - PASSWORD_RESET_TOKEN_RETENTION_HOURS * 60 * 60 * 1000);
@@ -42,6 +43,16 @@ export async function GET(req: NextRequest) {
     results.sessionsDeleted = deleteSessionResult.count;
   } catch (err) {
     results.errors.push(`user session cleanup failed: ${(err as Error).message}`);
+  }
+
+  try {
+    const inactiveCutoff = new Date(now.getTime() - USER_SESSION_INACTIVITY_DAYS * 24 * 60 * 60 * 1000);
+    const deleteInactiveResult = await prisma.userSession.deleteMany({
+      where: { lastSeenAt: { lt: inactiveCutoff } },
+    });
+    results.inactiveSessionsDeleted = deleteInactiveResult.count;
+  } catch (err) {
+    results.errors.push(`inactive session cleanup failed: ${(err as Error).message}`);
   }
 
   return NextResponse.json(results);

@@ -5,6 +5,8 @@ import { prisma } from './prisma';
 const ANOMALY_DEVICE_THRESHOLD = 3; // distinct devices within the window below is flagged, not blocked
 const ANOMALY_WINDOW_HOURS = 24;
 const MAX_CONCURRENT_SESSIONS = 5;
+const INACTIVITY_DAYS = 30;
+const INACTIVITY_MS = INACTIVITY_DAYS * 24 * 60 * 60 * 1000;
 
 function fingerprint(req: NextRequest): { fingerprint: string; ip: string } {
   const ua = req.headers.get('user-agent') ?? 'unknown';
@@ -45,6 +47,26 @@ export async function getDistinctDeviceCount(userId: string): Promise<number> {
 
 export async function isAnomalous(userId: string): Promise<boolean> {
   return (await getDistinctDeviceCount(userId)) >= ANOMALY_DEVICE_THRESHOLD;
+}
+
+export async function isSessionInactive(userId: string): Promise<boolean> {
+  const sessions = await prisma.userSession.findMany({
+    where: { userId },
+    orderBy: { lastSeenAt: 'desc' },
+    take: 1,
+  });
+
+  if (!sessions.length) return false;
+  const lastSeen = sessions[0].lastSeenAt;
+  return Date.now() - lastSeen.getTime() > INACTIVITY_MS;
+}
+
+export async function deleteInactiveSessions(userId: string): Promise<number> {
+  const cutoff = new Date(Date.now() - INACTIVITY_MS);
+  const result = await prisma.userSession.deleteMany({
+    where: { userId, lastSeenAt: { lt: cutoff } },
+  });
+  return result.count;
 }
 
 export async function enforceMaxSessions(userId: string): Promise<void> {
