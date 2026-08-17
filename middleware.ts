@@ -41,14 +41,6 @@ export async function middleware(req: NextRequest) {
     }
   }
 
-  // 3. Auth pages: redirect already logged-in users to their respective home
-  if ((path === '/login' || path === '/register') && payload) {
-    if (payload.role === 'admin') {
-      return NextResponse.redirect(new URL('/admin', req.url));
-    }
-    return NextResponse.redirect(new URL('/dashboard', req.url));
-  }
-
   return NextResponse.next();
 }
 
