@@ -8,6 +8,7 @@ import { DashboardUserProvider, useDashboardUser } from '@/lib/dashboard-user-co
 
 const USER_LINKS = [
   { href: '/dashboard', label: 'Overview', exact: true },
+  { href: '/dashboard/predictions', label: 'Predictions' },
   { href: '/dashboard/plans', label: 'Plans' },
   { href: '/dashboard/profile', label: 'Profile' },
   { href: '/dashboard/security', label: 'Security' },

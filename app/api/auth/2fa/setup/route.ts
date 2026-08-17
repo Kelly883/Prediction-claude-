@@ -4,6 +4,7 @@ import { requireUser, errorResponse, ApiError } from '@/lib/rbac';
 import { generateSecret, generateOtpAuthUri } from '@/lib/twofactor';
 import { encryptTotpSecret } from '@/lib/encryption';
 import { checkRateLimit, authLimiter, getClientIp } from '@/lib/ratelimit';
+import { writeAudit } from '@/lib/audit';
 
 export const runtime = 'nodejs';
 
@@ -29,7 +30,18 @@ export async function POST(req: NextRequest) {
     if (record.deletedAt) throw new ApiError(403, 'Account has been deactivated');
 
     const secret = generateSecret();
-    const encryptedSecret = encryptTotpSecret(secret);
+    let encryptedSecret: string;
+    try {
+      encryptedSecret = encryptTotpSecret(secret);
+    } catch (encryptErr) {
+      const reason = encryptErr instanceof Error ? encryptErr.message : 'TOTP encryption is not configured';
+      await writeAudit({
+        actorId: user.sub,
+        action: 'auth.2fa_setup_failed',
+        metadata: { reason, ip },
+      });
+      throw new ApiError(500, '2FA setup is currently unavailable. Please contact support.');
+    }
 
     await prisma.user.update({
       where: { id: user.sub },
