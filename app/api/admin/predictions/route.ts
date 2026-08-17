@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { requireAdmin, errorResponse } from '@/lib/rbac';
 import { writeAudit } from '@/lib/audit';
 import { requireCsrf } from '@/lib/csrf';
+import { parsePagination, withPaginationHeaders } from '@/lib/pagination';
 
 export const runtime = 'nodejs';
 
@@ -28,11 +29,19 @@ const CreatePredictionSchema = z.object({
 export async function GET(req: NextRequest) {
   try {
     await requireAdmin(req);
+    const { page, pageSize, offset } = parsePagination(req);
+
     const posts = await prisma.predictionPost.findMany({
       orderBy: { createdAt: 'desc' },
       include: { items: true, media: true },
+      skip: offset,
+      take: pageSize,
     });
-    return NextResponse.json(posts);
+
+    const total = await prisma.predictionPost.count();
+
+    const res = NextResponse.json(posts);
+    return withPaginationHeaders(res, page, pageSize, total);
   } catch (err) {
     return errorResponse(err);
   }

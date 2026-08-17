@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { requireAdmin, errorResponse, ApiError } from '@/lib/rbac';
 import { hashPassword } from '@/lib/password';
 import { writeAudit } from '@/lib/audit';
+import { parsePagination, withPaginationHeaders } from '@/lib/pagination';
 import crypto from 'crypto';
 
 export const runtime = 'nodejs';
@@ -28,13 +29,18 @@ export async function GET(req: NextRequest) {
     const statusParam = searchParams.get('status'); // 'paid', 'unpaid', 'active', 'expired', 'free', 'trial', or null
     const roleParam = searchParams.get('role'); // 'admin', 'user', or null
     const queryParam = searchParams.get('q')?.trim().toLowerCase() || '';
+    const { page, pageSize, offset } = parsePagination(req);
 
-    // Fetch all non-soft-deleted users with safe fields
+    // Fetch paginated non-soft-deleted users with safe fields
     const users = await prisma.user.findMany({
       where: { deletedAt: null },
       select: SAFE_USER_FIELDS,
       orderBy: { createdAt: 'desc' },
+      skip: offset,
+      take: pageSize,
     });
+
+    const totalUsers = await prisma.user.count({ where: { deletedAt: null } });
 
     // Fetch active/all subscriptions to compute statuses and plan names
     const subscriptions = await prisma.subscription.findMany({
@@ -90,7 +96,6 @@ export async function GET(req: NextRequest) {
     });
 
     // Calculate metrics
-    const totalUsers = users.length;
     const activeSubscribers = enrichedUsers.filter((u) => u.status === 'Active').length;
     const freeTrialUsers = enrichedUsers.filter((u) => u.status === 'Free' || u.status === 'Trial').length;
     const stats = {
@@ -128,11 +133,14 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    return NextResponse.json({
+    const paginated = {
       users: filteredUsers,
       stats,
       total: totalUsers,
-    });
+    };
+
+    const res = NextResponse.json(paginated);
+    return withPaginationHeaders(res, page, pageSize, totalUsers);
   } catch (err) {
     return errorResponse(err);
   }
@@ -179,6 +187,10 @@ export async function DELETE(req: NextRequest) {
   try {
     const admin = await requireAdmin(req);
     const { id } = await req.json();
+
+    if (id === admin.sub) {
+      throw new ApiError(400, 'You cannot delete your own account');
+    }
 
     const user = await prisma.user.findUnique({ where: { id } });
     if (!user) throw new ApiError(404, 'User not found');
