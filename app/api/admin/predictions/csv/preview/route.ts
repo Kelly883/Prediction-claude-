@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin, errorResponse } from '@/lib/rbac';
+import { requireSameOrigin, requireCsrf } from '@/lib/csrf';
 import { previewCsv } from '@/lib/csv-import';
 import { checkRateLimit, csvUploadLimiter } from '@/lib/ratelimit';
 
@@ -8,6 +9,8 @@ const MAX_CSV_BYTES = 2 * 1024 * 1024; // 2MB — generous for a matchday CSV, c
 
 export async function POST(req: NextRequest) {
   try {
+    requireSameOrigin(req);
+    requireCsrf(req);
     const admin = await requireAdmin(req);
     if (!(await checkRateLimit(csvUploadLimiter, admin.sub))) {
       return NextResponse.json({ error: 'Too many uploads, try again shortly' }, { status: 429 });

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireUser, errorResponse, ApiError } from '@/lib/rbac';
+import { requireSameOrigin, requireCsrf } from '@/lib/csrf';
 import { generateSecret, generateOtpAuthUri } from '@/lib/twofactor';
 import { encryptTotpSecret } from '@/lib/encryption';
 import { checkRateLimit, authLimiter, getClientIp } from '@/lib/ratelimit';
@@ -19,6 +20,8 @@ export const runtime = 'nodejs';
  */
 export async function POST(req: NextRequest) {
   try {
+    requireSameOrigin(req);
+    requireCsrf(req);
     const user = await requireUser(req);
     const ip = getClientIp(req);
     const allowed = await checkRateLimit(authLimiter, [ip, `user:${user.sub}`]);

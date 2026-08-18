@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAdmin, errorResponse, ApiError } from '@/lib/rbac';
+import { requireSameOrigin, requireCsrf } from '@/lib/csrf';
 import { writeAudit } from '@/lib/audit';
 import { UpdatePredictionSchema } from '@/lib/schemas';
 
@@ -23,6 +24,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    requireSameOrigin(req);
+    requireCsrf(req);
     const admin = await requireAdmin(req);
     const { id } = await params;
     const dto = UpdatePredictionSchema.parse(await req.json());

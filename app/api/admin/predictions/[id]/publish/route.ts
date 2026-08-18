@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAdmin, errorResponse } from '@/lib/rbac';
+import { requireSameOrigin, requireCsrf } from '@/lib/csrf';
 import { writeAudit } from '@/lib/audit';
 
 export const runtime = 'nodejs';
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    requireSameOrigin(req);
+    requireCsrf(req);
     const admin = await requireAdmin(req);
     const { id } = await params;
     const post = await prisma.predictionPost.update({ where: { id }, data: { status: 'published' } });
