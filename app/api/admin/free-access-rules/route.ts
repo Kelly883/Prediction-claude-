@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAdmin, errorResponse } from '@/lib/rbac';
+import { requireAdmin, requireAdminWith2FA, errorResponse } from '@/lib/rbac';
 import { writeAudit } from '@/lib/audit';
 import { FreeAccessRuleSchema } from '@/lib/schemas';
 import { requireCsrf } from '@/lib/csrf';
@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     requireCsrf(req);
-    const admin = await requireAdmin(req);
+    const admin = await requireAdminWith2FA(req);
     const dto = FreeAccessRuleSchema.parse(await req.json());
 
     const rule = await prisma.freeAccessRule.create({

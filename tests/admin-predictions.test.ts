@@ -14,6 +14,7 @@ vi.mock('@/lib/rbac', async (importOriginal) => {
   return {
     ...actual,
     requireAdmin: vi.fn().mockResolvedValue({ sub: 'admin-1', role: 'admin' }),
+    requireAdminWith2FA: vi.fn().mockResolvedValue({ sub: 'admin-1', role: 'admin' }),
   };
 });
 vi.mock('@/lib/audit', () => ({

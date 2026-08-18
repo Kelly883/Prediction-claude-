@@ -7,6 +7,8 @@ import { flutterwaveChargeToken } from '@/lib/providers/flutterwave';
 import { sendEmail } from '@/lib/email';
 import { timingSafeStringEqual } from '@/lib/timing-safe';
 import { decryptPaymentToken } from '@/lib/encryption';
+import { getRequestId } from '@/lib/request-id';
+import { isValidSubscriptionTransition } from '@/lib/subscription-state';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -35,6 +37,7 @@ const RENEWAL_LOCK_TIMEOUT_SECONDS = Number(process.env.RENEWAL_LOCK_TIMEOUT_SEC
  * Only after MAX_RENEWAL_ATTEMPTS consecutive failures does it get marked `expired`.
  */
 export async function GET(req: NextRequest) {
+  const requestId = getRequestId(req);
   const authHeader = req.headers.get('authorization');
   const expected = `Bearer ${process.env.CRON_SECRET}`;
   if (!process.env.CRON_SECRET || !authHeader || !timingSafeStringEqual(authHeader, expected)) {
@@ -78,6 +81,10 @@ export async function GET(req: NextRequest) {
       const alreadyExpired = sub.endAt <= now;
 
       if (alreadyExpired) {
+        if (!isValidSubscriptionTransition(sub.status, 'expired')) {
+          results.errors.push(`sub ${sub.id}: invalid transition from ${sub.status} to expired`);
+          continue;
+        }
         await prisma.subscription.update({
           where: { id: sub.id },
           data: { status: 'expired', renewalStatus: 'failed', renewalLockedAt: null },
@@ -234,6 +241,10 @@ export async function GET(req: NextRequest) {
       const attempts = sub.renewalAttempts + 1;
 
       if (attempts >= MAX_RENEWAL_ATTEMPTS) {
+        if (!isValidSubscriptionTransition(sub.status, 'expired')) {
+          results.errors.push(`sub ${sub.id}: invalid transition from ${sub.status} to expired`);
+          continue;
+        }
         await prisma.subscription.update({
           where: { id: sub.id },
           data: {
@@ -265,5 +276,11 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  return NextResponse.json(results);
+  return withRequestId(req, NextResponse.json(results));
+}
+
+function withRequestId(req: NextRequest, res: NextResponse): NextResponse {
+  const requestId = getRequestId(req);
+  res.headers.set('x-request-id', requestId);
+  return res;
 }

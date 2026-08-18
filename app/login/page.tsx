@@ -1,65 +1,65 @@
 'use client';
 
-import { Suspense, useState, useEffect } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import PasswordField from '@/components/PasswordField';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
+import PasswordField from '@/components/PasswordField';
 import { safeRedirectPath } from '@/lib/safe-redirect';
 import { apiJson } from '@/lib/api-client';
 
-type Me = { name: string; email: string; role: 'admin' | 'user' };
+type AuthState = 'loading' | 'authenticated' | 'anonymous';
 
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const destination = safeRedirectPath(searchParams.get('next'), '/dashboard');
-
+  const [authState, setAuthState] = useState<AuthState>('loading');
+  const [currentUser, setCurrentUser] = useState<{ email: string; role: 'admin' | 'user' } | null>(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
   const [challengeToken, setChallengeToken] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
 
   // middleware.ts no longer silently redirects an already-authenticated
   // visitor away from /login before this page even renders — that used to
   // happen invisibly, with no indication of what happened and no way to
   // sign in as a different account short of finding logout separately.
   // Checked explicitly here instead, so it can be shown rather than hidden.
-  const [existingUser, setExistingUser] = useState<Me | null | undefined>(undefined); // undefined = still checking
-  const [loggingOut, setLoggingOut] = useState(false);
-
   useEffect(() => {
+    let cancelled = false;
     // Deliberately a plain fetch, not apiJson/apiFetch: apiFetch's global
-    // 401 handling attempts a refresh and hard-redirects to /login on
+    // 401 handling attempts a token refresh and hard-redirects to /login on
     // failure — since this check runs ON /login, that would loop forever
     // for the (very common) logged-out case: 401 -> refresh fails ->
     // redirect to /login -> reload -> 401 again. This check needs to
     // handle both outcomes itself without that side effect.
     fetch('/api/me', { credentials: 'same-origin' })
-      .then((res) => (res.ok ? res.json() : null))
-      .then(setExistingUser)
-      .catch(() => setExistingUser(null));
+      .then((res) => {
+        if (!res.ok) throw new Error('Not authenticated');
+        return res.json();
+      })
+      .then((data) => {
+        if (!cancelled) {
+          setCurrentUser({ email: data.email, role: data.role });
+          setAuthState('authenticated');
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setAuthState('anonymous');
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   function homeFor(role: 'admin' | 'user') {
     if (role === 'admin') return destination && destination.startsWith('/admin') ? destination : '/admin';
     return destination && destination.startsWith('/dashboard') ? destination : '/dashboard';
-  }
-
-  async function signOutAndSwitch() {
-    setLoggingOut(true);
-    try {
-      await apiJson('/api/auth/logout', { method: 'POST' });
-    } catch {
-      // Best-effort — even if this fails, showing the login form is still
-      // correct: worst case, submitting new credentials just overwrites the
-      // stale session with a fresh one.
-    }
-    setExistingUser(null);
-    setLoggingOut(false);
   }
 
   async function onSubmitPassword(e: React.FormEvent<HTMLFormElement>) {
@@ -115,37 +115,72 @@ function LoginForm() {
     }
   }
 
-  return (
-    <div className="card" style={{ width: 400, maxWidth: '100%' }}>
-      {existingUser === undefined ? (
-        <p style={{ color: 'var(--chalk-muted)', fontSize: 14 }}>Checking your session…</p>
-      ) : existingUser ? (
-        <>
-          <div className="eyebrow" style={{ marginBottom: 6 }}>ALREADY SIGNED IN</div>
-          <h1 className="display" style={{ fontSize: 24, marginBottom: 8 }}>{existingUser.name}</h1>
-          <p style={{ color: 'var(--chalk-muted)', fontSize: 14, marginBottom: 24 }}>
-            {existingUser.email} · {existingUser.role === 'admin' ? 'Admin' : 'Member'}
-          </p>
+  async function handleSwitchAccount() {
+    setLoggingOut(true);
+    try {
+      // apiJson, not a raw fetch: /api/auth/logout requires a CSRF token
+      // (requireSameOrigin + requireCsrf), and apiJson/apiFetch is the only
+      // client helper that attaches the x-csrf-token header automatically.
+      // A raw fetch here would get rejected with a 403, silently breaking
+      // this exact button.
+      await apiJson('/api/auth/logout', { method: 'POST' });
+      setCurrentUser(null);
+      setAuthState('anonymous');
+      setError(null);
+      setChallengeToken(null);
+      setEmail('');
+      setPassword('');
+      setCode('');
+    } catch {
+      setError('Could not sign out. Please try again.');
+    } finally {
+      setLoggingOut(false);
+    }
+  }
 
-          <button
-            type="button"
-            onClick={() => router.push(homeFor(existingUser.role))}
+  if (authState === 'loading') {
+    return (
+      <div className="card" style={{ width: 400, maxWidth: '100%' }}>
+        <p style={{ color: 'var(--chalk-muted)' }}>Checking your session…</p>
+      </div>
+    );
+  }
+
+  if (authState === 'authenticated' && currentUser) {
+    const isAdmin = currentUser.role === 'admin';
+    return (
+      <div className="card" style={{ width: 400, maxWidth: '100%' }}>
+        <div className="eyebrow" style={{ marginBottom: 6 }}>ALREADY SIGNED IN</div>
+        <h1 className="display" style={{ fontSize: 26, marginBottom: 12 }}>Welcome back</h1>
+        <p style={{ color: 'var(--chalk-muted)', marginBottom: 6, wordBreak: 'break-all' }}>{currentUser.email}</p>
+        <p style={{ color: 'var(--chalk-muted)', marginBottom: 20, fontSize: 13, textTransform: 'capitalize' }}>
+          {isAdmin ? 'Admin account' : 'Member account'}
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <Link
+            href={isAdmin ? '/admin' : '/dashboard'}
             className="btn btn-primary"
-            style={{ width: '100%', marginBottom: 10 }}
+            style={{ width: '100%', textAlign: 'center' }}
           >
-            Continue to {existingUser.role === 'admin' ? 'admin panel' : 'dashboard'}
-          </button>
+            Go to {isAdmin ? 'Admin Portal' : 'Account'}
+          </Link>
           <button
             type="button"
-            onClick={signOutAndSwitch}
             className="btn btn-ghost"
             style={{ width: '100%' }}
             disabled={loggingOut}
+            onClick={handleSwitchAccount}
           >
-            {loggingOut ? 'Signing out…' : 'Not you? Log out and sign in as someone else'}
+            {loggingOut ? 'Signing out…' : 'Sign in to another account'}
           </button>
-        </>
-      ) : !challengeToken ? (
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card" style={{ width: 400, maxWidth: '100%' }}>
+      {!challengeToken ? (
         <>
           <div className="eyebrow" style={{ marginBottom: 6 }}>WELCOME BACK</div>
           <h1 className="display" style={{ fontSize: 26, marginBottom: 24 }}>Log in</h1>

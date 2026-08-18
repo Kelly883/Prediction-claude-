@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAdmin, errorResponse } from '@/lib/rbac';
-import { requireSameOrigin, requireCsrf } from '@/lib/csrf';
+import { requireAdminWith2FA, errorResponse } from '@/lib/rbac';
 import { writeAudit } from '@/lib/audit';
 import { UpdatePlanSchema } from '@/lib/schemas';
 
@@ -9,9 +8,7 @@ export const runtime = 'nodejs';
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    requireSameOrigin(req);
-    requireCsrf(req);
-    const admin = await requireAdmin(req);
+    const admin = await requireAdminWith2FA(req);
     const { id } = await params;
     const dto = UpdatePlanSchema.parse(await req.json());
     const plan = await prisma.plan.update({ where: { id }, data: dto });

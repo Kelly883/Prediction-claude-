@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAdmin, errorResponse, ApiError } from '@/lib/rbac';
-import { requireSameOrigin, requireCsrf } from '@/lib/csrf';
+import { requireAdmin, requireAdminWith2FA, errorResponse, ApiError } from '@/lib/rbac';
 import { hashPassword } from '@/lib/password';
 import { writeAudit } from '@/lib/audit';
 import { parsePagination, withPaginationHeaders } from '@/lib/pagination';
@@ -149,9 +148,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    requireSameOrigin(req);
-    requireCsrf(req);
-    const admin = await requireAdmin(req);
+    const admin = await requireAdminWith2FA(req);
     const body = await req.json();
     const { name, email, phone, country, role, password } = body;
 
@@ -188,9 +185,7 @@ export async function POST(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
-    requireSameOrigin(req);
-    requireCsrf(req);
-    const admin = await requireAdmin(req);
+    const admin = await requireAdminWith2FA(req);
     const { id } = await req.json();
 
     if (id === admin.sub) {

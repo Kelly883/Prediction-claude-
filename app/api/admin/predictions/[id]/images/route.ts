@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAdmin, errorResponse, ApiError } from '@/lib/rbac';
+import { requireAdmin, requireAdminWith2FA, errorResponse, ApiError } from '@/lib/rbac';
 import { uploadMedia } from '@/lib/media';
 import { writeAudit } from '@/lib/audit';
 import { prisma } from '@/lib/prisma';
@@ -15,7 +15,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const admin = await requireAdmin(req);
+    const admin = await requireAdminWith2FA(req);
     const ip = getClientIp(req);
 
     // CSRF defense: verify origin/host if origin is provided

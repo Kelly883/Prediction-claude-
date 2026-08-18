@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
@@ -18,8 +17,10 @@ const COUNTRIES = [
   { code: 'OTHER', label: 'Other' },
 ];
 
+type RegistrationState = 'form' | 'pending' | 'error';
+
 export default function RegisterPage() {
-  const router = useRouter();
+  const [state, setState] = useState<RegistrationState>('form');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -28,6 +29,8 @@ export default function RegisterPage() {
   const [country, setCountry] = useState('NG');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [registeredEmail, setRegisteredEmail] = useState<string>('');
+  const [emailSent, setEmailSent] = useState(false);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -48,27 +51,63 @@ export default function RegisterPage() {
       const registerData = await registerRes.json();
       if (!registerRes.ok) throw new Error(registerData.error ?? 'Couldn\u2019t create your account');
 
-      // Auto-login right after signup so the person doesn't have to re-enter
-      // their credentials a second time on a separate page.
-      const loginRes = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      });
-      if (!loginRes.ok) {
-        // Account exists but auto-login failed for some reason — send them
-        // to log in manually rather than leaving them stuck on this page.
-        router.push('/login');
-        return;
-      }
-
-      router.push('/dashboard');
-      router.refresh();
+      setRegisteredEmail(registerData.email);
+      setEmailSent(registerData.emailSent ?? false);
+      setState('pending');
     } catch (err) {
+      setState('error');
       setError((err as Error).message);
     } finally {
       setLoading(false);
     }
+  }
+
+  if (state === 'pending') {
+    return (
+      <>
+        <Header />
+        <section className="section" style={{ display: 'flex', justifyContent: 'center' }}>
+          <div className="card" style={{ width: 400, maxWidth: '100%', textAlign: 'center' }}>
+            <div className="eyebrow" style={{ marginBottom: 6 }}>CHECK YOUR INBOX</div>
+            <h1 className="display" style={{ fontSize: 26, marginBottom: 12 }}>Verify your email</h1>
+            <p style={{ color: 'var(--chalk-muted)', marginBottom: 6 }}>
+              We sent a verification link to <strong>{registeredEmail}</strong>
+            </p>
+            <p style={{ color: 'var(--chalk-muted)', marginBottom: 20, fontSize: 14 }}>
+              Click the link in that email to activate your account. If you don&apos;t see it, check your spam folder.
+            </p>
+            {!emailSent && (
+              <p style={{ color: 'var(--card-red)', marginBottom: 20, fontSize: 13 }}>
+                We couldn&apos;t send the verification email automatically. Please contact support or try registering again.
+              </p>
+            )}
+            <Link href="/login" className="btn btn-primary" style={{ width: '100%' }}>
+              Go to login
+            </Link>
+          </div>
+        </section>
+        <Footer />
+      </>
+    );
+  }
+
+  if (state === 'error') {
+    return (
+      <>
+        <Header />
+        <section className="section" style={{ display: 'flex', justifyContent: 'center' }}>
+          <div className="card" style={{ width: 400, maxWidth: '100%' }}>
+            <div className="eyebrow" style={{ marginBottom: 6 }}>SOMETHING WENT WRONG</div>
+            <h1 className="display" style={{ fontSize: 26, marginBottom: 24 }}>Sign up</h1>
+            <div className="error-text" style={{ marginBottom: 16 }}>{error}</div>
+            <button type="button" className="btn btn-primary" style={{ width: '100%' }} onClick={() => setState('form')}>
+              Try again
+            </button>
+          </div>
+        </section>
+        <Footer />
+      </>
+    );
   }
 
   return (

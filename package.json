@@ -42,5 +42,12 @@
     "tailwindcss": "^3.4.19",
     "typescript": "^5.6.0",
     "vitest": "^4.1.10"
+  },
+  "overrides": {
+    "sharp": "^0.35.3",
+    "postcss": "^8.5.26"
+  },
+  "resolutions": {
+    "sharp": "^0.35.3"
   }
 }

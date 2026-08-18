@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ZodError } from 'zod';
 import { verifyAccessToken, AccessTokenPayload } from './auth';
+import { prisma } from './prisma';
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -30,6 +31,19 @@ export async function requireAdmin(req: NextRequest): Promise<AccessTokenPayload
   return user;
 }
 
+/**
+ * Requires admin access AND enforces 2FA for admin accounts.
+ * Use for sensitive admin operations.
+ */
+export async function requireAdminWith2FA(req: NextRequest): Promise<AccessTokenPayload> {
+  const admin = await requireAdmin(req);
+  const user = await prisma.user.findUnique({ where: { id: admin.sub }, select: { twoFactorEnabled: true } });
+  if (!user?.twoFactorEnabled) {
+    throw new ApiError(403, 'Admin account requires two-factor authentication');
+  }
+  return admin;
+}
+
 /** Optional auth — used by routes that behave differently for logged-out visitors. */
 export async function optionalUser(req: NextRequest): Promise<AccessTokenPayload | null> {
   const token = req.cookies.get('access_token')?.value;
@@ -48,3 +62,4 @@ export function errorResponse(err: unknown): NextResponse {
   console.error(err);
   return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
 }
+

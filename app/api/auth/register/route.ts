@@ -5,6 +5,7 @@ import { checkRateLimit, authLimiter, getClientIp, normalizeIdentifier } from '@
 import { errorResponse, ApiError } from '@/lib/rbac';
 import { RegisterSchema } from '@/lib/schemas';
 import { writeAudit } from '@/lib/audit';
+import { sendEmail } from '@/lib/email';
 import crypto from 'crypto';
 
 export const runtime = 'nodejs';
@@ -51,11 +52,27 @@ export async function POST(req: NextRequest) {
       metadata: { email, country },
     });
 
+    const verificationUrl = `${process.env.APP_URL}/verify-email?token=${token}`;
+    let emailSent = false;
+    try {
+      await sendEmail({
+        to: user.email,
+        subject: 'Verify your PredictPro account',
+        html: `<p>Welcome to PredictPro! Click the link below to verify your email address.</p><p><a href="${verificationUrl}">${verificationUrl}</a></p><p>This link expires in 24 hours.</p>`,
+      });
+      emailSent = true;
+    } catch (emailErr) {
+      console.error('Failed to send verification email', emailErr);
+    }
+
     return NextResponse.json({
       id: user.id,
       name: user.name,
       email: user.email,
-      message: 'Account created. Please check your email to verify your account.',
+      emailSent,
+      message: emailSent
+        ? 'Account created. Please check your email to verify your account.'
+        : 'Account created, but we could not send the verification email. Please contact support or try again later.',
     });
   } catch (err) {
     return errorResponse(err);

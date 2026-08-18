@@ -1,0 +1,53 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { NextRequest, NextResponse } from 'next/server';
+
+function makeFakeDb() {
+  const users = new Map<string, any>();
+
+  const db: any = {
+    user: {
+      findUnique: vi.fn(async ({ where }: any) => {
+        if (where.id) return users.get(where.id) ?? null;
+        return null;
+      }),
+    },
+    $transaction: vi.fn(async (fn: any) => fn(db)),
+    _seedUser(user: any) {
+      users.set(user.id, { tokenVersion: 0, ...user });
+    },
+  };
+  return db;
+}
+
+let fakeDb: ReturnType<typeof makeFakeDb>;
+
+vi.mock('@/lib/prisma', () => ({
+  get prisma() {
+    return fakeDb;
+  },
+}));
+
+vi.mock('@/lib/ratelimit', () => ({
+  checkRateLimit: vi.fn(async () => true),
+  authLimiter: {},
+  getClientIp: () => '127.0.0.1',
+}));
+
+describe('Security: CSRF', () => {
+  beforeEach(() => {
+    fakeDb = makeFakeDb();
+  });
+
+  it('allows logout without authentication so expired sessions can clear cookies', async () => {
+    const { POST } = await import('@/app/api/auth/logout/route');
+    const req = new NextRequest('http://localhost/api/auth/logout', {
+      method: 'POST',
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    const cookies = res.headers.get('set-cookie') ?? '';
+    expect(cookies).toContain('access_token=;');
+    expect(cookies).toContain('refresh_token=;');
+  });
+});
