@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 
 function makeFakeDb() {
   const users = new Map<string, any>();
@@ -38,21 +38,16 @@ describe('Security: CSRF', () => {
     fakeDb = makeFakeDb();
   });
 
-  it('requires CSRF token for state-changing operations', async () => {
-    fakeDb._seedUser({
-      id: 'user-1',
-      email: 'user@example.com',
-      passwordHash: 'hash',
-      role: 'user',
-    });
-
+  it('allows logout without authentication so expired sessions can clear cookies', async () => {
     const { POST } = await import('@/app/api/auth/logout/route');
     const req = new NextRequest('http://localhost/api/auth/logout', {
       method: 'POST',
-      headers: { authorization: 'Bearer user-1-token' },
     });
 
     const res = await POST(req);
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(200);
+    const cookies = res.headers.get('set-cookie') ?? '';
+    expect(cookies).toContain('access_token=;');
+    expect(cookies).toContain('refresh_token=;');
   });
 });
