@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { POST } from '@/app/api/admin/predictions/[id]/images/route';
 import { prisma } from '@/lib/prisma';
 import * as rbac from '@/lib/rbac';
@@ -7,11 +7,40 @@ import * as ratelimit from '@/lib/ratelimit';
 import * as media from '@/lib/media';
 import sharp from 'sharp';
 
+vi.mock('@/lib/rbac', async (importOriginal) => {
+  const actual: any = await importOriginal();
+  return {
+    ...actual,
+    requireAdminWith2FA: vi.fn().mockResolvedValue({ sub: 'admin_1', role: 'admin' }),
+    requireAdmin: vi.fn().mockResolvedValue({ sub: 'admin_1', role: 'admin' }),
+    errorResponse: (err: any) => {
+      const message = err?.message ?? 'Internal server error';
+      const status = err?.status ?? 500;
+      return NextResponse.json({ error: message }, { status });
+    },
+    ApiError: class ApiError extends Error {
+      constructor(public status: number, message: string) { super(message); }
+    },
+  };
+});
+
+vi.mock('@/lib/ratelimit', () => ({
+  checkRateLimit: vi.fn().mockResolvedValue(true),
+  getClientIp: () => '127.0.0.1',
+  adminLimiter: {},
+  authLimiter: {},
+  paymentLimiter: {},
+  publicLimiter: {},
+  defaultLimiter: {},
+}));
+
 describe('Admin Prediction Image Upload API Route Security', () => {
   let sampleJpegBuffer: Buffer;
 
   beforeEach(async () => {
     vi.restoreAllMocks();
+    (rbac.requireAdminWith2FA as any).mockResolvedValue({ sub: 'admin_1', role: 'admin' });
+    (ratelimit.checkRateLimit as any).mockResolvedValue(true);
 
     sampleJpegBuffer = await sharp({
       create: {
@@ -42,7 +71,7 @@ describe('Admin Prediction Image Upload API Route Security', () => {
 
   describe('Authentication & RBAC Authorization Checks', () => {
     it('rejects unauthenticated requests with 401 Unauthorized', async () => {
-      vi.spyOn(rbac, 'requireAdmin').mockRejectedValueOnce(new rbac.ApiError(401, 'Missing session'));
+      (rbac.requireAdminWith2FA as any).mockRejectedValueOnce(new rbac.ApiError(401, 'Missing session'));
 
       const req = createMultipartRequest('http://localhost:3000/api/admin/predictions/p1/images', null);
       const res = await POST(req, { params: Promise.resolve({ id: 'p1' }) });
@@ -53,7 +82,7 @@ describe('Admin Prediction Image Upload API Route Security', () => {
     });
 
     it('rejects standard users (role: user) with 403 Forbidden', async () => {
-      vi.spyOn(rbac, 'requireAdmin').mockRejectedValueOnce(new rbac.ApiError(403, 'Insufficient permissions'));
+      (rbac.requireAdminWith2FA as any).mockRejectedValueOnce(new rbac.ApiError(403, 'Insufficient permissions'));
 
       const req = createMultipartRequest('http://localhost:3000/api/admin/predictions/p1/images', null);
       const res = await POST(req, { params: Promise.resolve({ id: 'p1' }) });
@@ -66,9 +95,6 @@ describe('Admin Prediction Image Upload API Route Security', () => {
 
   describe('CSRF & Cross-Origin Verification', () => {
     it('rejects cross-origin upload requests (CSRF defense)', async () => {
-      vi.spyOn(rbac, 'requireAdmin').mockResolvedValueOnce({ sub: 'admin_1', role: 'admin' });
-      vi.spyOn(ratelimit, 'checkRateLimit').mockResolvedValueOnce(true);
-
       const req = createMultipartRequest('http://localhost:3000/api/admin/predictions/p1/images', null, {
         host: 'localhost:3000',
         origin: 'https://malicious-attacker.com',
@@ -84,8 +110,7 @@ describe('Admin Prediction Image Upload API Route Security', () => {
 
   describe('Rate Limiting', () => {
     it('rejects requests exceeding admin upload rate limit with 429 Too Many Requests', async () => {
-      vi.spyOn(rbac, 'requireAdmin').mockResolvedValueOnce({ sub: 'admin_1', role: 'admin' });
-      vi.spyOn(ratelimit, 'checkRateLimit').mockResolvedValueOnce(false); // Exceeded
+      (ratelimit.checkRateLimit as any).mockResolvedValueOnce(false); // Exceeded
 
       const req = createMultipartRequest('http://localhost:3000/api/admin/predictions/p1/images', null);
       const res = await POST(req, { params: Promise.resolve({ id: 'p1' }) });
@@ -98,8 +123,7 @@ describe('Admin Prediction Image Upload API Route Security', () => {
 
   describe('Validation & Quota Controls', () => {
     it('rejects upload when maximum images per prediction post is reached (10 images)', async () => {
-      vi.spyOn(rbac, 'requireAdmin').mockResolvedValueOnce({ sub: 'admin_1', role: 'admin' });
-      vi.spyOn(ratelimit, 'checkRateLimit').mockResolvedValueOnce(true);
+      (ratelimit.checkRateLimit as any).mockResolvedValueOnce(true);
       vi.spyOn(prisma.mediaAsset, 'count').mockResolvedValueOnce(10); // Quota reached
 
       const file = new File([new Uint8Array(sampleJpegBuffer)], 'test.jpg', { type: 'image/jpeg' });
@@ -112,8 +136,7 @@ describe('Admin Prediction Image Upload API Route Security', () => {
     });
 
     it('rejects request when file is missing from multipart form data', async () => {
-      vi.spyOn(rbac, 'requireAdmin').mockResolvedValueOnce({ sub: 'admin_1', role: 'admin' });
-      vi.spyOn(ratelimit, 'checkRateLimit').mockResolvedValueOnce(true);
+      (ratelimit.checkRateLimit as any).mockResolvedValueOnce(true);
       vi.spyOn(prisma.mediaAsset, 'count').mockResolvedValueOnce(2);
 
       const req = createMultipartRequest('http://localhost:3000/api/admin/predictions/p1/images', null);
@@ -125,8 +148,7 @@ describe('Admin Prediction Image Upload API Route Security', () => {
     });
 
     it('successfully uploads valid image and returns sanitized metadata payload with safe URL', async () => {
-      vi.spyOn(rbac, 'requireAdmin').mockResolvedValueOnce({ sub: 'admin_1', role: 'admin' });
-      vi.spyOn(ratelimit, 'checkRateLimit').mockResolvedValueOnce(true);
+      (ratelimit.checkRateLimit as any).mockResolvedValueOnce(true);
       vi.spyOn(prisma.mediaAsset, 'count').mockResolvedValueOnce(0);
 
       vi.spyOn(media, 'uploadMedia').mockResolvedValueOnce({

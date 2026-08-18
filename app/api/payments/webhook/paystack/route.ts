@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyPaystackSignature, handleVerifiedWebhook } from '@/lib/payments';
 import { extractReusableAuthorization } from '@/lib/providers/paystack';
 import { errorResponse } from '@/lib/rbac';
+import { getRequestId } from '@/lib/request-id';
 
 export const runtime = 'nodejs';
 
@@ -10,6 +11,7 @@ export const runtime = 'nodejs';
 // re-serializing a parsed body can produce different bytes (key order,
 // whitespace) and silently break signature verification.
 export async function POST(req: NextRequest) {
+  const requestId = getRequestId(req);
   try {
     const rawBody = await req.text();
     const signature = req.headers.get('x-paystack-signature');
@@ -19,7 +21,11 @@ export async function POST(req: NextRequest) {
     }
 
     const body = JSON.parse(rawBody);
-    if (body.event !== 'charge.success') return NextResponse.json({ received: true });
+    if (body.event !== 'charge.success') {
+      const res = NextResponse.json({ received: true });
+      res.headers.set('x-request-id', requestId);
+      return res;
+    }
 
     const customerEmail = body.data?.customer?.email ?? null;
 
@@ -33,7 +39,9 @@ export async function POST(req: NextRequest) {
       renewalToken: extractReusableAuthorization(body),
     });
 
-    return NextResponse.json(result);
+    const res = NextResponse.json(result);
+    res.headers.set('x-request-id', requestId);
+    return res;
   } catch (err) {
     return errorResponse(err);
   }
