@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireUser, errorResponse } from '@/lib/rbac';
+import { requireSameOrigin, requireCsrf } from '@/lib/csrf';
 import { initializePayment } from '@/lib/payments';
 import { checkRateLimit, paymentLimiter, getClientIp, normalizeIdentifier } from '@/lib/ratelimit';
 import { InitializePaymentSchema } from '@/lib/schemas';
@@ -10,6 +11,8 @@ export const runtime = 'nodejs';
 export async function POST(req: NextRequest) {
   const requestId = getRequestId(req);
   try {
+    requireSameOrigin(req);
+    requireCsrf(req);
     const user = await requireUser(req);
     const ip = getClientIp(req);
     const userId = normalizeIdentifier('user', user.sub);
