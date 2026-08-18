@@ -1,12 +1,15 @@
 'use client';
 
-import { Suspense, useState } from 'react';
+import { Suspense, useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import PasswordField from '@/components/PasswordField';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import { safeRedirectPath } from '@/lib/safe-redirect';
+import { apiJson } from '@/lib/api-client';
+
+type Me = { name: string; email: string; role: 'admin' | 'user' };
 
 function LoginForm() {
   const router = useRouter();
@@ -19,6 +22,45 @@ function LoginForm() {
   const [challengeToken, setChallengeToken] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // middleware.ts no longer silently redirects an already-authenticated
+  // visitor away from /login before this page even renders — that used to
+  // happen invisibly, with no indication of what happened and no way to
+  // sign in as a different account short of finding logout separately.
+  // Checked explicitly here instead, so it can be shown rather than hidden.
+  const [existingUser, setExistingUser] = useState<Me | null | undefined>(undefined); // undefined = still checking
+  const [loggingOut, setLoggingOut] = useState(false);
+
+  useEffect(() => {
+    // Deliberately a plain fetch, not apiJson/apiFetch: apiFetch's global
+    // 401 handling attempts a refresh and hard-redirects to /login on
+    // failure — since this check runs ON /login, that would loop forever
+    // for the (very common) logged-out case: 401 -> refresh fails ->
+    // redirect to /login -> reload -> 401 again. This check needs to
+    // handle both outcomes itself without that side effect.
+    fetch('/api/me', { credentials: 'same-origin' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then(setExistingUser)
+      .catch(() => setExistingUser(null));
+  }, []);
+
+  function homeFor(role: 'admin' | 'user') {
+    if (role === 'admin') return destination && destination.startsWith('/admin') ? destination : '/admin';
+    return destination && destination.startsWith('/dashboard') ? destination : '/dashboard';
+  }
+
+  async function signOutAndSwitch() {
+    setLoggingOut(true);
+    try {
+      await apiJson('/api/auth/logout', { method: 'POST' });
+    } catch {
+      // Best-effort — even if this fails, showing the login form is still
+      // correct: worst case, submitting new credentials just overwrites the
+      // stale session with a fresh one.
+    }
+    setExistingUser(null);
+    setLoggingOut(false);
+  }
 
   async function onSubmitPassword(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -38,9 +80,7 @@ function LoginForm() {
         return;
       }
 
-      const targetPath = data.role === 'admin'
-        ? (destination && destination.startsWith('/admin') ? destination : '/admin')
-        : (destination && destination.startsWith('/dashboard') ? destination : '/dashboard');
+      const targetPath = homeFor(data.role);
 
       await router.push(targetPath);
       router.refresh();
@@ -64,9 +104,7 @@ function LoginForm() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? 'Invalid code');
 
-      const targetPath = data.role === 'admin'
-        ? (destination && destination.startsWith('/admin') ? destination : '/admin')
-        : (destination && destination.startsWith('/dashboard') ? destination : '/dashboard');
+      const targetPath = homeFor(data.role);
 
       router.push(targetPath);
       router.refresh();
@@ -79,7 +117,35 @@ function LoginForm() {
 
   return (
     <div className="card" style={{ width: 400, maxWidth: '100%' }}>
-      {!challengeToken ? (
+      {existingUser === undefined ? (
+        <p style={{ color: 'var(--chalk-muted)', fontSize: 14 }}>Checking your session…</p>
+      ) : existingUser ? (
+        <>
+          <div className="eyebrow" style={{ marginBottom: 6 }}>ALREADY SIGNED IN</div>
+          <h1 className="display" style={{ fontSize: 24, marginBottom: 8 }}>{existingUser.name}</h1>
+          <p style={{ color: 'var(--chalk-muted)', fontSize: 14, marginBottom: 24 }}>
+            {existingUser.email} · {existingUser.role === 'admin' ? 'Admin' : 'Member'}
+          </p>
+
+          <button
+            type="button"
+            onClick={() => router.push(homeFor(existingUser.role))}
+            className="btn btn-primary"
+            style={{ width: '100%', marginBottom: 10 }}
+          >
+            Continue to {existingUser.role === 'admin' ? 'admin panel' : 'dashboard'}
+          </button>
+          <button
+            type="button"
+            onClick={signOutAndSwitch}
+            className="btn btn-ghost"
+            style={{ width: '100%' }}
+            disabled={loggingOut}
+          >
+            {loggingOut ? 'Signing out…' : 'Not you? Log out and sign in as someone else'}
+          </button>
+        </>
+      ) : !challengeToken ? (
         <>
           <div className="eyebrow" style={{ marginBottom: 6 }}>WELCOME BACK</div>
           <h1 className="display" style={{ fontSize: 26, marginBottom: 24 }}>Log in</h1>

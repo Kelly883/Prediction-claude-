@@ -41,8 +41,17 @@ export async function middleware(req: NextRequest) {
     }
   }
 
-  // 3. Auth pages: redirect already logged-in users to their respective home
-  if ((path === '/login' || path === '/register') && payload) {
+  // 3. Register page: redirect already logged-in users to their respective
+  // home (no ambiguity here — nobody wants to see a signup form while
+  // already authenticated). /login is deliberately NOT included here
+  // anymore: it used to silently bounce an already-authenticated visitor
+  // straight to their dashboard before the login page ever rendered, with
+  // no visible indication of what happened and no way to sign in as a
+  // different account short of finding logout separately. The login page
+  // itself now handles this case explicitly (shows who you're signed in as,
+  // with a clear option to continue or log out and use different
+  // credentials) instead of it happening invisibly at the edge.
+  if (path === '/register' && payload) {
     if (payload.role === 'admin') {
       return NextResponse.redirect(new URL('/admin', req.url));
     }
