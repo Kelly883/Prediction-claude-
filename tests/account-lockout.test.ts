@@ -5,6 +5,9 @@ const mockPrisma = vi.hoisted(() => ({
     findUnique: vi.fn(),
     update: vi.fn(),
   },
+  userSession: {
+    findMany: vi.fn().mockResolvedValue([]),
+  },
 }));
 
 const mockPassword = vi.hoisted(() => ({
@@ -21,6 +24,7 @@ const mockAuth = vi.hoisted(() => ({
 
 const mockSessions = vi.hoisted(() => ({
   touchSession: vi.fn(),
+  getDistinctDeviceCount: vi.fn().mockResolvedValue(1),
   isAnomalous: vi.fn().mockResolvedValue(false),
 }));
 

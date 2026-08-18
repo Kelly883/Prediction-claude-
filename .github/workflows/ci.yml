@@ -34,13 +34,19 @@ jobs:
 
       - run: npm ci
 
+      - name: Dependency security check
+        run: npm audit --audit-level=high
+
+      - name: Static security scan
+        run: node scripts/security-scan.mjs
+
       - name: Check for route conflicts
         run: npm run check-routes
 
       - name: Prisma generate
         run: npx prisma generate
 
-      - name: Type check
+      - name: TypeScript check
         run: npx tsc --noEmit
 
       - name: Unit tests

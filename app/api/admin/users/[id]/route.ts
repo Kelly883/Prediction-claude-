@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAdmin, errorResponse, ApiError } from '@/lib/rbac';
+import { requireAdmin, requireAdminWith2FA, errorResponse, ApiError } from '@/lib/rbac';
 import { getDistinctDeviceCount, isAnomalous } from '@/lib/sessions';
 import { writeAudit } from '@/lib/audit';
 import { redactPayload } from '@/lib/payments';
@@ -46,7 +46,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   try {
     requireSameOrigin(req);
     requireCsrf(req);
-    const admin = await requireAdmin(req);
+    const admin = await requireAdminWith2FA(req);
     const { id } = await params;
     const body = await req.json();
 

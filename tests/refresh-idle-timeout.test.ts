@@ -124,8 +124,8 @@ describe('Refresh idle timeout', () => {
     const res = await refreshTokenRoute(req);
     expect(res.status).toBe(401);
     expect(await res.json()).toEqual({ error: 'Session expired due to inactivity. Please log in again.' });
-    expect(res.cookies.get('access_token')?.expires?.getTime()).toBeLessThan(Date.now());
-    expect(res.cookies.get('refresh_token')?.expires?.getTime()).toBeLessThan(Date.now());
+    expect((res.cookies.get('access_token')?.expires as Date | undefined)?.getTime()).toBeLessThan(Date.now());
+    expect((res.cookies.get('refresh_token')?.expires as Date | undefined)?.getTime()).toBeLessThan(Date.now());
   });
 
   it('allows refresh when user has no sessions', async () => {

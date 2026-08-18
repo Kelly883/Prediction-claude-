@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { prisma } from '@/lib/prisma';
 import { timingSafeStringEqual } from '@/lib/timing-safe';
+import { getRequestId } from '@/lib/request-id';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -10,6 +11,7 @@ const PASSWORD_RESET_TOKEN_RETENTION_HOURS = 24;
 const USER_SESSION_RETENTION_DAYS = 90;
 
 export async function GET(req: NextRequest) {
+  const requestId = getRequestId(req);
   const authHeader = req.headers.get('authorization');
   const expected = `Bearer ${process.env.CRON_SECRET}`;
   if (!process.env.CRON_SECRET || !authHeader || !timingSafeStringEqual(authHeader, expected)) {
@@ -44,5 +46,11 @@ export async function GET(req: NextRequest) {
     results.errors.push(`user session cleanup failed: ${(err as Error).message}`);
   }
 
-  return NextResponse.json(results);
+  return withRequestId(req, NextResponse.json(results));
+}
+
+function withRequestId(req: NextRequest, res: NextResponse): NextResponse {
+  const requestId = getRequestId(req);
+  res.headers.set('x-request-id', requestId);
+  return res;
 }
