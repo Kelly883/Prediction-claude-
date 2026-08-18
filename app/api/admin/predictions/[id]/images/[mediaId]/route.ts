@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAdmin, errorResponse } from '@/lib/rbac';
+import { requireAdmin, requireAdminWith2FA, errorResponse } from '@/lib/rbac';
 import { deleteMedia } from '@/lib/media';
 import { writeAudit } from '@/lib/audit';
 
@@ -10,7 +10,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; mediaId: string }> }
 ) {
   try {
-    const admin = await requireAdmin(req);
+    const admin = await requireAdminWith2FA(req);
     const { id: postId, mediaId } = await params;
 
     await deleteMedia(postId, mediaId);
