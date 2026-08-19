@@ -42,8 +42,11 @@ export async function GET(req: NextRequest) {
 
     const totalUsers = await prisma.user.count({ where: { deletedAt: null } });
 
-    // Fetch active/all subscriptions to compute statuses and plan names
+    const userIds = users.map((u) => u.id);
+
+    // Fetch subscriptions only for users on this page
     const subscriptions = await prisma.subscription.findMany({
+      where: { userId: { in: userIds } },
       include: {
         plan: {
           select: {
@@ -55,11 +58,12 @@ export async function GET(req: NextRequest) {
       orderBy: { createdAt: 'desc' },
     });
 
-    // Fetch transactions for total volume/conversion stats
-    const successfulTxList = await prisma.transaction.findMany({
+    // Compute total revenue via aggregate instead of loading all transactions
+    const totalRevenueResult = await prisma.transaction.aggregate({
       where: { status: 'success' },
+      _sum: { amount: true },
     });
-    const totalRevenue = successfulTxList.reduce((acc: number, tx: any) => acc + (Number(tx.amount) || 0), 0);
+    const totalRevenue = Number(totalRevenueResult._sum.amount || 0);
 
     // Map user ID to active or latest subscription
     const userSubMap = new Map<string, { status: string; planName: string; endAt: Date }>();

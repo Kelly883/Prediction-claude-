@@ -2,11 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAdmin, requireAdminWith2FA, errorResponse } from '@/lib/rbac';
 import { writeAudit } from '@/lib/audit';
+import { requireSameOrigin, requireCsrf } from '@/lib/csrf';
 
 export const runtime = 'nodejs';
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    requireSameOrigin(req);
+    requireCsrf(req);
     const admin = await requireAdminWith2FA(req);
     const { id } = await params;
     await prisma.complimentaryAccess.delete({ where: { id } });
