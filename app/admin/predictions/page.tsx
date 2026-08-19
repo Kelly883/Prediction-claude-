@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { apiJson, apiFetch } from '@/lib/api-client';
+import { apiJson } from '@/lib/api-client';
 import {
   Plus,
   Upload,
@@ -13,12 +13,7 @@ import {
   Image as ImageIcon,
   ChevronRight,
   X,
-  FileImage,
   ShieldAlert,
-  Layers,
-  FileCheck,
-  Clock,
-  Eye,
 } from 'lucide-react';
 
 type MediaAsset = { id: string; storageKey: string };
@@ -54,7 +49,6 @@ export default function AdminPredictionsPage() {
   const [loading, setLoading] = useState(true);
 
   const [showManualForm, setShowManualForm] = useState(false);
-  const [showUploadPanel, setShowUploadPanel] = useState(false);
 
   const [title, setTitle] = useState('');
   const [scheduledAt, setScheduledAt] = useState('');
@@ -62,16 +56,6 @@ export default function AdminPredictionsPage() {
   const [visibility, setVisibility] = useState<'plan_specific' | 'subscribers' | 'free_window'>('subscribers');
   const [selectedPlanIds, setSelectedPlanIds] = useState<string[]>([]);
   const [items, setItems] = useState([emptyItem()]);
-
-  const [uploadPostId, setUploadPostId] = useState('');
-  const [uploadVisibility, setUploadVisibility] = useState<'subscribers' | 'plan_specific' | 'free_window'>('subscribers');
-  const [selectedUploadPlanIds, setSelectedUploadPlanIds] = useState<string[]>([]);
-  const [uploadFiles, setUploadFiles] = useState<File[]>([]);
-  const [uploadPreviews, setUploadPreviews] = useState<string[]>([]);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const [uploadSaving, setUploadSaving] = useState(false);
-  const [uploadStatus, setUploadStatus] = useState<string | null>(null);
-  const uploadFileInputRef = useRef<HTMLInputElement>(null);
 
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -89,12 +73,6 @@ export default function AdminPredictionsPage() {
 
   useEffect(load, []);
 
-  useEffect(() => {
-    return () => {
-      uploadPreviews.forEach((url) => URL.revokeObjectURL(url));
-    };
-  }, [uploadPreviews]);
-
   function handleVisibilityChange(value: 'plan_specific' | 'subscribers' | 'free_window') {
     setVisibility(value);
     if (value === 'plan_specific') {
@@ -104,47 +82,6 @@ export default function AdminPredictionsPage() {
     } else {
       setSelectedPlanIds([]);
     }
-  }
-
-  function validateUploadFiles(files: File[], currentCount: number): { valid: File[]; error?: string } {
-    const valid: File[] = [];
-    for (const file of files) {
-      if (!ALLOWED_MIME_TYPES.includes(file.type.toLowerCase())) {
-        return { valid: [], error: `"${file.name}" is not a supported format. Only JPG and PNG images are allowed.` };
-      }
-      if (file.size > MAX_IMAGE_UPLOAD_BYTES) {
-        return { valid: [], error: `"${file.name}" exceeds the maximum allowed file size of 5 MB.` };
-      }
-      if (currentCount + valid.length >= 10) {
-        return { valid, error: 'Maximum of 10 images can be attached per prediction post.' };
-      }
-      valid.push(file);
-    }
-    return { valid };
-  }
-
-  function handleUploadFileSelection(e: React.ChangeEvent<HTMLInputElement>) {
-    setUploadError(null);
-    const files = Array.from(e.target.files ?? []);
-    if (!files.length) return;
-
-    const { valid, error: valErr } = validateUploadFiles(files, uploadFiles.length);
-    if (valErr) {
-      setUploadError(valErr);
-      if (!valid.length) return;
-    }
-
-    const newPreviews = valid.map((f) => URL.createObjectURL(f));
-    setUploadFiles((prev) => [...prev, ...valid]);
-    setUploadPreviews((prev) => [...prev, ...newPreviews]);
-
-    if (uploadFileInputRef.current) uploadFileInputRef.current.value = '';
-  }
-
-  function removeUploadFile(index: number) {
-    URL.revokeObjectURL(uploadPreviews[index]);
-    setUploadFiles((prev) => prev.filter((_, i) => i !== index));
-    setUploadPreviews((prev) => prev.filter((_, i) => i !== index));
   }
 
   async function createPost(e: React.FormEvent) {
@@ -177,52 +114,6 @@ export default function AdminPredictionsPage() {
       setError((err as Error).message);
     } finally {
       setSaving(false);
-    }
-  }
-
-  async function uploadImages() {
-    if (!uploadPostId) {
-      setUploadError('Please select a prediction post first.');
-      return;
-    }
-    if (uploadFiles.length === 0) {
-      setUploadError('Please select at least one image to upload.');
-      return;
-    }
-
-    setUploadSaving(true);
-    setUploadError(null);
-    setUploadStatus(`Uploading ${uploadFiles.length} slip screenshot(s)…`);
-
-    try {
-      for (let i = 0; i < uploadFiles.length; i++) {
-        const file = uploadFiles[i];
-        setUploadStatus(`Uploading image ${i + 1} of ${uploadFiles.length}…`);
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('visibility', uploadVisibility);
-        formData.append('planIds', selectedUploadPlanIds.join(','));
-        const res = await apiFetch(`/api/admin/predictions/${uploadPostId}/images`, {
-          method: 'POST',
-          body: formData,
-        });
-        const data = await res.json();
-        if (!res.ok) {
-          throw new Error(data.error ?? `Failed to upload image "${file.name}"`);
-        }
-      }
-
-      setUploadFiles([]);
-      setUploadPreviews([]);
-      setUploadPostId('');
-      setUploadStatus('Upload complete.');
-      setTimeout(() => setUploadStatus(null), 3000);
-      load();
-    } catch (err) {
-      setUploadError((err as Error).message);
-    } finally {
-      setUploadSaving(false);
-      setUploadStatus(null);
     }
   }
 
@@ -284,23 +175,6 @@ export default function AdminPredictionsPage() {
             </div>
           </div>
           {!showManualForm && <ChevronRight size={16} style={{ opacity: 0.7 }} />}
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setShowUploadPanel((s) => !s)}
-          className="admin-action-secondary"
-        >
-          <div className="admin-action-left">
-            <div className="admin-action-icon-box-gold">
-              <ImageIcon size={16} />
-            </div>
-            <div>
-              <div style={{ display: 'block', fontWeight: 700, fontSize: 15 }}>Upload Slip Images</div>
-              <div style={{ display: 'block', fontSize: 12, opacity: 0.75, marginTop: 2 }}>Attach screenshots</div>
-            </div>
-          </div>
-          {!showUploadPanel && <ChevronRight size={16} style={{ opacity: 0.6 }} />}
         </button>
       </div>
 
@@ -483,205 +357,6 @@ export default function AdminPredictionsPage() {
         </div>
       )}
 
-      {/* Upload Slip Images Panel */}
-      {showUploadPanel && (
-        <div className="admin-compose-card">
-          <div className="admin-compose-header">
-            <div className="admin-compose-header-icon">
-              <ImageIcon size={18} />
-            </div>
-            <div>
-              <h2 className="admin-compose-title">Upload Slip Screenshots</h2>
-              <p className="admin-compose-subtitle">Select a prediction post and attach slip screenshots.</p>
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-4">
-            <div className="admin-form-group">
-              <label htmlFor="uploadPost" className="admin-form-label">Select Prediction Post</label>
-              <select
-                id="uploadPost"
-                value={uploadPostId}
-                onChange={(e) => {
-                  const postId = e.target.value;
-                  setUploadPostId(postId);
-                  setUploadFiles([]);
-                  setUploadPreviews([]);
-                  setUploadError(null);
-
-                  if (postId) {
-                    const post = posts.find((p) => p.id === postId);
-                    if (post) {
-                      setUploadVisibility(post.visibility || 'subscribers');
-                      setSelectedUploadPlanIds(post.planIds || []);
-                    }
-                  }
-                }}
-                className="admin-select"
-              >
-                <option value="">-- Choose a post --</option>
-                {posts.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.title} ({p.status})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="admin-form-group">
-              <label htmlFor="uploadVisibility" className="admin-form-label">Subscriber Visibility</label>
-              <select
-                id="uploadVisibility"
-                value={uploadVisibility}
-                onChange={(e) => {
-                  const value = e.target.value as 'subscribers' | 'plan_specific' | 'free_window';
-                  setUploadVisibility(value);
-                  if (value === 'plan_specific') {
-                    setSelectedUploadPlanIds([]);
-                  } else if (value === 'subscribers') {
-                    setSelectedUploadPlanIds(availablePlans.map((p) => p.id));
-                  } else {
-                    setSelectedUploadPlanIds([]);
-                  }
-                }}
-                className="admin-select"
-              >
-                <option value="subscribers">All Active Subscribers</option>
-                <option value="plan_specific">Plan-Specific VIPs</option>
-                <option value="free_window">Free Window (Promotional)</option>
-              </select>
-
-              {(uploadVisibility === 'subscribers' || uploadVisibility === 'plan_specific') && (
-                <div className="p-3 rounded-xl bg-[var(--pitch)] border border-[rgba(243,245,236,0.14)] space-y-2 mt-2">
-                  <label className="text-xs text-[#85a694] font-semibold uppercase tracking-wider font-mono block">
-                    {uploadVisibility === 'subscribers' ? 'Visible To All Admin-Created Plans' : 'Select Admin-Created Subscription Plans'}
-                  </label>
-                  {availablePlans.length === 0 ? (
-                    <p className="text-xs text-[#9fb3a6] italic">
-                      No subscription plans created by admin yet. Create plans in the Membership Plans section.
-                    </p>
-                  ) : (
-                    <div className="grid grid-cols-1 gap-2">
-                      {availablePlans.map((plan) => (
-                        <label key={plan.id} className="flex items-center gap-2 text-xs text-white bg-[#0f2b1d] p-2 rounded-lg border border-[rgba(243,245,236,0.1)] cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={selectedUploadPlanIds.includes(plan.id)}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setSelectedUploadPlanIds([...selectedUploadPlanIds, plan.id]);
-                              } else {
-                                setSelectedUploadPlanIds(selectedUploadPlanIds.filter((id) => id !== plan.id));
-                              }
-                            }}
-                            className="rounded border-zinc-700 bg-zinc-900 text-[#f5b335] focus:ring-[#f5b335]"
-                          />
-                          <span className="font-medium">{plan.name}</span>
-                          <span className="text-[10px] text-[#85a694] ml-auto">({plan.durationDays}d)</span>
-                        </label>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            <div className="admin-upload-area">
-              <div className="admin-upload-area-header">
-                <label className="admin-upload-area-label">
-                  <span className="admin-upload-area-label-icon">
-                    <FileImage size={14} />
-                  </span>
-                  Attach Slip Screenshots ({uploadFiles.length}/10)
-                </label>
-                <span className="text-[11px] text-[#85a694]">JPG, PNG (Max 5MB each)</span>
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => uploadFileInputRef.current?.click()}
-                  className="admin-upload-btn"
-                >
-                  <FileImage size={15} style={{ color: '#f5b335' }} />
-                  Attach Slip Screenshots
-                </button>
-                <input
-                  ref={uploadFileInputRef}
-                  type="file"
-                  multiple
-                  accept="image/jpeg,image/png,image/jpg"
-                  onChange={handleUploadFileSelection}
-                  className="hidden"
-                />
-              </div>
-
-              {uploadFiles.length > 0 && (
-                <div className="admin-upload-grid">
-                  {uploadFiles.map((file, idx) => (
-                    <div key={idx} className="admin-upload-preview">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={uploadPreviews[idx]} alt={file.name} />
-                      <div className="admin-upload-preview-overlay">
-                        <span className="admin-upload-preview-name">{file.name}</span>
-                        <button
-                          type="button"
-                          onClick={() => removeUploadFile(idx)}
-                          className="admin-upload-preview-remove"
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {uploadError && (
-              <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center gap-2">
-                <ShieldAlert size={16} className="shrink-0" />
-                <span>{uploadError}</span>
-              </div>
-            )}
-
-            {uploadStatus && (
-              <div className="text-xs flex items-center gap-2" style={{ fontFamily: 'var(--font-mono)', color: '#f5b335' }}>
-                <span className="w-2 h-2 rounded-full bg-[#f5b335] animate-pulse" />
-                <span>{uploadStatus}</span>
-              </div>
-            )}
-
-            <div className="flex items-center gap-3 pt-1">
-              <button
-                type="button"
-                onClick={uploadImages}
-                disabled={uploadSaving}
-                className="btn btn-primary py-2.5 px-5 text-sm font-semibold flex items-center justify-center gap-2"
-                style={{ opacity: uploadSaving ? 0.7 : 1 }}
-              >
-                {uploadSaving ? 'Uploading…' : 'Upload Images'}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowUploadPanel(false);
-                  setUploadFiles([]);
-                  setUploadPreviews([]);
-                  setUploadPostId('');
-                  setUploadVisibility('subscribers');
-                  setSelectedUploadPlanIds([]);
-                  setUploadError(null);
-                  setUploadStatus(null);
-                }}
-                className="btn btn-ghost py-2.5 px-4 text-sm border border-[rgba(243,245,236,0.14)] text-[#85a694]"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Feed Archive Card */}
       <div className="admin-compose-card">
@@ -757,6 +432,14 @@ export default function AdminPredictionsPage() {
                   >
                     <Edit size={13} />
                     <span>Edit Post &amp; Slip</span>
+                  </Link>
+                  <Link
+                    href={`/admin/predictions/${p.id}`}
+                    className="btn btn-primary"
+                    style={{ padding: '8px 14px', fontSize: 12 }}
+                  >
+                    <ImageIcon size={13} />
+                    <span>Upload Slip Images</span>
                   </Link>
                   {p.status !== 'published' && (
                     <button
