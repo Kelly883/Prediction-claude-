@@ -31,6 +31,7 @@ type UserRow = {
   role: string;
   status: 'Active' | 'Expired' | 'Free' | 'Trial';
   planName: string;
+  emailVerifiedAt: string | null;
 };
 
 type Stats = {
@@ -320,6 +321,23 @@ export default function AdminUsersPage() {
                           <span className="admin-user-badge-paid">Paid Subscriber</span>
                         ) : (
                           <span className="admin-user-badge-free">{u.status} User</span>
+                        )}
+                        {!u.emailVerifiedAt && (
+                          <span
+                            title="This account has not verified its email address"
+                            style={{
+                              fontSize: 10,
+                              fontWeight: 700,
+                              color: 'var(--card-red)',
+                              background: 'rgba(220,38,38,0.12)',
+                              border: '1px solid rgba(220,38,38,0.3)',
+                              borderRadius: 4,
+                              padding: '2px 6px',
+                              textTransform: 'uppercase',
+                            }}
+                          >
+                            Unverified
+                          </span>
                         )}
                       </div>
 

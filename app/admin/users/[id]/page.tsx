@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 
 type Detail = {
-  user: { id: string; name: string; email: string; phone: string | null; country: string; role: string; twoFactorEnabled: boolean; createdAt: string };
+  user: { id: string; name: string; email: string; phone: string | null; country: string; role: string; twoFactorEnabled: boolean; createdAt: string; emailVerifiedAt: string | null };
   subscriptions: { id: string; status: string; autoRenew: boolean; endAt: string; plan: { name: string } }[];
   transactions: { id: string; provider: string; amount: string; currency: string; status: string; createdAt: string }[];
   deviceActivity: { distinctDevicesLast24h: number; anomalous: boolean };
@@ -29,10 +29,25 @@ export default function AdminUserDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [detail, setDetail] = useState<Detail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [resending, setResending] = useState(false);
+  const [resendResult, setResendResult] = useState<string | null>(null);
 
   useEffect(() => {
     apiJson<Detail>(`/api/admin/users/${id}`).then(setDetail).finally(() => setLoading(false));
   }, [id]);
+
+  async function resendVerification() {
+    setResending(true);
+    setResendResult(null);
+    try {
+      const res = await apiJson<{ message: string }>(`/api/admin/users/${id}/resend-verification`, { method: 'POST' });
+      setResendResult(res.message);
+    } catch (err) {
+      setResendResult((err as Error).message);
+    } finally {
+      setResending(false);
+    }
+  }
 
   if (loading) {
     return (
@@ -93,6 +108,27 @@ export default function AdminUserDetailPage() {
           </div>
         </div>
       </div>
+
+      {!user.emailVerifiedAt && (
+        <div className="p-4 rounded-lg bg-amber-950/30 border border-amber-500/30 flex items-start gap-3 flex-wrap">
+          <AlertTriangle size={18} className="text-amber-400 shrink-0 mt-0.5" />
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <h3 className="text-sm font-semibold text-amber-300">Email not verified</h3>
+            <p className="text-xs text-amber-200/80 mt-0.5">
+              {resendResult ?? `${user.email} has not confirmed their email address.`}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={resendVerification}
+            disabled={resending}
+            className="admin-back-btn"
+            style={{ flexShrink: 0 }}
+          >
+            {resending ? 'Sending…' : 'Resend verification email'}
+          </button>
+        </div>
+      )}
 
       {deviceActivity.anomalous && (
         <div className="p-4 rounded-lg bg-red-950/40 border border-red-500/40 flex items-start gap-3">

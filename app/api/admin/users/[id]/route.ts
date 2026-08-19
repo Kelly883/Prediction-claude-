@@ -15,7 +15,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
     const user = await prisma.user.findUnique({
       where: { id },
-      select: { id: true, name: true, email: true, phone: true, country: true, role: true, twoFactorEnabled: true, createdAt: true, failedLoginAttempts: true, lockedUntil: true, deletedAt: true },
+      select: { id: true, name: true, email: true, phone: true, country: true, role: true, twoFactorEnabled: true, createdAt: true, failedLoginAttempts: true, lockedUntil: true, deletedAt: true, emailVerifiedAt: true },
     });
     if (!user || user.deletedAt) throw new ApiError(404, 'Not found');
 

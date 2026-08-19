@@ -20,6 +20,7 @@ const SAFE_USER_FIELDS = {
   country: true,
   role: true,
   createdAt: true,
+  emailVerifiedAt: true,
 } as const;
 
 export async function GET(req: NextRequest) {
