@@ -26,8 +26,9 @@ export async function POST(req: NextRequest) {
     const rawBody = await req.json();
     const { email, password } = LoginSchema.parse(rawBody);
 
+    const normalizedEmail = email.trim().toLowerCase();
     const ip = getClientIp(req);
-    const emailIdentifier = normalizeIdentifier('email', email);
+    const emailIdentifier = normalizeIdentifier('email', normalizedEmail);
 
     // Dual rate-limiting: Rate limits both the client IP and the normalized email/account
     // to prevent distributed credential stuffing and IP rotation attacks.
@@ -37,13 +38,13 @@ export async function POST(req: NextRequest) {
       return withRequestId(req, NextResponse.json({ error: 'Too many attempts, try again shortly' }, { status: 429 }));
     }
 
-    const user = await prisma.user.findUnique({ where: { email } });
+    const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
 
     if (user?.deletedAt) {
       await writeAudit({
         actorId: user.id,
         action: 'auth.login_soft_deleted',
-        metadata: { requestId, ip, emailNormalized: email.toLowerCase() },
+        metadata: { requestId, ip, emailNormalized: normalizedEmail },
       });
       throw new ApiError(403, 'Account has been deactivated');
     }
@@ -52,7 +53,7 @@ export async function POST(req: NextRequest) {
       await writeAudit({
         actorId: user.id,
         action: 'auth.login_locked',
-        metadata: { requestId, ip, emailNormalized: email.toLowerCase(), lockedUntil: user.lockedUntil?.toISOString() },
+        metadata: { requestId, ip, emailNormalized: normalizedEmail, lockedUntil: user.lockedUntil?.toISOString() },
       });
       return withRequestId(req, NextResponse.json(
         { error: `Account locked due to too many failed attempts. Try again later.` },
@@ -75,7 +76,7 @@ export async function POST(req: NextRequest) {
       await writeAudit({
         actorId: user?.id ?? null,
         action: 'auth.login_failure',
-        metadata: { requestId, ip, emailNormalized: email.toLowerCase() },
+        metadata: { requestId, ip, emailNormalized: normalizedEmail },
       });
       throw new ApiError(401, 'Invalid credentials');
     }

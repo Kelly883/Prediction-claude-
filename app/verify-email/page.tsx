@@ -43,6 +43,43 @@ function ResendForm({ email }: { email: string }) {
   );
 }
 
+function EmailResendForm() {
+  const [email, setEmail] = useState('');
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSending(true);
+    try {
+      await fetch('/api/auth/resend-verification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      setSent(true);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  if (sent) {
+    return <p style={{ color: 'var(--floodlight)', fontSize: 14, marginTop: 16 }}>If that email has an account, a new link is on its way.</p>;
+  }
+
+  return (
+    <form onSubmit={onSubmit} style={{ marginTop: 16, textAlign: 'left' }}>
+      <div className="field">
+        <label htmlFor="resendEmail">Email address</label>
+        <input id="resendEmail" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
+      </div>
+      <button type="submit" className="btn btn-ghost" style={{ width: '100%' }} disabled={sending}>
+        {sending ? 'Sending…' : 'Send verification link'}
+      </button>
+    </form>
+  );
+}
+
 function VerifyContent() {
   const searchParams = useSearchParams();
   const token = searchParams.get('token');
@@ -74,7 +111,20 @@ function VerifyContent() {
             }
             return;
           }
-          throw new Error(data.error ?? 'Verification failed');
+          if (data.reason === 'expired') {
+            if (!cancelled) {
+              setStatus('expired');
+              setMessage(data.error ?? 'This verification link has expired. Please request a new one.');
+              if (data.email) setEmail(data.email);
+            }
+            return;
+          }
+          if (!cancelled) {
+            setStatus('invalid');
+            setMessage(data.error ?? 'This link is invalid or has already been used.');
+            if (data.email) setEmail(data.email);
+          }
+          return;
         }
         if (!cancelled) {
           setStatus('success');
@@ -82,14 +132,8 @@ function VerifyContent() {
         }
       } catch (err) {
         if (!cancelled) {
-          const errorMessage = (err as Error).message;
-          if (errorMessage.toLowerCase().includes('expired')) {
-            setStatus('expired');
-            setMessage('This verification link has expired. Please request a new one.');
-          } else {
-            setStatus('invalid');
-            setMessage('This link is invalid or has already been used.');
-          }
+          setStatus('invalid');
+          setMessage('This link is invalid or has already been used.');
         }
       }
     }
@@ -106,6 +150,7 @@ function VerifyContent() {
         <p style={{ color: 'var(--chalk-muted)', marginBottom: 20, fontSize: 14 }}>
           Enter your email address and we'll send you a new verification email.
         </p>
+        <EmailResendForm />
       </div>
     );
   }

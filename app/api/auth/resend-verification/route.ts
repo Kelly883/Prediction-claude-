@@ -22,15 +22,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Too many attempts, try again shortly' }, { status: 429 });
     }
 
-    const genericResponse = NextResponse.json({
+    const genericResponse = (emailSent: boolean) => NextResponse.json({
       message: "If an account exists for that email and isn't already verified, a new verification link has been sent.",
+      emailSent,
     });
 
     const user = normalizedEmail ? await prisma.user.findUnique({ where: { email: normalizedEmail } }) : null;
     if (!user || user.deletedAt || user.emailVerifiedAt) {
-      return genericResponse;
+      return genericResponse(false);
     }
 
+    let emailSent = false;
     await prisma.$transaction(async (db) => {
       await db.emailVerificationToken.updateMany({
         where: { userId: user.id, usedAt: null, expiresAt: { gt: new Date() } },
@@ -47,10 +49,11 @@ export async function POST(req: NextRequest) {
       const verificationUrl = `${process.env.APP_URL}/verify-email?token=${rawToken}`;
       try {
         await sendVerificationEmail(user.email, verificationUrl);
+        emailSent = true;
       } catch (emailErr) {
         console.error('Failed to send verification email', emailErr);
         if (process.env.NODE_ENV !== 'production') {
-          return NextResponse.json({ message: 'Email not configured — dev mode verification link below.', devVerificationUrl: verificationUrl });
+          return NextResponse.json({ message: 'Email not configured — dev mode verification link below.', devVerificationUrl: verificationUrl, emailSent: true });
         }
       }
     });
@@ -58,10 +61,10 @@ export async function POST(req: NextRequest) {
     await writeAudit({
       action: 'auth.email_verification_resent',
       targetId: user.id,
-      metadata: { email: normalizedEmail },
+      metadata: { email: normalizedEmail, emailSent },
     });
 
-    return genericResponse;
+    return genericResponse(emailSent);
   } catch (err) {
     return errorResponse(err);
   }

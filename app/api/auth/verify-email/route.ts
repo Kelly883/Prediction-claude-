@@ -24,17 +24,40 @@ export async function POST(req: NextRequest) {
     const record = await prisma.emailVerificationToken.findUnique({ where: { tokenHash } });
 
     if (!record || record.usedAt || record.expiresAt < new Date()) {
+      const reason = !record ? 'token_not_found' : record.usedAt ? 'already_used' : 'expired';
+      const user = record ? await prisma.user.findUnique({ where: { id: record.userId }, select: { email: true, deletedAt: true } }) : null;
+      if (user?.deletedAt) {
+        await writeAudit({
+          action: 'auth.email_verification_failed',
+          targetId: record?.userId,
+          metadata: { reason: 'account_deleted' },
+        });
+        return NextResponse.json({ error: 'Invalid verification token', reason: 'account_deleted' }, { status: 400 });
+      }
       await writeAudit({
         action: 'auth.email_verification_failed',
         targetId: record?.userId,
-        metadata: { reason: !record ? 'token_not_found' : record.usedAt ? 'already_used' : 'expired' },
+        metadata: { reason },
       });
-      throw new ApiError(400, 'Invalid or expired verification token');
+      return NextResponse.json({
+        error: reason === 'expired' ? 'This verification link has expired.' : 'Invalid or already used verification token',
+        reason,
+        email: user?.email ?? null,
+      }, { status: 400 });
     }
 
-    const user = await prisma.user.findUnique({ where: { id: record.userId } });
+    const user = await prisma.user.findUnique({ where: { id: record.userId }, select: { email: true, deletedAt: true, emailVerifiedAt: true } });
     if (!user || user.deletedAt) {
-      throw new ApiError(400, 'Invalid verification token');
+      await writeAudit({
+        action: 'auth.email_verification_failed',
+        targetId: record.userId,
+        metadata: { reason: user?.deletedAt ? 'account_deleted' : 'user_not_found' },
+      });
+      return NextResponse.json({
+        error: 'Invalid verification token',
+        reason: user?.deletedAt ? 'account_deleted' : 'user_not_found',
+        email: user?.email ?? null,
+      }, { status: 400 });
     }
 
     if (user.emailVerifiedAt) {

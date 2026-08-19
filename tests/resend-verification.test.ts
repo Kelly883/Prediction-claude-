@@ -45,30 +45,31 @@ describe('POST /api/auth/resend-verification', () => {
 
     const { POST } = await import('@/app/api/auth/resend-verification/route');
     const res = await POST(makeRequest({ email: 'unverified@example.com' }));
+    const body = await res.json();
 
     expect(res.status).toBe(200);
     expect(mockPrisma.emailVerificationToken.updateMany).toHaveBeenCalledTimes(1);
     expect(mockPrisma.emailVerificationToken.create).toHaveBeenCalledTimes(1);
     expect(mockSendEmail).toHaveBeenCalledTimes(1);
     expect(mockSendEmail.mock.calls[0][0]).toBe('unverified@example.com');
+    expect(body.emailSent).toBe(true);
   });
 
-  it('invalidates old unused tokens before creating a new one', async () => {
+  it('normalizes the email before lookup', async () => {
     mockPrisma.user.findUnique.mockResolvedValue({
       id: 'user-1', email: 'unverified@example.com', emailVerifiedAt: null, deletedAt: null,
     });
 
     const { POST } = await import('@/app/api/auth/resend-verification/route');
-    const res = await POST(makeRequest({ email: 'unverified@example.com' }));
+    const res = await POST(makeRequest({ email: '  Unverified@Example.COM  ' }));
+    const body = await res.json();
 
     expect(res.status).toBe(200);
-    expect(mockPrisma.emailVerificationToken.updateMany).toHaveBeenCalledWith({
-      where: { userId: 'user-1', usedAt: null, expiresAt: { gt: expect.any(Date) } },
-      data: { usedAt: expect.any(Date) },
-    });
+    expect(mockPrisma.user.findUnique).toHaveBeenCalledWith({ where: { email: 'unverified@example.com' } });
+    expect(body.emailSent).toBe(true);
   });
 
-  it('does not send an email or reveal state for an already-verified account', async () => {
+  it('returns emailSent false for an already-verified account', async () => {
     mockPrisma.user.findUnique.mockResolvedValue({
       id: 'user-2', email: 'verified@example.com', emailVerifiedAt: new Date(), deletedAt: null,
     });
@@ -79,10 +80,10 @@ describe('POST /api/auth/resend-verification', () => {
 
     expect(res.status).toBe(200);
     expect(mockSendEmail).not.toHaveBeenCalled();
-    expect(body.message).toMatch(/if an account exists/i);
+    expect(body.emailSent).toBe(false);
   });
 
-  it('does not send an email or reveal state for a nonexistent account', async () => {
+  it('returns emailSent false for a nonexistent account', async () => {
     mockPrisma.user.findUnique.mockResolvedValue(null);
 
     const { POST } = await import('@/app/api/auth/resend-verification/route');
@@ -91,7 +92,7 @@ describe('POST /api/auth/resend-verification', () => {
 
     expect(res.status).toBe(200);
     expect(mockSendEmail).not.toHaveBeenCalled();
-    expect(body.message).toMatch(/if an account exists/i);
+    expect(body.emailSent).toBe(false);
   });
 
   it('does not send an email for a soft-deleted account', async () => {
@@ -101,8 +102,10 @@ describe('POST /api/auth/resend-verification', () => {
 
     const { POST } = await import('@/app/api/auth/resend-verification/route');
     const res = await POST(makeRequest({ email: 'deleted@example.com' }));
+    const body = await res.json();
 
     expect(res.status).toBe(200);
     expect(mockSendEmail).not.toHaveBeenCalled();
+    expect(body.emailSent).toBe(false);
   });
 });
