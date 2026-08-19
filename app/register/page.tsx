@@ -31,6 +31,22 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const [registeredEmail, setRegisteredEmail] = useState<string>('');
   const [emailSent, setEmailSent] = useState(false);
+  const [resending, setResending] = useState(false);
+  const [resent, setResent] = useState(false);
+
+  async function resendVerification() {
+    setResending(true);
+    try {
+      await fetch('/api/auth/resend-verification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: registeredEmail }),
+      });
+      setResent(true);
+    } finally {
+      setResending(false);
+    }
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -81,6 +97,15 @@ export default function RegisterPage() {
                 We couldn&apos;t send the verification email automatically. Please contact support or try registering again.
               </p>
             )}
+            <button
+              type="button"
+              onClick={resendVerification}
+              className="btn btn-ghost"
+              style={{ width: '100%', marginBottom: 12 }}
+              disabled={resending || resent}
+            >
+              {resent ? 'Verification email sent ✓' : resending ? 'Sending…' : "Didn't get it? Resend verification email"}
+            </button>
             <Link href="/login" className="btn btn-primary" style={{ width: '100%' }}>
               Go to login
             </Link>

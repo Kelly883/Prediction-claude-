@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { apiJson } from '@/lib/api-client';
 
-type Me = { id: string; name: string; email: string; country: string; role: 'admin' | 'user' };
+type Me = { id: string; name: string; email: string; country: string; role: 'admin' | 'user'; emailVerified: boolean };
 type SubscriptionView = {
   id: string;
   status: string;
@@ -30,6 +30,8 @@ export default function DashboardPage() {
   const [payments, setPayments] = useState<PaymentView[]>([]);
   const [loading, setLoading] = useState(true);
   const [cancelling, setCancelling] = useState(false);
+  const [resendingVerification, setResendingVerification] = useState(false);
+  const [verificationResent, setVerificationResent] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -59,6 +61,21 @@ export default function DashboardPage() {
     }
   }
 
+  async function resendVerification() {
+    if (!me) return;
+    setResendingVerification(true);
+    try {
+      await apiJson('/api/auth/resend-verification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: me.email }),
+      });
+      setVerificationResent(true);
+    } finally {
+      setResendingVerification(false);
+    }
+  }
+
   if (loading) {
     return (
       <>
@@ -71,7 +88,29 @@ export default function DashboardPage() {
     <>
 
                 <div className="eyebrow" style={{ marginBottom: 6 }}>YOUR ACCOUNT</div>
-          <h1 className="display" style={{ fontSize: 32, marginBottom: 32 }}>{me?.name ?? me?.email}</h1>
+          <h1 className="display" style={{ fontSize: 32, marginBottom: 24 }}>{me?.name ?? me?.email}</h1>
+
+          {me && !me.emailVerified && (
+            <div
+              className="card"
+              style={{ marginBottom: 24, borderColor: 'var(--floodlight)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}
+            >
+              <div>
+                <p style={{ fontWeight: 600, marginBottom: 4 }}>Verify your email address</p>
+                <p style={{ color: 'var(--chalk-muted)', fontSize: 13 }}>
+                  {verificationResent ? 'Check your inbox for a new link.' : `We haven't confirmed ${me.email} yet.`}
+                </p>
+              </div>
+              <button
+                onClick={resendVerification}
+                disabled={resendingVerification || verificationResent}
+                className="btn btn-ghost"
+                style={{ flexShrink: 0 }}
+              >
+                {verificationResent ? 'Sent ✓' : resendingVerification ? 'Sending…' : 'Resend verification email'}
+              </button>
+            </div>
+          )}
 
           {/* Subscription status */}
           <div className="card" style={{ marginBottom: 24 }}>

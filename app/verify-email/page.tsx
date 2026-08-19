@@ -7,6 +7,43 @@ import Footer from '@/components/Footer';
 
 type Status = 'loading' | 'success' | 'error' | 'missing';
 
+function ResendForm() {
+  const [email, setEmail] = useState('');
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSending(true);
+    try {
+      await fetch('/api/auth/resend-verification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      setSent(true);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  if (sent) {
+    return <p style={{ color: 'var(--floodlight)', fontSize: 14, marginTop: 16 }}>If that email has an account, a new link is on its way.</p>;
+  }
+
+  return (
+    <form onSubmit={onSubmit} style={{ marginTop: 16, textAlign: 'left' }}>
+      <div className="field">
+        <label htmlFor="resendEmail">Get a new verification link</label>
+        <input id="resendEmail" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
+      </div>
+      <button type="submit" className="btn btn-ghost" style={{ width: '100%' }} disabled={sending}>
+        {sending ? 'Sending…' : 'Resend verification email'}
+      </button>
+    </form>
+  );
+}
+
 function VerifyContent() {
   const searchParams = useSearchParams();
   const token = searchParams.get('token');
@@ -72,7 +109,10 @@ function VerifyContent() {
       {status === 'success' ? (
         <a href="/login" className="btn btn-primary">Continue to login</a>
       ) : (
-        <a href="/register" className="btn btn-primary">Back to sign up</a>
+        <>
+          <a href="/login" className="btn btn-primary" style={{ width: '100%' }}>Go to login</a>
+          <ResendForm />
+        </>
       )}
     </div>
   );

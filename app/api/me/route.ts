@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
     const user = await requireUser(req);
     const record = await prisma.user.findUniqueOrThrow({ where: { id: user.sub } });
     if (record.deletedAt) throw new ApiError(403, 'Account has been deactivated');
-    return NextResponse.json({ id: record.id, name: record.name, email: record.email, phone: record.phone, country: record.country, role: record.role });
+    return NextResponse.json({ id: record.id, name: record.name, email: record.email, phone: record.phone, country: record.country, role: record.role, emailVerified: !!record.emailVerifiedAt });
   } catch (err) {
     return errorResponse(err);
   }
