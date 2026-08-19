@@ -104,7 +104,7 @@ describe('Admin Prediction Image Upload API Route Security', () => {
       const data = await res.json();
 
       expect(res.status).toBe(403);
-      expect(data.error).toBe('Forbidden cross-origin upload request.');
+      expect(data.error).toBe('Forbidden cross-origin request');
     });
   });
 

@@ -11,6 +11,12 @@ vi.mock('@/lib/prisma', () => ({ prisma: mockPrisma }));
 
 vi.mock('@/lib/audit', () => ({ writeAudit: vi.fn() }));
 
+vi.mock('@/lib/ratelimit', () => ({
+  checkRateLimit: vi.fn(async () => true),
+  authLimiter: {},
+  getClientIp: () => '127.0.0.1',
+}));
+
 function makeRequest(body: any) {
   return new NextRequest('http://localhost:3000/api/auth/verify-email', {
     method: 'POST',

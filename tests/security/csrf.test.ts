@@ -67,6 +67,26 @@ vi.mock('@/lib/ratelimit', () => ({
 
 vi.mock('@/lib/audit', () => ({ writeAudit: vi.fn() }));
 
+vi.mock('@/lib/rbac', async (importOriginal) => {
+  const actual: any = await importOriginal();
+  return {
+    ...actual,
+    requireAdmin: vi.fn().mockResolvedValue({ sub: 'admin-1', role: 'admin' }),
+    requireAdminWith2FA: vi.fn().mockResolvedValue({ sub: 'admin-1', role: 'admin' }),
+  };
+});
+
+function crossOriginReq(url: string, init: RequestInit = {}) {
+  return new NextRequest(url, {
+    ...init,
+    headers: {
+      ...(init.headers ?? {}),
+      origin: 'http://evil.com',
+      host: 'localhost',
+    },
+  });
+}
+
 describe('Security: CSRF', () => {
   beforeEach(() => {
     fakeDb = makeFakeDb();
@@ -87,29 +107,29 @@ describe('Security: CSRF', () => {
 
   it('requires CSRF for PATCH /api/admin/free-access-rules/:id', async () => {
     const { PATCH } = await import('@/app/api/admin/free-access-rules/[id]/route');
-    const req = new NextRequest('http://localhost/api/admin/free-access-rules/rule-1', {
+    const req = crossOriginReq('http://localhost/api/admin/free-access-rules/rule-1', {
       method: 'PATCH',
       body: JSON.stringify({ isActive: false }),
     });
 
-    const res = await PATCH(req);
+    const res = await PATCH(req, { params: Promise.resolve({ id: 'rule-1' }) });
     expect(res.status).toBe(403);
   });
 
   it('requires CSRF for DELETE /api/admin/complimentary-access/:id', async () => {
     const { DELETE } = await import('@/app/api/admin/complimentary-access/[id]/route');
-    const req = new NextRequest('http://localhost/api/admin/complimentary-access/grant-1', {
+    const req = crossOriginReq('http://localhost/api/admin/complimentary-access/grant-1', {
       method: 'DELETE',
     });
 
-    const res = await DELETE(req);
+    const res = await DELETE(req, { params: Promise.resolve({ id: 'grant-1' }) });
     expect(res.status).toBe(403);
   });
 
   it('requires CSRF for POST /api/admin/predictions/:id/publish', async () => {
     fakeDb._seedPost({ id: 'post-1', status: 'draft' });
     const { POST } = await import('@/app/api/admin/predictions/[id]/publish/route');
-    const req = new NextRequest('http://localhost/api/admin/predictions/post-1', {
+    const req = crossOriginReq('http://localhost/api/admin/predictions/post-1', {
       method: 'POST',
     });
 
@@ -119,7 +139,7 @@ describe('Security: CSRF', () => {
 
   it('requires CSRF for POST /api/admin/predictions/csv/confirm', async () => {
     const { POST } = await import('@/app/api/admin/predictions/csv/confirm/route');
-    const req = new NextRequest('http://localhost/api/admin/predictions/csv/confirm', {
+    const req = crossOriginReq('http://localhost/api/admin/predictions/csv/confirm', {
       method: 'POST',
       body: JSON.stringify({}),
     });
