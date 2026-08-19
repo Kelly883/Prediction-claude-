@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAdmin, errorResponse, ApiError } from '@/lib/rbac';
 import { requireSameOrigin, requireCsrf } from '@/lib/csrf';
-import { sendEmail } from '@/lib/email';
+import { sendAdminVerificationEmail } from '@/lib/email';
 import { writeAudit } from '@/lib/audit';
 
 export const runtime = 'nodejs';
@@ -38,11 +38,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const verificationUrl = `${process.env.APP_URL}/verify-email?token=${rawToken}`;
 
     try {
-      await sendEmail({
-        to: user.email,
-        subject: 'Verify your PredictPro account',
-        html: `<p>Click the link below to verify your email address.</p><p><a href="${verificationUrl}">${verificationUrl}</a></p><p>This link expires in ${TOKEN_TTL_HOURS} hours.</p>`,
-      });
+      await sendAdminVerificationEmail(user.email, verificationUrl);
     } catch (emailErr) {
       console.error('Failed to send verification email (admin-triggered)', emailErr);
       throw new ApiError(502, "Couldn't send the email — check RESEND_API_KEY/RESEND_FROM_EMAIL are configured correctly.");

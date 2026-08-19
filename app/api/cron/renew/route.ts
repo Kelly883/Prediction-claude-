@@ -4,7 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { resolvePrice, toMinorUnits } from '@/lib/payments';
 import { paystackChargeAuthorization } from '@/lib/providers/paystack';
 import { flutterwaveChargeToken } from '@/lib/providers/flutterwave';
-import { sendEmail } from '@/lib/email';
+import { sendRenewalReminderEmail } from '@/lib/email';
 import { timingSafeStringEqual } from '@/lib/timing-safe';
 import { decryptPaymentToken } from '@/lib/encryption';
 import { getRequestId } from '@/lib/request-id';
@@ -96,11 +96,13 @@ export async function GET(req: NextRequest) {
       // Send at most one reminder per subscription — renewalReminderSentAt is the dedupe marker
       if (!sub.renewalReminderSentAt) {
         try {
-          await sendEmail({
-            to: sub.user.email,
-            subject: 'Your PredictPro plan is expiring soon',
-            html: `<p>Your ${sub.plan.name} plan ends on ${sub.endAt.toDateString()} and we don't have a payment method on file to renew it automatically.</p><p>Renew manually before then to keep access: <a href="${process.env.APP_URL}/dashboard/plans">${process.env.APP_URL}/dashboard/plans</a></p>`,
-          });
+          const renewalUrl = `${process.env.APP_URL}/dashboard/plans`;
+          await sendRenewalReminderEmail(
+            sub.user.email,
+            renewalUrl,
+            sub.plan.name,
+            sub.endAt.toDateString(),
+          );
           results.remindersSent++;
         } catch (emailErr) {
           results.errors.push(`sub ${sub.id}: reminder email failed — ${(emailErr as Error).message}`);

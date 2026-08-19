@@ -8,7 +8,7 @@ const mockPrisma = vi.hoisted(() => ({
 vi.mock('@/lib/prisma', () => ({ prisma: mockPrisma }));
 
 const mockSendEmail = vi.hoisted(() => vi.fn());
-vi.mock('@/lib/email', () => ({ sendEmail: mockSendEmail }));
+vi.mock('@/lib/email', () => ({ sendAdminVerificationEmail: mockSendEmail }));
 
 vi.mock('@/lib/audit', () => ({ writeAudit: vi.fn() }));
 
