@@ -1,10 +1,10 @@
-import crypto from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { sendEmail } from '@/lib/email';
+import { sendPasswordResetEmail } from '@/lib/email';
 import { checkRateLimit, authLimiter, getClientIp, normalizeIdentifier } from '@/lib/ratelimit';
 import { errorResponse } from '@/lib/rbac';
 import { writeAudit } from '@/lib/audit';
+import crypto from 'crypto';
 
 export const runtime = 'nodejs';
 const TOKEN_TTL_MINUTES = 30;
@@ -55,11 +55,7 @@ export async function POST(req: NextRequest) {
     const resetUrl = `${process.env.APP_URL}/reset-password?token=${rawToken}`;
 
     try {
-      await sendEmail({
-        to: user.email,
-        subject: 'Reset your PredictPro password',
-        html: `<p>Reset your password using the link below. It expires in ${TOKEN_TTL_MINUTES} minutes.</p><p><a href="${resetUrl}">${resetUrl}</a></p><p>If you didn't request this, ignore this email.</p>`,
-      });
+      await sendPasswordResetEmail(user.email, resetUrl, TOKEN_TTL_MINUTES);
     } catch (emailErr) {
       // Don't fail the request over email delivery — log it, and in
       // non-production surface the link directly so this is testable
