@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAdmin, requireAdminWith2FA, errorResponse } from '@/lib/rbac';
+import { requirePermission, errorResponse } from '@/lib/rbac';
+import { PERMISSIONS } from '@/lib/permissions';
 import { writeAudit } from '@/lib/audit';
 import { ComplimentaryAccessSchema } from '@/lib/schemas';
 import { requireCsrf } from '@/lib/csrf';
@@ -9,7 +10,7 @@ export const runtime = 'nodejs';
 
 export async function GET(req: NextRequest) {
   try {
-    await requireAdmin(req);
+    await requirePermission(req, PERMISSIONS.pages.freeAccess);
     const grants = await prisma.complimentaryAccess.findMany({
       orderBy: { createdAt: 'desc' },
       include: { user: { select: { email: true } }, post: { select: { title: true } } },
@@ -23,7 +24,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     requireCsrf(req);
-    const admin = await requireAdminWith2FA(req);
+    const admin = await requirePermission(req, PERMISSIONS.pages.freeAccess);
     const dto = ComplimentaryAccessSchema.parse(await req.json());
 
     const grant = await prisma.complimentaryAccess.create({

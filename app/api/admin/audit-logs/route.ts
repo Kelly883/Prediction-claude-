@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAdmin, errorResponse } from '@/lib/rbac';
+import { requirePermission, errorResponse } from '@/lib/rbac';
+import { PERMISSIONS } from '@/lib/permissions';
 import { parsePagination, withPaginationHeaders } from '@/lib/pagination';
 
 export const runtime = 'nodejs';
 
 export async function GET(req: NextRequest) {
   try {
-    await requireAdmin(req);
+    await requirePermission(req, PERMISSIONS.pages.auditLogs);
     const action = req.nextUrl.searchParams.get('action') ?? undefined;
     const category = req.nextUrl.searchParams.get('category') ?? undefined;
     const search = req.nextUrl.searchParams.get('search')?.trim().toLowerCase() ?? undefined;

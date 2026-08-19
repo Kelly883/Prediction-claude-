@@ -15,8 +15,9 @@ datasource db {
 }
 
 enum Role {
-  admin
   user
+  admin
+  superadmin
 }
 
 enum SubscriptionStatus {
@@ -87,6 +88,11 @@ model User {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
   deletedAt        DateTime?
+
+  permissions      String[]  @default([])
+  grantedBy        String?
+  grantedAt        DateTime?
+  lastLoginAt      DateTime?
 
   failedLoginAttempts Int      @default(0)
   lockedUntil         DateTime?

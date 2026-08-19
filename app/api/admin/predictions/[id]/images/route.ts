@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAdmin, requireAdminWith2FA, errorResponse, ApiError } from '@/lib/rbac';
+import { requirePermission, errorResponse, ApiError } from '@/lib/rbac';
+import { PERMISSIONS } from '@/lib/permissions';
 import { uploadMedia } from '@/lib/media';
 import { writeAudit } from '@/lib/audit';
 import { prisma } from '@/lib/prisma';
@@ -16,7 +17,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const admin = await requireAdminWith2FA(req);
+    const admin = await requirePermission(req, PERMISSIONS.pages.predictions);
     const ip = getClientIp(req);
 
     requireSameOrigin(req);

@@ -16,7 +16,8 @@ vi.mock('@/lib/rbac', async () => {
   const actual = await vi.importActual<any>('@/lib/rbac');
   return {
     ...actual,
-    requireAdmin: vi.fn().mockResolvedValue({ sub: 'admin-1', role: 'admin' }),
+    requirePermission: vi.fn().mockResolvedValue({ sub: 'admin-1', role: 'admin', permissions: [] }),
+    hasPermission: vi.fn().mockReturnValue(true),
   };
 });
 

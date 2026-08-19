@@ -22,21 +22,21 @@ export async function middleware(req: NextRequest) {
       loginUrl.searchParams.set('next', path);
       return NextResponse.redirect(loginUrl);
     }
-    if (payload.role !== 'admin') {
+    if (payload.role !== 'admin' && payload.role !== 'superadmin') {
       return NextResponse.redirect(new URL('/dashboard', req.url));
     }
   }
 
   // 2. Member dashboard paths:
   // Non-logged in visitors get redirected to login with next param
-  // Logged-in admins are barred and redirected to /admin
+  // Logged-in admins/superadmins are barred and redirected to /admin
   if (path.startsWith('/dashboard')) {
     if (!payload) {
       const loginUrl = new URL('/login', req.url);
       loginUrl.searchParams.set('next', path);
       return NextResponse.redirect(loginUrl);
     }
-    if (payload.role === 'admin') {
+    if (payload.role === 'admin' || payload.role === 'superadmin') {
       return NextResponse.redirect(new URL('/admin', req.url));
     }
   }
@@ -52,7 +52,7 @@ export async function middleware(req: NextRequest) {
   // with a clear option to continue or log out and use different
   // credentials) instead of it happening invisibly at the edge.
   if (path === '/register' && payload) {
-    if (payload.role === 'admin') {
+    if (payload.role === 'admin' || payload.role === 'superadmin') {
       return NextResponse.redirect(new URL('/admin', req.url));
     }
     return NextResponse.redirect(new URL('/dashboard', req.url));

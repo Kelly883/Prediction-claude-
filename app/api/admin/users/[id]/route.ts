@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAdmin, requireAdminWith2FA, errorResponse, ApiError } from '@/lib/rbac';
+import { requirePermission, errorResponse, ApiError } from '@/lib/rbac';
+import { PERMISSIONS } from '@/lib/permissions';
 import { getDistinctDeviceCount, isAnomalous } from '@/lib/sessions';
 import { writeAudit } from '@/lib/audit';
 import { redactPayload } from '@/lib/payments';
@@ -10,7 +11,7 @@ export const runtime = 'nodejs';
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    await requireAdmin(req);
+    await requirePermission(req, PERMISSIONS.pages.users);
     const { id } = await params;
 
     const user = await prisma.user.findUnique({
@@ -46,7 +47,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   try {
     requireSameOrigin(req);
     requireCsrf(req);
-    const admin = await requireAdminWith2FA(req);
+    const admin = await requirePermission(req, PERMISSIONS.pages.users);
     const { id } = await params;
     const body = await req.json();
 

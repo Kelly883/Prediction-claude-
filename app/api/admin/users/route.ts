@@ -1,17 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAdmin, requireAdminWith2FA, errorResponse, ApiError } from '@/lib/rbac';
+import { requirePermission, requireAdminWith2FA, errorResponse, ApiError } from '@/lib/rbac';
 import { hashPassword } from '@/lib/password';
 import { writeAudit } from '@/lib/audit';
 import { parsePagination, withPaginationHeaders } from '@/lib/pagination';
+import { PERMISSIONS } from '@/lib/permissions';
 import crypto from 'crypto';
 
 export const runtime = 'nodejs';
 
-// SECURITY: explicit `select` is load-bearing here, not stylistic — without
-// it, Prisma returns the full row including passwordHash and
-// twoFactorSecret (the raw TOTP seed; leaking it defeats 2FA entirely for
-// that account). Never change this to a bare findMany() with no select.
 const SAFE_USER_FIELDS = {
   id: true,
   name: true,
@@ -21,18 +18,19 @@ const SAFE_USER_FIELDS = {
   role: true,
   createdAt: true,
   emailVerifiedAt: true,
+  permissions: true,
+  grantedBy: true,
+  grantedAt: true,
 } as const;
 
 export async function GET(req: NextRequest) {
   try {
-    await requireAdmin(req);
+    await requirePermission(req, PERMISSIONS.pages.users);
     const searchParams = req.nextUrl.searchParams;
-    const statusParam = searchParams.get('status'); // 'paid', 'unpaid', 'active', 'expired', 'free', 'trial', or null
-    const roleParam = searchParams.get('role'); // 'admin', 'user', or null
+    const roleParam = searchParams.get('role');
     const queryParam = searchParams.get('q')?.trim().toLowerCase() || '';
     const { page, pageSize, offset } = parsePagination(req);
 
-    // Fetch paginated non-soft-deleted users with safe fields
     const users = await prisma.user.findMany({
       where: { deletedAt: null },
       select: SAFE_USER_FIELDS,
@@ -42,38 +40,31 @@ export async function GET(req: NextRequest) {
     });
 
     const totalUsers = await prisma.user.count({ where: { deletedAt: null } });
-
     const userIds = users.map((u) => u.id);
 
-    // Fetch subscriptions only for users on this page
     const subscriptions = await prisma.subscription.findMany({
       where: { userId: { in: userIds } },
       include: {
         plan: {
-          select: {
-            id: true,
-            name: true,
-          },
+          select: { id: true, name: true },
         },
       },
       orderBy: { createdAt: 'desc' },
     });
 
-    // Compute total revenue via aggregate instead of loading all transactions
     const totalRevenueResult = await prisma.transaction.aggregate({
       where: { status: 'success' },
       _sum: { amount: true },
     });
     const totalRevenue = Number(totalRevenueResult._sum.amount || 0);
 
-    // Map user ID to active or latest subscription
     const userSubMap = new Map<string, { status: string; planName: string; endAt: Date }>();
     const now = new Date();
 
     for (const sub of subscriptions) {
       if (!userSubMap.has(sub.userId)) {
         const isActive = sub.status === 'active' && new Date(sub.endAt) > now;
-        const subStatus = isActive ? 'Active' : sub.status === 'expired' ? 'Expired' : 'Expired';
+        const subStatus = isActive ? 'Active' : 'Expired';
         userSubMap.set(sub.userId, {
           status: subStatus,
           planName: sub.plan?.name || 'Pro',
@@ -82,52 +73,29 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Process user list with subscription details
     const enrichedUsers = users.map((u) => {
       const sub = userSubMap.get(u.id);
       let status = 'Free';
       let planName = 'Free';
-
       if (sub) {
         status = sub.status;
         planName = sub.planName;
       }
-
-      return {
-        ...u,
-        status, // 'Active' | 'Expired' | 'Free' | 'Trial'
-        planName,
-      };
+      return { ...u, status, planName };
     });
 
-    // Calculate metrics
     const activeSubscribers = enrichedUsers.filter((u) => u.status === 'Active').length;
-    const freeTrialUsers = enrichedUsers.filter((u) => u.status === 'Free' || u.status === 'Trial').length;
     const stats = {
       totalUsers,
       activeSubscribers,
-      freeTrialUsers,
       totalRevenue,
       conversionRate: totalUsers > 0 ? Math.round((activeSubscribers / totalUsers) * 100) : 0,
     };
 
-    // Filter users according to search & filter criteria
     let filteredUsers = enrichedUsers;
-
     if (roleParam && roleParam !== 'all') {
       filteredUsers = filteredUsers.filter((u) => u.role.toLowerCase() === roleParam.toLowerCase());
     }
-
-    if (statusParam && statusParam !== 'all') {
-      if (statusParam === 'paid') {
-        filteredUsers = filteredUsers.filter((u) => u.status === 'Active');
-      } else if (statusParam === 'unpaid') {
-        filteredUsers = filteredUsers.filter((u) => u.status !== 'Active');
-      } else {
-        filteredUsers = filteredUsers.filter((u) => u.status.toLowerCase() === statusParam.toLowerCase());
-      }
-    }
-
     if (queryParam) {
       filteredUsers = filteredUsers.filter(
         (u) =>
@@ -138,13 +106,7 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const paginated = {
-      users: filteredUsers,
-      stats,
-      total: totalUsers,
-    };
-
-    const res = NextResponse.json(paginated);
+    const res = NextResponse.json({ users: filteredUsers, stats, total: totalUsers });
     return withPaginationHeaders(res, page, pageSize, totalUsers);
   } catch (err) {
     return errorResponse(err);
@@ -153,9 +115,9 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const admin = await requireAdminWith2FA(req);
+    const admin = await requirePermission(req, PERMISSIONS.admin.createAdmins);
     const body = await req.json();
-    const { name, email, phone, country, role, password } = body;
+    const { name, email, phone, country, role, password, permissions } = body;
 
     if (!name || !email) {
       throw new ApiError(400, 'Name and email are required');
@@ -164,6 +126,10 @@ export async function POST(req: NextRequest) {
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
       throw new ApiError(409, 'An account with this email already exists');
+    }
+
+    if (role === 'superadmin') {
+      throw new ApiError(403, 'Cannot create superadmin accounts');
     }
 
     const defaultPassword = password || crypto.randomBytes(16).toString('hex');
@@ -176,12 +142,20 @@ export async function POST(req: NextRequest) {
         phone: phone || null,
         country: country || 'Nigeria',
         role: role === 'admin' ? 'admin' : 'user',
+        permissions: role === 'admin' && Array.isArray(permissions) ? permissions : [],
+        grantedBy: admin.sub,
+        grantedAt: new Date(),
         passwordHash,
       },
       select: SAFE_USER_FIELDS,
     });
 
-    await writeAudit({ actorId: admin.sub, action: 'user.create', targetId: newUser.id, metadata: { email, role: newUser.role } });
+    await writeAudit({
+      actorId: admin.sub,
+      action: 'user.create',
+      targetId: newUser.id,
+      metadata: { email, role: newUser.role, permissions: newUser.permissions },
+    });
     return NextResponse.json(newUser, { status: 201 });
   } catch (err) {
     return errorResponse(err);

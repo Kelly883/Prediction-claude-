@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAdmin, requireAdminWith2FA, errorResponse } from '@/lib/rbac';
+import { requirePermission, errorResponse } from '@/lib/rbac';
+import { PERMISSIONS } from '@/lib/permissions';
 import { deleteMedia } from '@/lib/media';
 import { writeAudit } from '@/lib/audit';
 
@@ -10,7 +11,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; mediaId: string }> }
 ) {
   try {
-    const admin = await requireAdminWith2FA(req);
+    const admin = await requirePermission(req, PERMISSIONS.pages.predictions);
     const { id: postId, mediaId } = await params;
 
     await deleteMedia(postId, mediaId);

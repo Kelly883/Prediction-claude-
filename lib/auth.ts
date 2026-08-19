@@ -35,7 +35,7 @@ function getRefreshSecret(): Uint8Array {
 
 export interface AccessTokenPayload {
   sub: string;
-  role: 'admin' | 'user';
+  role: 'admin' | 'user' | 'superadmin';
 }
 
 export interface RefreshTokenPayload {
@@ -69,7 +69,7 @@ export async function issueRefreshToken(userId: string, tokenVersion: number = 0
 export async function verifyAccessToken(token: string): Promise<AccessTokenPayload | null> {
   try {
     const { payload } = await jwtVerify(token, getAccessSecret());
-    return { sub: payload.sub as string, role: payload.role as 'admin' | 'user' };
+    return { sub: payload.sub as string, role: payload.role as 'admin' | 'user' | 'superadmin' };
   } catch {
     return null;
   }

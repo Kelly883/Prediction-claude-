@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAdmin, requireAdminWith2FA, errorResponse } from '@/lib/rbac';
+import { requirePermission, errorResponse } from '@/lib/rbac';
+import { PERMISSIONS } from '@/lib/permissions';
 import { writeAudit } from '@/lib/audit';
 import { requireSameOrigin, requireCsrf } from '@/lib/csrf';
 
@@ -10,7 +11,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   try {
     requireSameOrigin(req);
     requireCsrf(req);
-    const admin = await requireAdminWith2FA(req);
+    const admin = await requirePermission(req, PERMISSIONS.pages.freeAccess);
     const { id } = await params;
     await prisma.complimentaryAccess.delete({ where: { id } });
     await writeAudit({ actorId: admin.sub, action: 'complimentary_access.revoke', targetId: id });

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAdmin, requireAdminWith2FA, errorResponse } from '@/lib/rbac';
+import { requirePermission, errorResponse } from '@/lib/rbac';
+import { PERMISSIONS } from '@/lib/permissions';
 import { confirmCsvImport } from '@/lib/csv-import';
 import { writeAudit } from '@/lib/audit';
 import { CsvConfirmSchema } from '@/lib/schemas';
@@ -11,7 +12,7 @@ export async function POST(req: NextRequest) {
   try {
     requireSameOrigin(req);
     requireCsrf(req);
-    const admin = await requireAdminWith2FA(req);
+    const admin = await requirePermission(req, PERMISSIONS.pages.predictions);
     const dto = CsvConfirmSchema.parse(await req.json());
     const post = await confirmCsvImport({
       ...dto,

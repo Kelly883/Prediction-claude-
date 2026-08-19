@@ -16,7 +16,7 @@ function LoginForm() {
   const searchParams = useSearchParams();
   const destination = safeRedirectPath(searchParams.get('next'), '/dashboard');
   const [authState, setAuthState] = useState<AuthState>('loading');
-  const [currentUser, setCurrentUser] = useState<{ email: string; role: 'admin' | 'user' } | null>(null);
+  const [currentUser, setCurrentUser] = useState<{ email: string; role: 'admin' | 'user' | 'superadmin' } | null>(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
@@ -44,8 +44,8 @@ function LoginForm() {
     return () => { cancelled = true; };
   }, []);
 
-  function homeFor(role: 'admin' | 'user') {
-    if (role === 'admin') return destination && destination.startsWith('/admin') ? destination : '/admin';
+  function homeFor(role: 'admin' | 'user' | 'superadmin') {
+    if (role === 'admin' || role === 'superadmin') return destination && destination.startsWith('/admin') ? destination : '/admin';
     return destination && destination.startsWith('/dashboard') ? destination : '/dashboard';
   }
 
@@ -129,7 +129,7 @@ function LoginForm() {
   }
 
   if (authState === 'authenticated' && currentUser) {
-    const isAdmin = currentUser.role === 'admin';
+    const isAdmin = currentUser.role === 'admin' || currentUser.role === 'superadmin';
     return (
       <div className="card" style={{ width: 400, maxWidth: '100%' }}>
         <div className="eyebrow" style={{ marginBottom: 6 }}>ALREADY SIGNED IN</div>
