@@ -3,12 +3,16 @@ import { NextRequest } from 'next/server';
 
 const mockPrisma = vi.hoisted(() => ({
   user: { findUnique: vi.fn() },
-  emailVerificationToken: { create: vi.fn() },
+  emailVerificationToken: {
+    create: vi.fn(),
+    updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+  },
+  $transaction: vi.fn(async (fn: any) => fn(mockPrisma)),
 }));
 vi.mock('@/lib/prisma', () => ({ prisma: mockPrisma }));
 
 const mockSendEmail = vi.hoisted(() => vi.fn());
-vi.mock('@/lib/email', () => ({ sendEmail: mockSendEmail }));
+vi.mock('@/lib/email', () => ({ sendVerificationEmail: mockSendEmail }));
 
 vi.mock('@/lib/ratelimit', () => ({
   checkRateLimit: vi.fn().mockResolvedValue(true),
@@ -30,6 +34,7 @@ describe('POST /api/auth/resend-verification', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockPrisma.emailVerificationToken.create.mockResolvedValue({ id: 'tok-1' });
+    mockPrisma.$transaction.mockImplementation(async (fn: any) => fn(mockPrisma));
     mockSendEmail.mockResolvedValue(undefined);
   });
 
@@ -42,9 +47,25 @@ describe('POST /api/auth/resend-verification', () => {
     const res = await POST(makeRequest({ email: 'unverified@example.com' }));
 
     expect(res.status).toBe(200);
+    expect(mockPrisma.emailVerificationToken.updateMany).toHaveBeenCalledTimes(1);
     expect(mockPrisma.emailVerificationToken.create).toHaveBeenCalledTimes(1);
     expect(mockSendEmail).toHaveBeenCalledTimes(1);
-    expect(mockSendEmail.mock.calls[0][0].to).toBe('unverified@example.com');
+    expect(mockSendEmail.mock.calls[0][0]).toBe('unverified@example.com');
+  });
+
+  it('invalidates old unused tokens before creating a new one', async () => {
+    mockPrisma.user.findUnique.mockResolvedValue({
+      id: 'user-1', email: 'unverified@example.com', emailVerifiedAt: null, deletedAt: null,
+    });
+
+    const { POST } = await import('@/app/api/auth/resend-verification/route');
+    const res = await POST(makeRequest({ email: 'unverified@example.com' }));
+
+    expect(res.status).toBe(200);
+    expect(mockPrisma.emailVerificationToken.updateMany).toHaveBeenCalledWith({
+      where: { userId: 'user-1', usedAt: null, expiresAt: { gt: expect.any(Date) } },
+      data: { usedAt: expect.any(Date) },
+    });
   });
 
   it('does not send an email or reveal state for an already-verified account', async () => {
@@ -58,7 +79,6 @@ describe('POST /api/auth/resend-verification', () => {
 
     expect(res.status).toBe(200);
     expect(mockSendEmail).not.toHaveBeenCalled();
-    // Same generic message as the "account doesn't exist" case — no enumeration leak.
     expect(body.message).toMatch(/if an account exists/i);
   });
 

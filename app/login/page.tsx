@@ -6,6 +6,7 @@ import Link from 'next/link';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import PasswordField from '@/components/PasswordField';
+import PasswordStrengthMeter from '@/components/PasswordStrengthMeter';
 import { safeRedirectPath } from '@/lib/safe-redirect';
 import { apiJson } from '@/lib/api-client';
 
@@ -25,19 +26,8 @@ function LoginForm() {
   const [loading, setLoading] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
 
-  // middleware.ts no longer silently redirects an already-authenticated
-  // visitor away from /login before this page even renders — that used to
-  // happen invisibly, with no indication of what happened and no way to
-  // sign in as a different account short of finding logout separately.
-  // Checked explicitly here instead, so it can be shown rather than hidden.
   useEffect(() => {
     let cancelled = false;
-    // Deliberately a plain fetch, not apiJson/apiFetch: apiFetch's global
-    // 401 handling attempts a token refresh and hard-redirects to /login on
-    // failure — since this check runs ON /login, that would loop forever
-    // for the (very common) logged-out case: 401 -> refresh fails ->
-    // redirect to /login -> reload -> 401 again. This check needs to
-    // handle both outcomes itself without that side effect.
     fetch('/api/me', { credentials: 'same-origin' })
       .then((res) => {
         if (!res.ok) throw new Error('Not authenticated');
@@ -52,9 +42,7 @@ function LoginForm() {
       .catch(() => {
         if (!cancelled) setAuthState('anonymous');
       });
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, []);
 
   function homeFor(role: 'admin' | 'user') {
@@ -118,11 +106,6 @@ function LoginForm() {
   async function handleSwitchAccount() {
     setLoggingOut(true);
     try {
-      // apiJson, not a raw fetch: /api/auth/logout requires a CSRF token
-      // (requireSameOrigin + requireCsrf), and apiJson/apiFetch is the only
-      // client helper that attaches the x-csrf-token header automatically.
-      // A raw fetch here would get rejected with a 403, silently breaking
-      // this exact button.
       await apiJson('/api/auth/logout', { method: 'POST' });
       setCurrentUser(null);
       setAuthState('anonymous');
