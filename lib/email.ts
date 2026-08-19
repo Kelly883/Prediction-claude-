@@ -3,8 +3,13 @@ import { verificationEmailHtml, verificationEmailText } from './emails/templates
 export async function sendEmail(params: { to: string; subject: string; html: string; text?: string }) {
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.RESEND_FROM_EMAIL;
+  const appUrl = process.env.APP_URL;
+
   if (!apiKey || !from) {
     throw new Error('RESEND_API_KEY / RESEND_FROM_EMAIL not configured — cannot send email');
+  }
+  if (!appUrl) {
+    throw new Error('APP_URL is not configured — verification links will be broken');
   }
 
   const res = await fetch('https://api.resend.com/emails', {

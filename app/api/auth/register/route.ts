@@ -70,6 +70,16 @@ export async function POST(req: NextRequest) {
         targetId: user.id,
         metadata: { email: normalizedEmail, error: emailErr instanceof Error ? emailErr.message : 'unknown' },
       });
+      if (process.env.NODE_ENV !== 'production') {
+        return NextResponse.json({
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          emailSent: true,
+          message: 'Account created (dev mode). Verify with the link below.',
+          devVerificationUrl: verificationUrl,
+        });
+      }
     }
 
     return NextResponse.json({
