@@ -5,7 +5,7 @@ import { checkRateLimit, authLimiter, getClientIp, normalizeIdentifier } from '@
 import { errorResponse, ApiError } from '@/lib/rbac';
 import { RegisterSchema } from '@/lib/schemas';
 import { writeAudit } from '@/lib/audit';
-import { sendEmail } from '@/lib/email';
+import { sendVerificationEmail } from '@/lib/emails';
 import crypto from 'crypto';
 
 export const runtime = 'nodejs';
@@ -15,8 +15,9 @@ export async function POST(req: NextRequest) {
     const rawBody = await req.json();
     const { name, email, phone, password, country } = RegisterSchema.parse(rawBody);
 
+    const normalizedEmail = email.trim().toLowerCase();
     const ip = getClientIp(req);
-    const emailIdentifier = normalizeIdentifier('email', email);
+    const emailIdentifier = normalizeIdentifier('email', normalizedEmail);
 
     const allowed = await checkRateLimit(authLimiter, [ip, emailIdentifier]);
     if (!allowed) {
@@ -24,14 +25,14 @@ export async function POST(req: NextRequest) {
     }
 
     const passwordHash = await hashPassword(password);
-    const token = crypto.randomBytes(32).toString('hex');
-    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24h TTL
 
     const user = await prisma.user.create({
       data: {
         name,
-        email,
+        email: normalizedEmail,
         phone,
         passwordHash,
         country,
@@ -49,20 +50,26 @@ export async function POST(req: NextRequest) {
     await writeAudit({
       action: 'auth.register',
       targetId: user.id,
-      metadata: { email, country },
+      metadata: { email: normalizedEmail, country },
     });
 
-    const verificationUrl = `${process.env.APP_URL}/verify-email?token=${token}`;
+    const verificationUrl = `${process.env.APP_URL}/verify-email?token=${rawToken}`;
     let emailSent = false;
     try {
-      await sendEmail({
-        to: user.email,
-        subject: 'Verify your PredictPro account',
-        html: `<p>Welcome to PredictPro! Click the link below to verify your email address.</p><p><a href="${verificationUrl}">${verificationUrl}</a></p><p>This link expires in 24 hours.</p>`,
-      });
+      await sendVerificationEmail(user.email, verificationUrl);
       emailSent = true;
+      await writeAudit({
+        action: 'auth.email_verification_sent',
+        targetId: user.id,
+        metadata: { email: normalizedEmail },
+      });
     } catch (emailErr) {
       console.error('Failed to send verification email', emailErr);
+      await writeAudit({
+        action: 'auth.email_verification_failed',
+        targetId: user.id,
+        metadata: { email: normalizedEmail, error: emailErr instanceof Error ? emailErr.message : 'unknown' },
+      });
     }
 
     return NextResponse.json({

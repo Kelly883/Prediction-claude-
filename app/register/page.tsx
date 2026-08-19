@@ -33,16 +33,25 @@ export default function RegisterPage() {
   const [emailSent, setEmailSent] = useState(false);
   const [resending, setResending] = useState(false);
   const [resent, setResent] = useState(false);
+  const [resendError, setResendError] = useState<string | null>(null);
 
   async function resendVerification() {
     setResending(true);
+    setResendError(null);
     try {
-      await fetch('/api/auth/resend-verification', {
+      const res = await fetch('/api/auth/resend-verification', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: registeredEmail }),
       });
-      setResent(true);
+      const data = await res.json();
+      if (data.emailSent) {
+        setResent(true);
+      } else {
+        setResendError('We couldn’t send the email this time. Please try again later or contact support.');
+      }
+    } catch {
+      setResendError('Could not reach the server. Please try again.');
     } finally {
       setResending(false);
     }
@@ -96,6 +105,9 @@ export default function RegisterPage() {
               <p style={{ color: 'var(--card-red)', marginBottom: 20, fontSize: 13 }}>
                 We couldn&apos;t send the verification email automatically. Please contact support or try registering again.
               </p>
+            )}
+            {resendError && (
+              <p style={{ color: 'var(--card-red)', marginBottom: 20, fontSize: 13 }}>{resendError}</p>
             )}
             <button
               type="button"

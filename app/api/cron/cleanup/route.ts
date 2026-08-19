@@ -8,6 +8,7 @@ export const runtime = 'nodejs';
 export const maxDuration = 60;
 
 const PASSWORD_RESET_TOKEN_RETENTION_HOURS = 24;
+const EMAIL_VERIFICATION_TOKEN_RETENTION_HOURS = 24;
 const USER_SESSION_RETENTION_DAYS = 90;
 
 export async function GET(req: NextRequest) {
@@ -19,7 +20,7 @@ export async function GET(req: NextRequest) {
   }
 
   const now = new Date();
-  const results = { passwordResetTokensDeleted: 0, sessionsDeleted: 0, errors: [] as string[] };
+  const results = { passwordResetTokensDeleted: 0, emailVerificationTokensDeleted: 0, sessionsDeleted: 0, errors: [] as string[] };
 
   try {
     const oldResetCutoff = new Date(now.getTime() - PASSWORD_RESET_TOKEN_RETENTION_HOURS * 60 * 60 * 1000);
@@ -34,6 +35,21 @@ export async function GET(req: NextRequest) {
     results.passwordResetTokensDeleted = deleteResetResult.count;
   } catch (err) {
     results.errors.push(`password reset token cleanup failed: ${(err as Error).message}`);
+  }
+
+  try {
+    const oldVerificationCutoff = new Date(now.getTime() - EMAIL_VERIFICATION_TOKEN_RETENTION_HOURS * 60 * 60 * 1000);
+    const deleteVerificationResult = await prisma.emailVerificationToken.deleteMany({
+      where: {
+        OR: [
+          { expiresAt: { lt: now } },
+          { usedAt: { not: null, lt: oldVerificationCutoff } },
+        ],
+      },
+    });
+    results.emailVerificationTokensDeleted = deleteVerificationResult.count;
+  } catch (err) {
+    results.errors.push(`email verification token cleanup failed: ${(err as Error).message}`);
   }
 
   try {

@@ -311,6 +311,7 @@ model EmailVerificationToken {
   createdAt DateTime  @default(now())
 
   @@index([userId])
+  @@index([expiresAt])
 }
 
 model TwoFactorRecoveryCode {

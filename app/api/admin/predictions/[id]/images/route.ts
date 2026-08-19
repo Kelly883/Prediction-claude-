@@ -5,6 +5,7 @@ import { writeAudit } from '@/lib/audit';
 import { prisma } from '@/lib/prisma';
 import { checkRateLimit, adminLimiter, getClientIp } from '@/lib/ratelimit';
 import { UpdatePredictionSchema } from '@/lib/schemas';
+import { requireSameOrigin } from '@/lib/csrf';
 
 export const runtime = 'nodejs'; // sharp requires the Node runtime
 
@@ -18,20 +19,7 @@ export async function POST(
     const admin = await requireAdminWith2FA(req);
     const ip = getClientIp(req);
 
-    // CSRF defense: verify origin/host if origin is provided
-    const origin = req.headers.get('origin');
-    const host = req.headers.get('host');
-    if (origin && host) {
-      try {
-        const originHost = new URL(origin).host;
-        if (originHost !== host) {
-          throw new ApiError(403, 'Forbidden cross-origin upload request.');
-        }
-      } catch (urlErr) {
-        if (urlErr instanceof ApiError) throw urlErr;
-        throw new ApiError(403, 'Forbidden cross-origin upload request.');
-      }
-    }
+    requireSameOrigin(req);
 
     const allowed = await checkRateLimit(adminLimiter, ip);
     if (!allowed) {

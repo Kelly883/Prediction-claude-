@@ -11,10 +11,11 @@ const TOKEN_TTL_MINUTES = 30;
 
 export async function POST(req: NextRequest) {
   try {
+    const ip = getClientIp(req);
     const { email } = await req.json();
 
-    const ip = getClientIp(req);
-    const emailIdentifier = email ? normalizeIdentifier('email', email) : `ip:${ip}`;
+    const normalizedEmail = email ? email.trim().toLowerCase() : null;
+    const emailIdentifier = normalizedEmail ? normalizeIdentifier('email', normalizedEmail) : `ip:${ip}`;
 
     // Fail-closed dual rate limiting on password reset request
     const allowed = await checkRateLimit(authLimiter, [ip, emailIdentifier]);
@@ -22,18 +23,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Too many attempts, try again shortly' }, { status: 429 });
     }
 
-    const user = email ? await prisma.user.findUnique({ where: { email } }) : null;
+    const user = normalizedEmail ? await prisma.user.findUnique({ where: { email: normalizedEmail } }) : null;
     if (user?.deletedAt) {
       await writeAudit({
         action: 'auth.password_reset_soft_deleted',
-        metadata: { ip, emailNormalized: email.toLowerCase() },
+        metadata: { ip, emailNormalized: normalizedEmail },
       });
     }
 
     await writeAudit({
       actorId: user?.id ?? null,
       action: 'auth.password_reset_requested',
-      metadata: { ip, emailNormalized: email ? email.toLowerCase() : null },
+      metadata: { ip, emailNormalized: normalizedEmail },
     });
 
     // Always return the same generic response whether or not the account
