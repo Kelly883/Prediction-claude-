@@ -6,7 +6,6 @@ import Link from 'next/link';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import PasswordField from '@/components/PasswordField';
-import PasswordStrengthMeter from '@/components/PasswordStrengthMeter';
 import { safeRedirectPath } from '@/lib/safe-redirect';
 import { apiJson } from '@/lib/api-client';
 
