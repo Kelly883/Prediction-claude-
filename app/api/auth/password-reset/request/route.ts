@@ -11,6 +11,7 @@ const TOKEN_TTL_MINUTES = 30;
 
 export async function POST(req: NextRequest) {
   try {
+    const ip = getClientIp(req);
     const { email } = await req.json();
 
     const normalizedEmail = email ? email.trim().toLowerCase() : null;
