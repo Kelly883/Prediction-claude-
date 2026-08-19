@@ -76,14 +76,14 @@ vi.mock('@/lib/rbac', async (importOriginal) => {
   };
 });
 
-function crossOriginReq(url: string, init: RequestInit = {}) {
+function crossOriginReq(url: string, init: RequestInit = {}): NextRequest {
+  const mergedHeaders = new Headers(init.headers);
+  mergedHeaders.set('origin', 'http://evil.com');
+  mergedHeaders.set('host', 'localhost');
   return new NextRequest(url, {
     ...init,
-    headers: {
-      ...(init.headers ?? {}),
-      origin: 'http://evil.com',
-      host: 'localhost',
-    },
+    headers: mergedHeaders,
+    signal: init.signal ?? undefined,
   });
 }
 
