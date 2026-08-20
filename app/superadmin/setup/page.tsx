@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiJson } from '@/lib/api-client';
-import { Shield, Lock, CheckCircle2, AlertTriangle, User, Mail, KeyRound } from 'lucide-react';
+import { Shield, Lock, CheckCircle2 } from 'lucide-react';
 
 type Step = 'account' | 'totp' | 'success';
 

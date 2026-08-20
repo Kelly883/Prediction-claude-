@@ -11,12 +11,13 @@ export const runtime = 'nodejs';
 
 export async function POST(req: NextRequest) {
   try {
-    requireSameOrigin(req);
-    requireCsrf(req);
-
-    if (await hasSuperAdmin()) {
+    const exists = await hasSuperAdmin();
+    if (exists) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 });
     }
+
+    requireSameOrigin(req);
+    requireCsrf(req);
 
     const ip = getClientIp(req);
     const allowed = await checkRateLimit(bootstrapLimiter, [ip]);
