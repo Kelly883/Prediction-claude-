@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requirePermission, errorResponse, ApiError } from '@/lib/rbac';
 import { PERMISSIONS } from '@/lib/permissions';
-import { parsePagination, withPaginationHeaders } from '@/lib/pagination';
+import { parsePagination } from '@/lib/pagination';
 
 export const runtime = 'nodejs';
 
@@ -57,8 +57,16 @@ export async function GET(req: NextRequest) {
       prisma.auditLog.count({ where }),
     ]);
 
-    const res = NextResponse.json(logs);
-    return withPaginationHeaders(res, page, pageSize, total);
+    const distinctActions = await prisma.auditLog.findMany({
+      where: action ? { action } : undefined,
+      select: { action: true },
+      distinct: ['action'],
+      orderBy: { action: 'asc' },
+    });
+
+    const availableActions = distinctActions.map((a) => a.action);
+
+    return NextResponse.json({ logs, total, availableActions });
   } catch (err) {
     return errorResponse(err);
   }

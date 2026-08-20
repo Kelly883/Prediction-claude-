@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useMemo } from 'react';
-import { apiJson, apiFetch } from '@/lib/api-client';
+import { apiJson } from '@/lib/api-client';
 import { Shield, User, Clock, Terminal, Search, Filter, Download, ChevronDown, ChevronUp, Eye } from 'lucide-react';
 
 type Log = {
@@ -11,6 +11,12 @@ type Log = {
   createdAt: string;
   actor: { email: string };
   metadata?: Record<string, unknown>;
+};
+
+type AuditLogResponse = {
+  logs: Log[];
+  total: number;
+  availableActions: string[];
 };
 
 type Category = 'auth' | 'user' | 'admin' | 'payment' | 'system' | 'security';
@@ -57,6 +63,7 @@ export default function AdminAuditLogPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [total, setTotal] = useState(0);
+  const [availableActions, setAvailableActions] = useState<string[]>([]);
   const [showFilters, setShowFilters] = useState(false);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [density, setDensity] = useState<'comfortable' | 'compact'>('comfortable');
@@ -81,28 +88,20 @@ export default function AdminAuditLogPage() {
 
   useEffect(() => {
     setLoading(true);
-    apiFetch(`/api/admin/audit-logs?${queryParams}`)
-      .then((res) => {
-        const total = Number(res.headers.get('X-Total-Count') || '0');
-        setTotal(total);
-        return res.json();
-      })
+    apiJson<AuditLogResponse>(`/api/admin/audit-logs?${queryParams}`)
       .then((data) => {
-        setLogs(data);
-        setLoading(false);
+        setLogs(data.logs);
+        setTotal(data.total);
+        setAvailableActions(data.availableActions);
       })
-      .catch(() => setLoading(false));
+      .finally(() => setLoading(false));
   }, [queryParams]);
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const start = total === 0 ? 0 : (page - 1) * pageSize + 1;
   const end = Math.min(page * pageSize, total);
 
-  const uniqueActions = useMemo(() => {
-    const actions = new Set<string>();
-    logs.forEach((l) => actions.add(l.action));
-    return Array.from(actions).sort();
-  }, [logs]);
+  const uniqueActions = availableActions;
 
   function toggleExpand(id: string) {
     setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
