@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Shield, Lock } from 'lucide-react';
+import { apiJson } from '@/lib/api-client';
 
 type PermissionSchema = {
   permissions: string[];
@@ -16,11 +17,7 @@ export default function AdminPermissionsPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch('/api/admin/permissions/schema')
-      .then((res) => {
-        if (!res.ok) throw new Error('Failed to load permission schema');
-        return res.json();
-      })
+    apiJson<PermissionSchema>('/api/admin/permissions/schema')
       .then(setSchema)
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));

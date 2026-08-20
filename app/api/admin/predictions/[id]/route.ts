@@ -4,6 +4,7 @@ import { requirePermission, errorResponse, ApiError } from '@/lib/rbac';
 import { PERMISSIONS } from '@/lib/permissions';
 import { writeAudit } from '@/lib/audit';
 import { UpdatePredictionSchema } from '@/lib/schemas';
+import { requireSameOrigin, requireCsrf } from '@/lib/csrf';
 
 export const runtime = 'nodejs';
 
@@ -24,6 +25,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    requireSameOrigin(req);
+    requireCsrf(req);
     const admin = await requirePermission(req, PERMISSIONS.pages.predictions);
     const { id } = await params;
     const dto = UpdatePredictionSchema.parse(await req.json());

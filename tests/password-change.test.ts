@@ -11,6 +11,7 @@ const mockPrisma = vi.hoisted(() => {
     sessions,
     auditLogs,
     user: {
+      findUnique: vi.fn(async ({ where }: any) => users.get(where.id) ?? null),
       findUniqueOrThrow: vi.fn(async ({ where }: any) => {
         const u = users.get(where.id);
         if (!u) throw new Error('User not found');

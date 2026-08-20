@@ -26,6 +26,15 @@ export async function requireUser(req: NextRequest): Promise<AccessTokenPayload>
   const payload = await verifyAccessToken(token);
   if (!payload) throw new ApiError(401, 'Invalid or expired session');
 
+  const record = await prisma.user.findUnique({
+    where: { id: payload.sub },
+    select: { deletedAt: true },
+  });
+
+  if (!record || record.deletedAt) {
+    throw new ApiError(403, 'Account has been deactivated');
+  }
+
   return payload; // { sub: userId, role }
 }
 
@@ -55,7 +64,7 @@ export async function requireAdminWith2FA(req: NextRequest): Promise<Authenticat
   return admin;
 }
 
-/** Requires superadmin role. */
+/** Requires superadmin role AND enforces 2FA for superadmin accounts. */
 export async function requireSuperAdmin(req: NextRequest): Promise<AuthenticatedUser> {
   const user = await requireUser(req);
   if (user.role !== 'superadmin') {
@@ -63,8 +72,11 @@ export async function requireSuperAdmin(req: NextRequest): Promise<Authenticated
   }
   const record = await prisma.user.findUnique({
     where: { id: user.sub },
-    select: { permissions: true },
+    select: { permissions: true, twoFactorEnabled: true },
   });
+  if (!record?.twoFactorEnabled) {
+    throw new ApiError(403, 'Admin account requires two-factor authentication');
+  }
   return { ...user, permissions: record?.permissions ?? [] };
 }
 

@@ -4,12 +4,13 @@ import { requirePermission, errorResponse } from '@/lib/rbac';
 import { PERMISSIONS } from '@/lib/permissions';
 import { writeAudit } from '@/lib/audit';
 import { CmsSectionUpdateSchema } from '@/lib/schemas';
-import { requireCsrf } from '@/lib/csrf';
+import { requireCsrf, requireSameOrigin } from '@/lib/csrf';
 
 export const runtime = 'nodejs';
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ page: string }> }) {
   try {
+    requireSameOrigin(req);
     requireCsrf(req);
     const admin = await requirePermission(req, PERMISSIONS.pages.cms);
     const { page } = await params;

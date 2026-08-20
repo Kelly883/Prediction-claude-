@@ -4,11 +4,14 @@ import { requirePermission, errorResponse } from '@/lib/rbac';
 import { writeAudit } from '@/lib/audit';
 import { UpdatePlanSchema } from '@/lib/schemas';
 import { PERMISSIONS } from '@/lib/permissions';
+import { requireSameOrigin, requireCsrf } from '@/lib/csrf';
 
 export const runtime = 'nodejs';
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    requireSameOrigin(req);
+    requireCsrf(req);
     const admin = await requirePermission(req, PERMISSIONS.pages.plans);
     const { id } = await params;
     const dto = UpdatePlanSchema.parse(await req.json());

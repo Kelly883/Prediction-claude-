@@ -5,6 +5,7 @@ import { hashPassword } from '@/lib/password';
 import { writeAudit } from '@/lib/audit';
 import { parsePagination, withPaginationHeaders } from '@/lib/pagination';
 import { PERMISSIONS } from '@/lib/permissions';
+import { requireSameOrigin, requireCsrf } from '@/lib/csrf';
 import crypto from 'crypto';
 
 export const runtime = 'nodejs';
@@ -115,6 +116,8 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    requireSameOrigin(req);
+    requireCsrf(req);
     const admin = await requirePermission(req, PERMISSIONS.admin.createAdmins);
     const body = await req.json();
     const { name, email, phone, country, role, password, permissions } = body;
@@ -164,6 +167,8 @@ export async function POST(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
+    requireSameOrigin(req);
+    requireCsrf(req);
     const admin = await requirePermissionWith2FA(req, PERMISSIONS.pages.users);
     const { id } = await req.json();
 

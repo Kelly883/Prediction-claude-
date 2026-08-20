@@ -184,15 +184,11 @@ export default function AdminUsersPage() {
     setPermSaving(true);
     setPermError(null);
     try {
-      const res = await fetch(`/api/admin/users/${permUserId}/permissions`, {
+      await apiJson(`/api/admin/users/${permUserId}/permissions`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ role: permRole, permissions: permList }),
       });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || 'Failed to update permissions');
-      }
       setShowPermModal(false);
       loadData();
     } catch (err) {

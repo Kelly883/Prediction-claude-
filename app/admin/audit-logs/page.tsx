@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useMemo } from 'react';
-import { apiJson } from '@/lib/api-client';
+import { apiJson, apiFetch } from '@/lib/api-client';
 import { Shield, User, Clock, Terminal, Search, Filter, Download, ChevronDown, ChevronUp, Eye } from 'lucide-react';
 
 type Log = {
@@ -81,7 +81,12 @@ export default function AdminAuditLogPage() {
 
   useEffect(() => {
     setLoading(true);
-    apiJson<Log[]>(`/api/admin/audit-logs?${queryParams}`)
+    apiFetch(`/api/admin/audit-logs?${queryParams}`)
+      .then((res) => {
+        const total = Number(res.headers.get('X-Total-Count') || '0');
+        setTotal(total);
+        return res.json();
+      })
       .then((data) => {
         setLogs(data);
         setLoading(false);

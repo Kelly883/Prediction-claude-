@@ -2,12 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireSuperAdmin, errorResponse, ApiError } from '@/lib/rbac';
 import { writeAudit } from '@/lib/audit';
-import { PERMISSIONS } from '@/lib/permissions';
+import { PERMISSIONS, ALL_PERMISSIONS } from '@/lib/permissions';
+import { requireSameOrigin, requireCsrf } from '@/lib/csrf';
 
 export const runtime = 'nodejs';
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    requireSameOrigin(req);
+    requireCsrf(req);
     const superAdmin = await requireSuperAdmin(req);
     const { id } = await params;
     const body = await req.json();
@@ -23,11 +26,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     const targetUser = await prisma.user.findUnique({
       where: { id },
-      select: { id: true, role: true, name: true, email: true },
+      select: { id: true, role: true, name: true, email: true, deletedAt: true },
     });
 
     if (!targetUser) {
       throw new ApiError(404, 'User not found');
+    }
+
+    if (targetUser.deletedAt) {
+      throw new ApiError(400, 'Cannot modify a deactivated user');
     }
 
     if (targetUser.id === superAdmin.sub) {
@@ -43,7 +50,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
 
     if (role === 'admin' && Array.isArray(permissions)) {
-      const invalidPerms = permissions.filter((p) => !Object.values(PERMISSIONS).includes(p as any));
+      const invalidPerms = permissions.filter((p) => !ALL_PERMISSIONS.includes(p as any));
       if (invalidPerms.length > 0) {
         throw new ApiError(400, `Invalid permissions: ${invalidPerms.join(', ')}`);
       }
