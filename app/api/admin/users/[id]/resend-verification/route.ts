@@ -1,7 +1,8 @@
 import crypto from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAdmin, errorResponse, ApiError } from '@/lib/rbac';
+import { requirePermission, errorResponse, ApiError } from '@/lib/rbac';
+import { PERMISSIONS } from '@/lib/permissions';
 import { requireSameOrigin, requireCsrf } from '@/lib/csrf';
 import { sendAdminVerificationEmail } from '@/lib/email';
 import { writeAudit } from '@/lib/audit';
@@ -19,7 +20,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   try {
     requireSameOrigin(req);
     requireCsrf(req);
-    const admin = await requireAdmin(req);
+    const admin = await requirePermission(req, PERMISSIONS.pages.users);
     const { id } = await params;
 
     const user = await prisma.user.findUnique({ where: { id } });

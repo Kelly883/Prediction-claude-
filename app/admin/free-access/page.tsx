@@ -2,12 +2,16 @@
 
 import { useEffect, useState } from 'react';
 import { apiJson } from '@/lib/api-client';
+import { useHasPermission } from '@/lib/use-permissions';
+import { PERMISSIONS } from '@/lib/permissions';
 import { Gift, ShieldAlert, Check, Plus, Trash2, Calendar, UserCheck } from 'lucide-react';
 
 type Rule = { id: string; type: 'global_trial' | 'promo_window'; trialDays: number | null; startAt: string | null; endAt: string | null; isActive: boolean };
 type Grant = { id: string; expiresAt: string | null; user: { email: string }; post: { title: string } | null };
 
 export default function FreeAccessPage() {
+  const canManageFreeAccess = useHasPermission(PERMISSIONS.pages.freeAccess);
+
   const [rules, setRules] = useState<Rule[]>([]);
   const [grants, setGrants] = useState<Grant[]>([]);
   const [loading, setLoading] = useState(true);
@@ -143,12 +147,13 @@ export default function FreeAccessPage() {
                         : `${new Date(r.startAt!).toLocaleDateString()} → ${new Date(r.endAt!).toLocaleDateString()}`}
                     </div>
                   </div>
-                  <button
-                    onClick={() => toggleRule(r)}
-                    className="btn btn-ghost text-xs py-1.5 px-3"
-                  >
-                    {r.isActive ? 'Disable' : 'Enable'}
-                  </button>
+                   <button
+                     onClick={() => toggleRule(r)}
+                     className="btn btn-ghost text-xs py-1.5 px-3"
+                     disabled={!canManageFreeAccess}
+                   >
+                     {r.isActive ? 'Disable' : 'Enable'}
+                   </button>
                 </div>
               ))}
             </div>
@@ -219,7 +224,7 @@ export default function FreeAccessPage() {
 
             {ruleError && <div className="admin-form-error"><span>{ruleError}</span></div>}
 
-            <button type="submit" className="btn btn-primary w-full py-2.5 text-sm font-semibold" disabled={savingRule}>
+            <button type="submit" className="btn btn-primary w-full py-2.5 text-sm font-semibold" disabled={savingRule || !canManageFreeAccess}>
               {savingRule ? 'Saving…' : 'Activate Rule'}
             </button>
           </div>
@@ -255,6 +260,7 @@ export default function FreeAccessPage() {
                   <button
                     onClick={() => revokeGrant(g.id)}
                     className="btn btn-ghost text-xs py-1.5 px-3 text-red-400 hover:text-red-300"
+                    disabled={!canManageFreeAccess}
                   >
                     Revoke
                   </button>
@@ -288,7 +294,7 @@ export default function FreeAccessPage() {
 
             {grantError && <div className="admin-form-error"><span>{grantError}</span></div>}
 
-            <button type="submit" className="btn btn-primary w-full py-2.5 text-sm font-semibold" disabled={savingGrant}>
+            <button type="submit" className="btn btn-primary w-full py-2.5 text-sm font-semibold" disabled={savingGrant || !canManageFreeAccess}>
               {savingGrant ? 'Granting Access…' : 'Grant Full VIP Access'}
             </button>
           </div>

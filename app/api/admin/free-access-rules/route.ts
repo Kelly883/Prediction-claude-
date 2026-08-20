@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAdmin, requireAdminWith2FA, errorResponse } from '@/lib/rbac';
+import { requirePermission, errorResponse } from '@/lib/rbac';
+import { PERMISSIONS } from '@/lib/permissions';
 import { writeAudit } from '@/lib/audit';
 import { FreeAccessRuleSchema } from '@/lib/schemas';
 import { requireCsrf } from '@/lib/csrf';
@@ -12,7 +13,7 @@ export const runtime = 'nodejs';
 // lib/entitlement.ts already reads these; this is the API to create them.
 export async function GET(req: NextRequest) {
   try {
-    await requireAdmin(req);
+    await requirePermission(req, PERMISSIONS.pages.freeAccess);
     const rules = await prisma.freeAccessRule.findMany({ orderBy: { createdAt: 'desc' } });
     return NextResponse.json(rules);
   } catch (err) {
@@ -23,7 +24,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     requireCsrf(req);
-    const admin = await requireAdminWith2FA(req);
+    const admin = await requirePermission(req, PERMISSIONS.pages.freeAccess);
     const dto = FreeAccessRuleSchema.parse(await req.json());
 
     const rule = await prisma.freeAccessRule.create({

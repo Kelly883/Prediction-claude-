@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
-import { requireAdmin, requireAdminWith2FA, errorResponse } from '@/lib/rbac';
+import { requirePermission, errorResponse } from '@/lib/rbac';
+import { PERMISSIONS } from '@/lib/permissions';
 import { writeAudit } from '@/lib/audit';
 import { requireCsrf } from '@/lib/csrf';
 import { parsePagination, withPaginationHeaders } from '@/lib/pagination';
@@ -28,7 +29,7 @@ const CreatePredictionSchema = z.object({
 
 export async function GET(req: NextRequest) {
   try {
-    await requireAdmin(req);
+    await requirePermission(req, PERMISSIONS.pages.predictions);
     const { page, pageSize, offset } = parsePagination(req);
 
     const posts = await prisma.predictionPost.findMany({
@@ -50,7 +51,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     requireCsrf(req);
-    const admin = await requireAdminWith2FA(req);
+    const admin = await requirePermission(req, PERMISSIONS.pages.predictions);
     const dto = CreatePredictionSchema.parse(await req.json());
 
     const post = await prisma.predictionPost.create({

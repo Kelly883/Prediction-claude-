@@ -11,8 +11,6 @@ vi.mock('@/lib/rbac', async (importOriginal) => {
   const actual: any = await importOriginal();
   return {
     ...actual,
-    requireAdminWith2FA: vi.fn().mockResolvedValue({ sub: 'admin_1', role: 'admin' }),
-    requireAdmin: vi.fn().mockResolvedValue({ sub: 'admin_1', role: 'admin' }),
     errorResponse: (err: any) => {
       const message = err?.message ?? 'Internal server error';
       const status = err?.status ?? 500;
@@ -21,6 +19,7 @@ vi.mock('@/lib/rbac', async (importOriginal) => {
     ApiError: class ApiError extends Error {
       constructor(public status: number, message: string) { super(message); }
     },
+    requirePermission: vi.fn().mockResolvedValue({ sub: 'admin_1', role: 'admin', permissions: [] }),
   };
 });
 
@@ -39,7 +38,7 @@ describe('Admin Prediction Image Upload API Route Security', () => {
 
   beforeEach(async () => {
     vi.restoreAllMocks();
-    (rbac.requireAdminWith2FA as any).mockResolvedValue({ sub: 'admin_1', role: 'admin' });
+    (rbac.requirePermission as any).mockResolvedValue({ sub: 'admin_1', role: 'admin', permissions: [] });
     (ratelimit.checkRateLimit as any).mockResolvedValue(true);
 
     sampleJpegBuffer = await sharp({
@@ -71,7 +70,7 @@ describe('Admin Prediction Image Upload API Route Security', () => {
 
   describe('Authentication & RBAC Authorization Checks', () => {
     it('rejects unauthenticated requests with 401 Unauthorized', async () => {
-      (rbac.requireAdminWith2FA as any).mockRejectedValueOnce(new rbac.ApiError(401, 'Missing session'));
+      (rbac.requirePermission as any).mockRejectedValueOnce(new rbac.ApiError(401, 'Missing session'));
 
       const req = createMultipartRequest('http://localhost:3000/api/admin/predictions/p1/images', null);
       const res = await POST(req, { params: Promise.resolve({ id: 'p1' }) });
@@ -82,7 +81,7 @@ describe('Admin Prediction Image Upload API Route Security', () => {
     });
 
     it('rejects standard users (role: user) with 403 Forbidden', async () => {
-      (rbac.requireAdminWith2FA as any).mockRejectedValueOnce(new rbac.ApiError(403, 'Insufficient permissions'));
+      (rbac.requirePermission as any).mockRejectedValueOnce(new rbac.ApiError(403, 'Insufficient permissions'));
 
       const req = createMultipartRequest('http://localhost:3000/api/admin/predictions/p1/images', null);
       const res = await POST(req, { params: Promise.resolve({ id: 'p1' }) });

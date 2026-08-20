@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAdmin, errorResponse } from '@/lib/rbac';
+import { requirePermission, errorResponse } from '@/lib/rbac';
+import { PERMISSIONS } from '@/lib/permissions';
 import { requireSameOrigin, requireCsrf } from '@/lib/csrf';
 import { previewCsv } from '@/lib/csv-import';
 import { checkRateLimit, csvUploadLimiter } from '@/lib/ratelimit';
@@ -11,7 +12,7 @@ export async function POST(req: NextRequest) {
   try {
     requireSameOrigin(req);
     requireCsrf(req);
-    const admin = await requireAdmin(req);
+    const admin = await requirePermission(req, PERMISSIONS.pages.predictions);
     if (!(await checkRateLimit(csvUploadLimiter, admin.sub))) {
       return NextResponse.json({ error: 'Too many uploads, try again shortly' }, { status: 429 });
     }

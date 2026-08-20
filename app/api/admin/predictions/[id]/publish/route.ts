@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAdminWith2FA, errorResponse } from '@/lib/rbac';
+import { requirePermission, errorResponse } from '@/lib/rbac';
 import { writeAudit } from '@/lib/audit';
 import { requireSameOrigin, requireCsrf } from '@/lib/csrf';
+import { PERMISSIONS } from '@/lib/permissions';
 
 export const runtime = 'nodejs';
 
@@ -10,7 +11,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   try {
     requireSameOrigin(req);
     requireCsrf(req);
-    const admin = await requireAdminWith2FA(req);
+    const admin = await requirePermission(req, PERMISSIONS.pages.predictions);
     const { id } = await params;
     const post = await prisma.predictionPost.update({ where: { id }, data: { status: 'published' } });
     await writeAudit({ actorId: admin.sub, action: 'prediction.publish', targetId: post.id });

@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAdmin, errorResponse } from '@/lib/rbac';
+import { requirePermission, errorResponse, ApiError } from '@/lib/rbac';
+import { PERMISSIONS } from '@/lib/permissions';
 import { parsePagination, withPaginationHeaders } from '@/lib/pagination';
 
 export const runtime = 'nodejs';
 
 export async function GET(req: NextRequest) {
   try {
-    await requireAdmin(req);
+    await requirePermission(req, PERMISSIONS.pages.auditLogs);
     const action = req.nextUrl.searchParams.get('action') ?? undefined;
     const category = req.nextUrl.searchParams.get('category') ?? undefined;
     const search = req.nextUrl.searchParams.get('search')?.trim().toLowerCase() ?? undefined;
@@ -16,8 +17,14 @@ export async function GET(req: NextRequest) {
     const { page, pageSize, offset } = parsePagination(req);
 
     const where: any = {};
-    if (action) where.action = action;
-    if (category) where.action = { startsWith: category + '.' };
+    if (action) {
+      const safeAction = String(action).replace(/[^a-zA-Z0-9._-]/g, '');
+      if (safeAction) where.action = safeAction;
+    }
+    if (category) {
+      const safeCategory = String(category).replace(/[^a-zA-Z0-9_-]/g, '');
+      if (safeCategory) where.action = { startsWith: safeCategory + '.' };
+    }
     if (search) {
       where.OR = [
         { action: { contains: search, mode: 'insensitive' } },
@@ -27,17 +34,19 @@ export async function GET(req: NextRequest) {
     }
     if (dateFrom || dateTo) {
       where.createdAt = {};
-      if (dateFrom) where.createdAt.gte = new Date(dateFrom);
-      if (dateTo) where.createdAt.lte = new Date(dateTo + 'T23:59:59');
+      if (dateFrom) {
+        const from = new Date(dateFrom);
+        if (isNaN(from.getTime())) throw new ApiError(400, 'Invalid dateFrom');
+        where.createdAt.gte = from;
+      }
+      if (dateTo) {
+        const to = new Date(dateTo);
+        if (isNaN(to.getTime())) throw new ApiError(400, 'Invalid dateTo');
+        where.createdAt.lte = new Date(to.getFullYear(), to.getMonth(), to.getDate(), 23, 59, 59);
+      }
     }
 
-    // availableActions is intentionally unfiltered (whole table, not `where`)
-    // — it populates the Action filter dropdown itself, so it must list
-    // every action that has EVER been logged, not just the ones on the
-    // current page/filtered view. Previously this dropdown was built from
-    // `logs` (the current page only), so an action that only ever occurred
-    // on page 3 was literally unselectable while looking at page 1.
-    const [logs, total, distinctActions] = await Promise.all([
+    const [logs, total] = await Promise.all([
       prisma.auditLog.findMany({
         where,
         orderBy: { createdAt: 'desc' },
@@ -46,24 +55,25 @@ export async function GET(req: NextRequest) {
         include: { actor: { select: { email: true } } },
       }),
       prisma.auditLog.count({ where }),
-      prisma.auditLog.findMany({ distinct: ['action'], select: { action: true }, orderBy: { action: 'asc' } }),
     ]);
+
+    const distinctActions = await prisma.auditLog.findMany({
+      select: { action: true },
+      distinct: ['action'],
+      orderBy: { action: 'asc' },
+    });
+
+    const availableActions = distinctActions.map((a) => a.action);
 
     const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
-    // Total count and the full action list are in the JSON body, not just
-    // response headers — the frontend's fetch wrapper (apiJson) only ever
-    // returns the parsed body and discards headers, so `X-Total` etc. were
-    // being set correctly but were never actually reachable by any caller.
-    // Kept the headers too for any other consumer, but the body is now the
-    // real contract.
     const res = NextResponse.json({
       logs,
       total,
       page,
       pageSize,
       totalPages,
-      availableActions: distinctActions.map((a) => a.action),
+      availableActions,
     });
     return withPaginationHeaders(res, page, pageSize, total);
   } catch (err) {

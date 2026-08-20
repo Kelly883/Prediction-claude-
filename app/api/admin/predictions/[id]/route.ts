@@ -1,14 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAdmin, requireAdminWith2FA, errorResponse, ApiError } from '@/lib/rbac';
+import { requirePermission, errorResponse, ApiError } from '@/lib/rbac';
+import { PERMISSIONS } from '@/lib/permissions';
 import { writeAudit } from '@/lib/audit';
 import { UpdatePredictionSchema } from '@/lib/schemas';
+import { requireSameOrigin, requireCsrf } from '@/lib/csrf';
 
 export const runtime = 'nodejs';
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    await requireAdmin(req);
+    await requirePermission(req, PERMISSIONS.pages.predictions);
     const { id } = await params;
     const post = await prisma.predictionPost.findUnique({
       where: { id },
@@ -23,7 +25,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const admin = await requireAdminWith2FA(req);
+    requireSameOrigin(req);
+    requireCsrf(req);
+    const admin = await requirePermission(req, PERMISSIONS.pages.predictions);
     const { id } = await params;
     const dto = UpdatePredictionSchema.parse(await req.json());
     const data: any = { ...dto };

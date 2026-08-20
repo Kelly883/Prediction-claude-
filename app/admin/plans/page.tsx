@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { apiJson } from '@/lib/api-client';
+import { useHasPermission } from '@/lib/use-permissions';
+import { PERMISSIONS } from '@/lib/permissions';
 import {
   Crown,
   Sparkles,
@@ -38,6 +40,8 @@ type FormState = {
 const emptyForm: FormState = { name: '', durationDays: 30, priceNGN: '', priceUSDOverride: '' };
 
 export default function AdminPlansPage() {
+  const canEditPlans = useHasPermission(PERMISSIONS.pages.plans);
+
   const [plans, setPlans] = useState<Plan[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
@@ -186,32 +190,36 @@ export default function AdminPlansPage() {
                 </div>
 
                 <div className="admin-plan-actions-grid">
-                  <button
-                    type="button"
-                    onClick={() => startEdit(p)}
-                    className="admin-plan-btn-edit"
-                  >
-                    <Pencil size={15} />
-                    <span>Edit</span>
-                  </button>
+                  {canEditPlans && (
+                    <button
+                      type="button"
+                      onClick={() => startEdit(p)}
+                      className="admin-plan-btn-edit"
+                    >
+                      <Pencil size={15} />
+                      <span>Edit</span>
+                    </button>
+                  )}
 
-                  <button
-                    type="button"
-                    onClick={() => toggleActive(p)}
-                    className={p.isActive ? 'admin-plan-btn-deactivate' : 'admin-plan-btn-activate'}
-                  >
-                    {p.isActive ? (
-                      <>
-                        <X size={15} />
-                        <span>Deactivate</span>
-                      </>
-                    ) : (
-                      <>
-                        <Check size={15} />
-                        <span>Activate</span>
-                      </>
-                    )}
-                  </button>
+                  {canEditPlans && (
+                    <button
+                      type="button"
+                      onClick={() => toggleActive(p)}
+                      className={p.isActive ? 'admin-plan-btn-deactivate' : 'admin-plan-btn-activate'}
+                    >
+                      {p.isActive ? (
+                        <>
+                          <X size={15} />
+                          <span>Deactivate</span>
+                        </>
+                      ) : (
+                        <>
+                          <Check size={15} />
+                          <span>Activate</span>
+                        </>
+                      )}
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
@@ -219,7 +227,8 @@ export default function AdminPlansPage() {
         )}
       </section>
 
-      <section id="plan-form-section" className="admin-plan-form-card">
+      {canEditPlans && (
+        <section id="plan-form-section" className="admin-plan-form-card">
         <h2 className="admin-plan-form-title">
           <Sparkles size={20} className="text-[#f5b335]" />
           <span>{editingId ? 'Edit Membership Plan' : 'Create New Plan'}</span>
@@ -340,6 +349,7 @@ export default function AdminPlansPage() {
           </div>
         </form>
       </section>
+      )}
     </div>
   );
 }

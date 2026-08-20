@@ -11,12 +11,12 @@ function AdminChrome({ children }: { children: React.ReactNode }) {
   const router = useRouter();
 
   useEffect(() => {
-    if (!loading && user && user.role !== 'admin') {
+    if (!loading && user && user.role !== 'admin' && user.role !== 'superadmin') {
       router.replace('/dashboard');
     }
   }, [user, loading, router]);
 
-  if (!loading && user && user.role !== 'admin') {
+  if (!loading && user && user.role !== 'admin' && user.role !== 'superadmin') {
     return (
       <div className="p-8 text-center text-sm text-[var(--chalk-muted)]">
         Redirecting to Member Dashboard…
@@ -30,7 +30,7 @@ function AdminChrome({ children }: { children: React.ReactNode }) {
       <section className="section-tight">
         <div className="container admin-overview-shell">
           <div className="admin-nav-tabs-wrapper mb-5">
-            <AdminNavTabs />
+            <AdminNavTabs permissions={user?.permissions} />
           </div>
           <div className="dashboard-content">{children}</div>
         </div>

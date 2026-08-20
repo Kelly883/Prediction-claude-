@@ -1,0 +1,18 @@
+{
+  "id": "20250819_add_superadmin_and_permissions",
+  "createdAt": "2025-08-19T21:55:00.000Z",
+  "steps": [
+    {
+      "id": "01_alter_role_enum",
+      "generatedAt": "2025-08-19T21:55:00.000Z"
+    },
+    {
+      "id": "02_alter_user_table",
+      "generatedAt": "2025-08-19T21:55:00.000Z"
+    },
+    {
+      "id": "03_create_permissions_index",
+      "generatedAt": "2025-08-19T21:55:00.000Z"
+    }
+  ]
+}

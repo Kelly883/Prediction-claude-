@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAdmin, requireAdminWith2FA, errorResponse, ApiError } from '@/lib/rbac';
+import { requirePermission, errorResponse, ApiError } from '@/lib/rbac';
+import { PERMISSIONS } from '@/lib/permissions';
 import { uploadMedia } from '@/lib/media';
 import { writeAudit } from '@/lib/audit';
 import { prisma } from '@/lib/prisma';
 import { checkRateLimit, adminLimiter, getClientIp } from '@/lib/ratelimit';
 import { UpdatePredictionSchema } from '@/lib/schemas';
-import { requireSameOrigin } from '@/lib/csrf';
+import { requireSameOrigin, requireCsrf } from '@/lib/csrf';
 
 export const runtime = 'nodejs'; // sharp requires the Node runtime
 
@@ -16,27 +17,28 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const admin = await requireAdminWith2FA(req);
+    const admin = await requirePermission(req, PERMISSIONS.pages.predictions);
     const ip = getClientIp(req);
 
     requireSameOrigin(req);
+    requireCsrf(req);
 
     const allowed = await checkRateLimit(adminLimiter, ip);
     if (!allowed) {
-      return NextResponse.json({ error: 'Too many upload attempts, try again shortly.' }, { status: 429 });
+      return NextResponse.json(
+        { error: 'Too many upload attempts, try again shortly.' },
+        { status: 429 },
+      );
     }
 
     const { id: postId } = await params;
 
-    // Check image quota per post
-    if (prisma?.mediaAsset?.count) {
-      const existingCount = await prisma.mediaAsset.count({ where: { postId } });
-      if (existingCount >= MAX_IMAGES_PER_POST) {
-        return NextResponse.json(
-          { error: `Maximum of ${MAX_IMAGES_PER_POST} images reached for this prediction.` },
-          { status: 400 },
-        );
-      }
+    const existingCount = await prisma.mediaAsset.count({ where: { postId } });
+    if (existingCount >= MAX_IMAGES_PER_POST) {
+      return NextResponse.json(
+        { error: `Maximum of ${MAX_IMAGES_PER_POST} images reached for this prediction.` },
+        { status: 400 },
+      );
     }
 
     const formData = await req.formData();

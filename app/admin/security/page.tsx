@@ -27,6 +27,14 @@ export default function AdminSecurityPage() {
 
   const [actionError, setActionError] = useState<string | null>(null);
 
+  useEffect(() => {
+    return () => {
+      setSetupSecret(null);
+      setSetupOtpUri(null);
+      setRecoveryCodes(null);
+    };
+  }, []);
+
   async function loadStatus() {
     try {
       const data = await apiJson<{ twoFactorEnabled: boolean }>('/api/auth/2fa/status');
@@ -71,6 +79,9 @@ export default function AdminSecurityPage() {
       });
       setVerifyStatus('enabled');
       setTwoFactorEnabled(true);
+      setSetupSecret(null);
+      setSetupOtpUri(null);
+      setVerifyCode('');
       loadStatus();
     } catch (err) {
       setVerifyError((err as Error).message);

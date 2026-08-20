@@ -13,6 +13,15 @@ type Log = {
   metadata?: Record<string, unknown>;
 };
 
+type AuditLogResponse = {
+  logs: Log[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  availableActions: string[];
+};
+
 type Category = 'auth' | 'user' | 'admin' | 'payment' | 'system' | 'security';
 
 const CATEGORY_META: Record<string, { label: string; className: string }> = {
@@ -61,7 +70,6 @@ export default function AdminAuditLogPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [density, setDensity] = useState<'comfortable' | 'compact'>('comfortable');
-  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const [search, setSearch] = useState('');
   const [actionFilter, setActionFilter] = useState('');
@@ -83,47 +91,28 @@ export default function AdminAuditLogPage() {
 
   useEffect(() => {
     setLoading(true);
-    apiJson<{ logs: Log[]; total: number; availableActions: string[] }>(`/api/admin/audit-logs?${queryParams}`)
+    apiJson<AuditLogResponse>(`/api/admin/audit-logs?${queryParams}`)
       .then((data) => {
         setLogs(data.logs);
         setTotal(data.total);
         setAvailableActions(data.availableActions);
-        setSelected(new Set()); // selection doesn't carry across a changed/reloaded page
-        setLoading(false);
       })
-      .catch(() => setLoading(false));
+      .finally(() => setLoading(false));
   }, [queryParams]);
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const start = total === 0 ? 0 : (page - 1) * pageSize + 1;
   const end = Math.min(page * pageSize, total);
 
+  const uniqueActions = availableActions;
+
   function toggleExpand(id: string) {
     setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
   }
 
-  function toggleSelected(id: string) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
-  function toggleSelectAll() {
-    setSelected((prev) => (prev.size === logs.length ? new Set() : new Set(logs.map((l) => l.id))));
-  }
-
   function exportCsv() {
-    // Exports the selection if the admin has picked specific rows to
-    // investigate/hand off (e.g. for an incident report); otherwise exports
-    // everything currently loaded on this page — the checkboxes previously
-    // had no effect on Export CSV at all despite visibly existing, which
-    // made them look interactive while doing nothing.
-    const rowsToExport = selected.size > 0 ? logs.filter((l) => selected.has(l.id)) : logs;
     const header = 'Action,Actor,Target ID,Timestamp,Category,Metadata\n';
-    const rows = rowsToExport.map((l) => {
+    const rows = logs.map((l) => {
       const cat = getCategory(l.action);
       const meta = l.metadata ? JSON.stringify(l.metadata).replace(/"/g, '""') : '';
       return `"${l.action}","${l.actor?.email ?? ''}","${l.targetId ?? ''}","${l.createdAt}","${cat}","${meta}"`;
@@ -183,7 +172,7 @@ export default function AdminAuditLogPage() {
               disabled={logs.length === 0}
             >
               <Download size={13} />
-              <span>{selected.size > 0 ? `Export Selected (${selected.size})` : 'Export CSV'}</span>
+              <span>Export CSV</span>
             </button>
           </div>
         </div>
@@ -232,7 +221,7 @@ export default function AdminAuditLogPage() {
                   style={{ fontSize: 13 }}
                 >
                   <option value="">All actions</option>
-                  {availableActions.map((a) => (
+                  {uniqueActions.map((a) => (
                     <option key={a} value={a}>{a}</option>
                   ))}
                 </select>
@@ -302,15 +291,7 @@ export default function AdminAuditLogPage() {
               <table className="admin-table">
                 <thead>
                   <tr>
-                    <th style={{ width: 40 }}>
-                      <input
-                        type="checkbox"
-                        style={{ accentColor: 'var(--floodlight)' }}
-                        checked={logs.length > 0 && selected.size === logs.length}
-                        onChange={toggleSelectAll}
-                        aria-label="Select all rows on this page"
-                      />
-                    </th>
+                    <th style={{ width: 40 }}></th>
                     <th>Action</th>
                     <th>Actor</th>
                     <th>Target ID</th>
@@ -330,9 +311,7 @@ export default function AdminAuditLogPage() {
                             <input
                               type="checkbox"
                               style={{ accentColor: 'var(--floodlight)' }}
-                              checked={selected.has(l.id)}
-                              onChange={() => toggleSelected(l.id)}
-                              aria-label={`Select log entry ${l.action}`}
+                              onClick={(e) => e.stopPropagation()}
                             />
                           </td>
                           <td>
@@ -366,28 +345,13 @@ export default function AdminAuditLogPage() {
                           <tr key={`${l.id}-meta`}>
                             <td colSpan={6} style={{ padding: 0, borderBottom: '1px solid rgba(243,245,236,0.08)' }}>
                               <div className="meta" style={{ padding: '14px 24px' }}>
-                                <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', marginBottom: 10, fontSize: 12 }}>
-                                  <span><strong>Log ID:</strong> <span className="mono">{l.id}</span></span>
-                                  <span><strong>Created:</strong> {formatDate(l.createdAt)}</span>
-                                  <span><strong>Category:</strong> {meta.label}</span>
-                                </div>
-                                {l.metadata && Object.keys(l.metadata).length > 0 ? (
-                                  <pre
-                                    style={{
-                                      background: 'rgba(0,0,0,0.3)',
-                                      padding: '10px 12px',
-                                      borderRadius: 6,
-                                      fontSize: 12,
-                                      overflowX: 'auto',
-                                      margin: 0,
-                                      color: 'var(--chalk-muted)',
-                                    }}
-                                  >
-                                    {JSON.stringify(l.metadata, null, 2)}
-                                  </pre>
-                                ) : (
-                                  <span style={{ fontSize: 12, color: 'var(--chalk-muted)' }}>No additional metadata recorded.</span>
-                                )}
+                                <strong>Log ID:</strong> {l.id} &nbsp;|&nbsp;
+                                <strong>Created:</strong> {formatDate(l.createdAt)} &nbsp;|&nbsp;
+                                <strong>Category:</strong> {meta.label} &nbsp;|&nbsp;
+                                <strong>Metadata:</strong>{' '}
+                                <code style={{ background: 'rgba(0,0,0,0.3)', padding: '2px 6px', borderRadius: 4 }}>
+                                  {JSON.stringify(l.metadata || {})}
+                                </code>
                               </div>
                             </td>
                           </tr>
@@ -437,27 +401,12 @@ export default function AdminAuditLogPage() {
                     </div>
                     {isExpanded && (
                       <div className="meta" style={{ marginTop: 10, padding: '10px 12px' }}>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 8, fontSize: 11 }}>
-                          <span><strong>Log ID:</strong> <span className="mono">{l.id}</span></span>
-                          <span><strong>Category:</strong> {meta.label}</span>
-                        </div>
-                        {l.metadata && Object.keys(l.metadata).length > 0 ? (
-                          <pre
-                            style={{
-                              background: 'rgba(0,0,0,0.3)',
-                              padding: '8px 10px',
-                              borderRadius: 6,
-                              fontSize: 11,
-                              overflowX: 'auto',
-                              margin: 0,
-                              color: 'var(--chalk-muted)',
-                            }}
-                          >
-                            {JSON.stringify(l.metadata, null, 2)}
-                          </pre>
-                        ) : (
-                          <span style={{ fontSize: 11, color: 'var(--chalk-muted)' }}>No additional metadata recorded.</span>
-                        )}
+                        <strong>Log ID:</strong> {l.id} &nbsp;|&nbsp;
+                        <strong>Category:</strong> {meta.label} &nbsp;|&nbsp;
+                        <strong>Metadata:</strong>{' '}
+                        <code style={{ background: 'rgba(0,0,0,0.3)', padding: '2px 6px', borderRadius: 4 }}>
+                          {JSON.stringify(l.metadata || {})}
+                        </code>
                       </div>
                     )}
                   </div>

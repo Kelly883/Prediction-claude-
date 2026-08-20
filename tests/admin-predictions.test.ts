@@ -13,8 +13,10 @@ vi.mock('@/lib/rbac', async (importOriginal) => {
   const actual: any = await importOriginal();
   return {
     ...actual,
-    requireAdmin: vi.fn().mockResolvedValue({ sub: 'admin-1', role: 'admin' }),
-    requireAdminWith2FA: vi.fn().mockResolvedValue({ sub: 'admin-1', role: 'admin' }),
+    requirePermission: vi.fn().mockResolvedValue({ sub: 'admin-1', role: 'admin', permissions: [] }),
+    hasPermission: vi.fn().mockReturnValue(true),
+    requirePermission: vi.fn().mockResolvedValue({ sub: 'admin-1', role: 'admin', permissions: [] }),
+    hasPermission: vi.fn().mockReturnValue(true),
   };
 });
 vi.mock('@/lib/audit', () => ({
