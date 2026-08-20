@@ -16,6 +16,9 @@ type Log = {
 type AuditLogResponse = {
   logs: Log[];
   total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
   availableActions: string[];
 };
 
