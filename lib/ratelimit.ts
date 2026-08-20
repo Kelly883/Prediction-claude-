@@ -3,7 +3,7 @@ import { NextRequest } from 'next/server';
 import { redis } from './redis';
 import { ApiError } from './rbac';
 
-export type RateLimitPolicy = 'AUTH' | 'PAYMENT' | 'ADMIN' | 'PUBLIC';
+export type RateLimitPolicy = 'AUTH' | 'PAYMENT' | 'ADMIN' | 'PUBLIC' | 'BOOTSTRAP';
 
 export interface RateLimitOptions {
   failClosed?: boolean;
@@ -53,6 +53,15 @@ export const publicLimiter = new Ratelimit({
 (publicLimiter as any).policy = 'PUBLIC';
 (publicLimiter as any).failClosed = false;
 
+// 5. BOOTSTRAP policy: 3 requests per 300s, strictly fail-closed (one-time superadmin setup)
+export const bootstrapLimiter = new Ratelimit({
+  redis,
+  limiter: Ratelimit.slidingWindow(3, '300 s'),
+  prefix: 'rl:bootstrap',
+});
+(bootstrapLimiter as any).policy = 'BOOTSTRAP';
+(bootstrapLimiter as any).failClosed = true;
+
 // Alias for backwards compatibility
 export const defaultLimiter = publicLimiter;
 
@@ -61,6 +70,7 @@ export const POLICY_LIMITERS: Record<RateLimitPolicy, { limiter: Ratelimit; fail
   PAYMENT: { limiter: paymentLimiter, failClosed: true },
   ADMIN: { limiter: adminLimiter, failClosed: true },
   PUBLIC: { limiter: publicLimiter, failClosed: false },
+  BOOTSTRAP: { limiter: bootstrapLimiter, failClosed: true },
 };
 
 /**
