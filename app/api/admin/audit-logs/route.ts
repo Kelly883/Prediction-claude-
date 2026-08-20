@@ -31,7 +31,13 @@ export async function GET(req: NextRequest) {
       if (dateTo) where.createdAt.lte = new Date(dateTo + 'T23:59:59');
     }
 
-    const [logs, total] = await Promise.all([
+    // availableActions is intentionally unfiltered (whole table, not `where`)
+    // — it populates the Action filter dropdown itself, so it must list
+    // every action that has EVER been logged, not just the ones on the
+    // current page/filtered view. Previously this dropdown was built from
+    // `logs` (the current page only), so an action that only ever occurred
+    // on page 3 was literally unselectable while looking at page 1.
+    const [logs, total, distinctActions] = await Promise.all([
       prisma.auditLog.findMany({
         where,
         orderBy: { createdAt: 'desc' },
@@ -40,9 +46,25 @@ export async function GET(req: NextRequest) {
         include: { actor: { select: { email: true } } },
       }),
       prisma.auditLog.count({ where }),
+      prisma.auditLog.findMany({ distinct: ['action'], select: { action: true }, orderBy: { action: 'asc' } }),
     ]);
 
-    const res = NextResponse.json(logs);
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+    // Total count and the full action list are in the JSON body, not just
+    // response headers — the frontend's fetch wrapper (apiJson) only ever
+    // returns the parsed body and discards headers, so `X-Total` etc. were
+    // being set correctly but were never actually reachable by any caller.
+    // Kept the headers too for any other consumer, but the body is now the
+    // real contract.
+    const res = NextResponse.json({
+      logs,
+      total,
+      page,
+      pageSize,
+      totalPages,
+      availableActions: distinctActions.map((a) => a.action),
+    });
     return withPaginationHeaders(res, page, pageSize, total);
   } catch (err) {
     return errorResponse(err);
