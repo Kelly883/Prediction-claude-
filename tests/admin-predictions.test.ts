@@ -15,8 +15,6 @@ vi.mock('@/lib/rbac', async (importOriginal) => {
     ...actual,
     requirePermission: vi.fn().mockResolvedValue({ sub: 'admin-1', role: 'admin', permissions: [] }),
     hasPermission: vi.fn().mockReturnValue(true),
-    requirePermission: vi.fn().mockResolvedValue({ sub: 'admin-1', role: 'admin', permissions: [] }),
-    hasPermission: vi.fn().mockReturnValue(true),
   };
 });
 vi.mock('@/lib/audit', () => ({
