@@ -22,11 +22,10 @@ export async function GET(req: NextRequest) {
         twoFactorEnabled: true,
         emailVerifiedAt: true,
         createdAt: true,
-        deletedAt: true,
       },
     });
 
-    if (!record || record.deletedAt) {
+    if (!record) {
       throw new ApiError(403, 'Account has been deactivated');
     }
 

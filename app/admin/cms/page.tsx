@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { apiJson } from '@/lib/api-client';
+import { useHasPermission } from '@/lib/use-permissions';
+import { PERMISSIONS } from '@/lib/permissions';
 import { FileEdit, Layers, Save, Plus, Info } from 'lucide-react';
 
 type Section = { key: string; content: { heading?: string; body?: string } };
@@ -14,6 +16,8 @@ const PAGES = [
 ];
 
 export default function AdminCmsPage() {
+  const canEditCms = useHasPermission(PERMISSIONS.pages.cms);
+
   const [page, setPage] = useState('terms');
   const [sections, setSections] = useState<Section[]>([]);
   const [key, setKey] = useState('');
@@ -101,6 +105,7 @@ export default function AdminCmsPage() {
             <button
               onClick={resetForm}
               className="text-xs text-[var(--floodlight)] hover:underline inline-flex items-center gap-1"
+              disabled={!canEditCms}
             >
               <Plus size={12} />
               <span>New Block</span>
@@ -211,12 +216,12 @@ export default function AdminCmsPage() {
             <button
               type="submit"
               className="btn btn-primary py-2.5 px-5 text-sm font-semibold flex-1 sm:flex-initial"
-              disabled={saving || !key}
+              disabled={saving || !key || !canEditCms}
             >
               <Save size={14} />
               <span>{saving ? 'Saving…' : 'Save Section'}</span>
             </button>
-            {key && (
+            {key && canEditCms && (
               <button
                 type="button"
                 onClick={resetForm}

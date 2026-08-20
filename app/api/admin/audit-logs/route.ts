@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requirePermission, errorResponse } from '@/lib/rbac';
+import { requirePermission, errorResponse, ApiError } from '@/lib/rbac';
 import { PERMISSIONS } from '@/lib/permissions';
 import { parsePagination, withPaginationHeaders } from '@/lib/pagination';
 
@@ -17,8 +17,14 @@ export async function GET(req: NextRequest) {
     const { page, pageSize, offset } = parsePagination(req);
 
     const where: any = {};
-    if (action) where.action = action;
-    if (category) where.action = { startsWith: category + '.' };
+    if (action) {
+      const safeAction = String(action).replace(/[^a-zA-Z0-9._-]/g, '');
+      if (safeAction) where.action = safeAction;
+    }
+    if (category) {
+      const safeCategory = String(category).replace(/[^a-zA-Z0-9_-]/g, '');
+      if (safeCategory) where.action = { startsWith: safeCategory + '.' };
+    }
     if (search) {
       where.OR = [
         { action: { contains: search, mode: 'insensitive' } },
@@ -28,8 +34,16 @@ export async function GET(req: NextRequest) {
     }
     if (dateFrom || dateTo) {
       where.createdAt = {};
-      if (dateFrom) where.createdAt.gte = new Date(dateFrom);
-      if (dateTo) where.createdAt.lte = new Date(dateTo + 'T23:59:59');
+      if (dateFrom) {
+        const from = new Date(dateFrom);
+        if (isNaN(from.getTime())) throw new ApiError(400, 'Invalid dateFrom');
+        where.createdAt.gte = from;
+      }
+      if (dateTo) {
+        const to = new Date(dateTo);
+        if (isNaN(to.getTime())) throw new ApiError(400, 'Invalid dateTo');
+        where.createdAt.lte = new Date(to.getFullYear(), to.getMonth(), to.getDate(), 23, 59, 59);
+      }
     }
 
     const [logs, total] = await Promise.all([

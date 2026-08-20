@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { apiJson } from '@/lib/api-client';
+import { useHasPermission } from '@/lib/use-permissions';
+import { PERMISSIONS } from '@/lib/permissions';
 import {
   Plus,
   Upload,
@@ -44,6 +46,8 @@ const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/jpg'];
 const emptyItem = () => ({ match: '', prediction: '' });
 
 export default function AdminPredictionsPage() {
+  const canManagePredictions = useHasPermission(PERMISSIONS.pages.predictions);
+
   const [posts, setPosts] = useState<Post[]>([]);
   const [availablePlans, setAvailablePlans] = useState<SubscriptionPlan[]>([]);
   const [loading, setLoading] = useState(true);
@@ -156,26 +160,28 @@ export default function AdminPredictionsPage() {
           <ChevronRight size={16} style={{ opacity: 0.6 }} />
         </Link>
 
-        <button
-          type="button"
-          onClick={() => setShowManualForm((s) => !s)}
-          className="admin-action-primary"
-        >
-          <div className="admin-action-left">
-            <div className="admin-action-icon-box-dark">
-              {showManualForm ? <X size={16} /> : <Plus size={16} />}
-            </div>
-            <div>
-              <div style={{ display: 'block', fontWeight: 700, fontSize: 15 }}>
-                {showManualForm ? 'Close Form' : 'New Tip Post'}
+        {canManagePredictions && (
+          <button
+            type="button"
+            onClick={() => setShowManualForm((s) => !s)}
+            className="admin-action-primary"
+          >
+            <div className="admin-action-left">
+              <div className="admin-action-icon-box-dark">
+                {showManualForm ? <X size={16} /> : <Plus size={16} />}
               </div>
-              <div style={{ display: 'block', fontSize: 12, opacity: 0.8, marginTop: 2 }}>
-                {showManualForm ? 'Cancel editing' : 'Create manually'}
+              <div>
+                <div style={{ display: 'block', fontWeight: 700, fontSize: 15 }}>
+                  {showManualForm ? 'Close Form' : 'New Tip Post'}
+                </div>
+                <div style={{ display: 'block', fontSize: 12, opacity: 0.8, marginTop: 2 }}>
+                  {showManualForm ? 'Cancel editing' : 'Create manually'}
+                </div>
               </div>
             </div>
-          </div>
-          {!showManualForm && <ChevronRight size={16} style={{ opacity: 0.7 }} />}
-        </button>
+            {!showManualForm && <ChevronRight size={16} style={{ opacity: 0.7 }} />}
+          </button>
+        )}
       </div>
 
       {/* Manual Compose Form */}
@@ -441,7 +447,7 @@ export default function AdminPredictionsPage() {
                     <ImageIcon size={13} />
                     <span>Upload Slip Images</span>
                   </Link>
-                  {p.status !== 'published' && (
+                  {p.status !== 'published' && canManagePredictions && (
                     <button
                       onClick={() => publish(p.id)}
                       className="btn btn-primary"

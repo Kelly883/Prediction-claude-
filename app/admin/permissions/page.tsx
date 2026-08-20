@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import { Shield, Lock } from 'lucide-react';
 import { apiJson } from '@/lib/api-client';
+import { useHasPermission } from '@/lib/use-permissions';
+import { PERMISSIONS } from '@/lib/permissions';
 
 type PermissionSchema = {
   permissions: string[];
@@ -12,6 +14,7 @@ type PermissionSchema = {
 };
 
 export default function AdminPermissionsPage() {
+  const canViewPermissions = useHasPermission(PERMISSIONS.admin.grantPermissions);
   const [schema, setSchema] = useState<PermissionSchema | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -22,6 +25,16 @@ export default function AdminPermissionsPage() {
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
+
+  if (!canViewPermissions) {
+    return (
+      <div className="admin-empty-state">
+        <Shield size={28} className="text-red-400" style={{ marginBottom: 8 }} />
+        <p className="admin-empty-state-title">Access denied</p>
+        <p className="admin-empty-state-desc">You do not have permission to view the permission catalog.</p>
+      </div>
+    );
+  }
 
   if (loading) {
     return <div className="admin-loading">Loading permission catalog…</div>;

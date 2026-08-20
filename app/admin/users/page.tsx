@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { apiJson } from '@/lib/api-client';
+import { useHasPermission } from '@/lib/use-permissions';
 import {
   Users,
   Download,
@@ -20,6 +21,7 @@ import {
   X,
   ShieldAlert,
 } from 'lucide-react';
+import { PERMISSIONS } from '@/lib/permissions';
 
 const PERMISSION_OPTIONS: Record<string, string> = {
   'pages.overview': 'Overview',
@@ -66,6 +68,9 @@ type UserApiResponse = {
 };
 
 export default function AdminUsersPage() {
+  const canCreateAdmins = useHasPermission(PERMISSIONS.admin.createAdmins);
+  const canGrantPermissions = useHasPermission(PERMISSIONS.admin.grantPermissions);
+
   const [users, setUsers] = useState<UserRow[]>([]);
   const [stats, setStats] = useState<Stats>({
     totalUsers: 0,
@@ -227,14 +232,16 @@ export default function AdminUsersPage() {
             <span>{exporting ? 'Exporting…' : 'Export CSV'}</span>
           </button>
 
-          <button
-            type="button"
-            onClick={() => setShowAddModal(true)}
-            className="admin-users-add-btn"
-          >
-            <UserPlus size={16} />
-            <span>Add User</span>
-          </button>
+          {canCreateAdmins && (
+            <button
+              type="button"
+              onClick={() => setShowAddModal(true)}
+              className="admin-users-add-btn"
+            >
+              <UserPlus size={16} />
+              <span>Add User</span>
+            </button>
+          )}
         </div>
       </header>
 
@@ -442,16 +449,16 @@ export default function AdminUsersPage() {
                       <ChevronRight size={16} />
                     </Link>
 
-                    {u.role === 'admin' && (
-                      <button
-                        onClick={() => openPermModal(u)}
-                        className="admin-user-details-btn"
-                        style={{ background: 'rgba(245,179,53,0.12)', border: '1px solid rgba(245,179,53,0.35)', color: '#f5b335' }}
-                      >
-                        <span>Edit Permissions</span>
-                        <ShieldAlert size={16} />
-                      </button>
-                    )}
+                     {u.role === 'admin' && canGrantPermissions && (
+                       <button
+                         onClick={() => openPermModal(u)}
+                         className="admin-user-details-btn"
+                         style={{ background: 'rgba(245,179,53,0.12)', border: '1px solid rgba(245,179,53,0.35)', color: '#f5b335' }}
+                       >
+                         <span>Edit Permissions</span>
+                         <ShieldAlert size={16} />
+                       </button>
+                     )}
 
                     <div className="relative">
                       <button

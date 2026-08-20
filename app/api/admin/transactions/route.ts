@@ -10,7 +10,8 @@ export const runtime = 'nodejs';
 export async function GET(req: NextRequest) {
   try {
     await requirePermission(req, PERMISSIONS.pages.transactions);
-    const status = req.nextUrl.searchParams.get('status') as 'pending' | 'success' | 'failed' | null;
+    const rawStatus = req.nextUrl.searchParams.get('status');
+    const status = rawStatus === 'pending' || rawStatus === 'success' || rawStatus === 'failed' ? rawStatus : null;
     const { page, pageSize, offset } = parsePagination(req);
 
     const [transactions, total] = await Promise.all([
