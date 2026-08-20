@@ -21,6 +21,20 @@ import {
   ShieldAlert,
 } from 'lucide-react';
 
+const PERMISSION_OPTIONS: Record<string, string> = {
+  'pages.overview': 'Overview',
+  'pages.predictions': 'Predictions',
+  'pages.plans': 'Plans',
+  'pages.freeAccess': 'Free Access',
+  'pages.users': 'Users',
+  'pages.transactions': 'Transactions',
+  'pages.auditLogs': 'Audit Logs',
+  'pages.cms': 'CMS',
+  'pages.security': 'Security',
+  'admin.createAdmins': 'Create Admins',
+  'admin.grantPermissions': 'Grant Permissions',
+};
+
 type UserRow = {
   id: string;
   name: string;
@@ -32,6 +46,9 @@ type UserRow = {
   status: 'Active' | 'Expired' | 'Free' | 'Trial';
   planName: string;
   emailVerifiedAt: string | null;
+  permissions: string[];
+  grantedBy: string | null;
+  grantedAt: string | null;
 };
 
 type Stats = {
@@ -78,6 +95,13 @@ export default function AdminUsersPage() {
   });
   const [modalSaving, setModalSaving] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
+
+  const [showPermModal, setShowPermModal] = useState(false);
+  const [permUserId, setPermUserId] = useState<string | null>(null);
+  const [permRole, setPermRole] = useState('admin');
+  const [permList, setPermList] = useState<string[]>([]);
+  const [permSaving, setPermSaving] = useState(false);
+  const [permError, setPermError] = useState<string | null>(null);
 
   function loadData() {
     setLoading(true);
@@ -144,6 +168,37 @@ export default function AdminUsersPage() {
       setModalError((err as Error).message);
     } finally {
       setModalSaving(false);
+    }
+  }
+
+  function openPermModal(user: UserRow) {
+    setPermUserId(user.id);
+    setPermRole(user.role);
+    setPermList(user.permissions || []);
+    setPermError(null);
+    setShowPermModal(true);
+  }
+
+  async function savePermissions() {
+    if (!permUserId) return;
+    setPermSaving(true);
+    setPermError(null);
+    try {
+      const res = await fetch(`/api/admin/users/${permUserId}/permissions`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: permRole, permissions: permList }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to update permissions');
+      }
+      setShowPermModal(false);
+      loadData();
+    } catch (err) {
+      setPermError((err as Error).message);
+    } finally {
+      setPermSaving(false);
     }
   }
 
@@ -367,6 +422,18 @@ export default function AdminUsersPage() {
                         </div>
                         <span className="text-xs text-[#557564]">Joined / Expires</span>
                       </div>
+
+                      {u.role === 'admin' && u.permissions && u.permissions.length > 0 && (
+                        <div className="admin-user-meta-row" style={{ marginTop: '2px' }}>
+                          <div className="flex flex-wrap gap-1">
+                            {u.permissions.map((p) => (
+                              <span key={p} className="admin-status-pill admin-status-pill-warning" style={{ fontSize: 10, padding: '1px 6px' }}>
+                                {p.replace('pages.', '').replace('admin.', '')}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -378,6 +445,17 @@ export default function AdminUsersPage() {
                       <span>View Details</span>
                       <ChevronRight size={16} />
                     </Link>
+
+                    {u.role === 'admin' && (
+                      <button
+                        onClick={() => openPermModal(u)}
+                        className="admin-user-details-btn"
+                        style={{ background: 'rgba(245,179,53,0.12)', border: '1px solid rgba(245,179,53,0.35)', color: '#f5b335' }}
+                      >
+                        <span>Edit Permissions</span>
+                        <ShieldAlert size={16} />
+                      </button>
+                    )}
 
                     <div className="relative">
                       <button
@@ -506,6 +584,86 @@ export default function AdminUsersPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {showPermModal && permUserId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className="bg-[#102e20] border border-[rgba(243,245,236,0.16)] rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl p-6">
+            <div className="flex items-center justify-between pb-4 border-b border-[rgba(243,245,236,0.1)] mb-4">
+              <h3 className="font-bold text-lg text-white">Edit Admin Permissions</h3>
+              <button
+                onClick={() => setShowPermModal(false)}
+                className="text-[#85a694] hover:text-white p-1 rounded-lg"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-4">
+              <div className="admin-form-group">
+                <label className="admin-form-label">Role</label>
+                <select
+                  value={permRole}
+                  onChange={(e) => setPermRole(e.target.value)}
+                  className="admin-select"
+                >
+                  <option value="user">User</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+
+              {permRole === 'admin' && (
+                <div className="admin-form-group">
+                  <label className="admin-form-label">Page Permissions</label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {Object.entries(PERMISSION_OPTIONS).map(([key, label]) => (
+                      <label key={key} className="flex items-center gap-2 text-xs text-white cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={permList.includes(key)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setPermList([...permList, key]);
+                            } else {
+                              setPermList(permList.filter((p) => p !== key));
+                            }
+                          }}
+                          style={{ accentColor: 'var(--floodlight)' }}
+                        />
+                        {label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {permError && (
+                <div className="admin-form-error">
+                  <ShieldAlert size={15} className="shrink-0" />
+                  <span>{permError}</span>
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-[rgba(243,245,236,0.1)]">
+                <button
+                  type="button"
+                  onClick={() => setShowPermModal(false)}
+                  className="btn btn-ghost py-2 px-4 text-sm"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={permSaving}
+                  onClick={savePermissions}
+                  className="btn btn-primary py-2 px-5 text-sm font-semibold"
+                >
+                  {permSaving ? 'Saving…' : 'Save Permissions'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

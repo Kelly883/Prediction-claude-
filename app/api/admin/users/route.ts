@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requirePermission, requireAdminWith2FA, errorResponse, ApiError } from '@/lib/rbac';
+import { requirePermission, requirePermissionWith2FA, errorResponse, ApiError } from '@/lib/rbac';
 import { hashPassword } from '@/lib/password';
 import { writeAudit } from '@/lib/audit';
 import { parsePagination, withPaginationHeaders } from '@/lib/pagination';
@@ -164,7 +164,7 @@ export async function POST(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
-    const admin = await requireAdminWith2FA(req);
+    const admin = await requirePermissionWith2FA(req, PERMISSIONS.pages.users);
     const { id } = await req.json();
 
     if (id === admin.sub) {

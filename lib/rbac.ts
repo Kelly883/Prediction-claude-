@@ -91,6 +91,35 @@ export async function requirePermission(req: NextRequest, permission: Permission
   return { ...user, permissions: record.permissions };
 }
 
+/** Requires a specific permission AND enforces 2FA for admin accounts. */
+export async function requirePermissionWith2FA(req: NextRequest, permission: Permission): Promise<AuthenticatedUser> {
+  const user = await requireUser(req);
+  if (user.role === 'superadmin') {
+    const record = await prisma.user.findUnique({
+      where: { id: user.sub },
+      select: { permissions: true, twoFactorEnabled: true },
+    });
+    if (!record?.twoFactorEnabled) {
+      throw new ApiError(403, 'Admin account requires two-factor authentication');
+    }
+    return { ...user, permissions: record?.permissions ?? [] };
+  }
+  if (user.role !== 'admin') {
+    throw new ApiError(403, 'Insufficient permissions');
+  }
+  const record = await prisma.user.findUnique({
+    where: { id: user.sub },
+    select: { permissions: true, twoFactorEnabled: true },
+  });
+  if (!record?.permissions.includes(permission)) {
+    throw new ApiError(403, `Missing permission: ${permission}`);
+  }
+  if (!record?.twoFactorEnabled) {
+    throw new ApiError(403, 'Admin account requires two-factor authentication');
+  }
+  return { ...user, permissions: record.permissions };
+}
+
 /** Check if a user has a specific permission. Superadmin always has all permissions. */
 export function hasPermission(user: { role: string; permissions: string[] }, permission: Permission): boolean {
   if (user.role === 'superadmin') return true;

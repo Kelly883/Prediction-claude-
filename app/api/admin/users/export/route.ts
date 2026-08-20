@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAdmin, errorResponse } from '@/lib/rbac';
+import { requirePermissionWith2FA, errorResponse } from '@/lib/rbac';
+import { PERMISSIONS } from '@/lib/permissions';
 import { requireSameOrigin, requireCsrf } from '@/lib/csrf';
 import { writeAudit } from '@/lib/audit';
 
@@ -10,7 +11,7 @@ export async function POST(req: NextRequest) {
   try {
     requireSameOrigin(req);
     requireCsrf(req);
-    const admin = await requireAdmin(req);
+    const admin = await requirePermissionWith2FA(req, PERMISSIONS.pages.users);
     const users = await prisma.user.findMany({
       where: { role: 'user', deletedAt: null },
       select: { id: true, name: true, email: true, phone: true, country: true, createdAt: true },
