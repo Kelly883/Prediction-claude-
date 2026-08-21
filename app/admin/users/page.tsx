@@ -94,9 +94,6 @@ export default function AdminUsersPage() {
     email: '',
     phone: '',
     country: 'Nigeria',
-    role: 'user',
-    status: 'Active',
-    planName: 'Pro',
   });
   const [modalSaving, setModalSaving] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
@@ -164,9 +161,6 @@ export default function AdminUsersPage() {
         email: '',
         phone: '',
         country: 'Nigeria',
-        role: 'user',
-        status: 'Active',
-        planName: 'Pro',
       });
       loadData();
     } catch (err) {
