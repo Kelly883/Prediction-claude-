@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const mockPrisma = vi.hoisted(() => ({
   user: { findUnique: vi.fn(), update: vi.fn() },
   userSession: { findFirst: vi.fn(), findMany: vi.fn().mockReturnValue([]), create: vi.fn(), update: vi.fn(), deleteMany: vi.fn() },
+  refreshSession: { create: vi.fn().mockResolvedValue({ id: 'rs-1' }) },
 }));
 
 const mockPassword = vi.hoisted(() => ({

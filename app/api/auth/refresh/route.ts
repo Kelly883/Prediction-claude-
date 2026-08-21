@@ -3,20 +3,22 @@ import { prisma } from '@/lib/prisma';
 import { verifyRefreshToken, issueAccessToken, issueRefreshToken, cookieOptions } from '@/lib/auth';
 import { errorResponse, ApiError } from '@/lib/rbac';
 import { writeAudit } from '@/lib/audit';
+import { requireCsrf } from '@/lib/csrf';
+import {
+  hashRefreshToken,
+  validateRefreshSession,
+  revokeRefreshSession,
+  createRefreshSession,
+  handleRefreshTokenReuse,
+} from '@/lib/refresh-sessions';
 
 export const runtime = 'nodejs';
 
 const SESSION_IDLE_TIMEOUT_MS = Number(process.env.SESSION_IDLE_TIMEOUT_MS ?? 86400000);
 
-/**
- * Silently exchanges a valid refresh_token cookie for a new access_token.
- * Enforces tokenVersion validity — if password reset occurred, older tokens are rejected.
- * Implements refresh token rotation: the old refresh token is marked as used
- * and a new one is issued alongside the new access token.
- * Enforces idle timeout based on userSession.lastSeenAt.
- */
 export async function POST(req: NextRequest) {
   try {
+    requireCsrf(req);
     const token = req.cookies.get('refresh_token')?.value;
     if (!token) throw new ApiError(401, 'No refresh token');
 
@@ -26,8 +28,6 @@ export async function POST(req: NextRequest) {
     const user = await prisma.user.findUnique({ where: { id: payload.sub } });
     if (!user || user.deletedAt) throw new ApiError(401, 'User no longer exists');
 
-    // Token version check: If token version in token does not match user's current version
-    // (e.g. after a password reset), reject and log security event.
     if (payload.tv !== undefined && payload.tv !== user.tokenVersion) {
       await writeAudit({
         actorId: user.id,
@@ -57,14 +57,40 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Refresh token rotation: mark the old jti as used to prevent reuse
-    if (payload.jti) {
-      const { usedRefreshJtis } = await import('@/lib/auth');
-      usedRefreshJtis.add(payload.jti);
+    const tokenHash = hashRefreshToken(token);
+    const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
+    const userAgent = req.headers.get('user-agent') ?? undefined;
+
+    const existingSession = await validateRefreshSession(user.id, tokenHash, user.tokenVersion);
+    if (!existingSession) {
+      if (payload.familyId) {
+        await handleRefreshTokenReuse(user.id, payload.familyId, ip);
+      } else {
+        await writeAudit({
+          actorId: user.id,
+          action: 'auth.refresh_token_reuse',
+          metadata: { reason: 'token_not_found_or_revoked', ip },
+        });
+      }
+      throw new ApiError(401, 'Session revoked. Please log in again.');
     }
 
+    const familyId = existingSession.familyId;
+    await revokeRefreshSession(existingSession.id);
+
+    const newRefreshToken = await issueRefreshToken(user.id, user.tokenVersion, familyId);
+    const newTokenHash = hashRefreshToken(newRefreshToken);
+
+    await createRefreshSession({
+      userId: user.id,
+      tokenHash: newTokenHash,
+      tokenVersion: user.tokenVersion,
+      familyId,
+      ip,
+      userAgent,
+    });
+
     const accessToken = await issueAccessToken({ sub: user.id, role: user.role });
-    const newRefreshToken = await issueRefreshToken(user.id, user.tokenVersion);
 
     const res = NextResponse.json({ ok: true });
     res.cookies.set('access_token', accessToken, cookieOptions(15 * 60));

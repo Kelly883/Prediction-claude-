@@ -6,6 +6,7 @@ import { paystackVerifyTransaction } from '@/lib/providers/paystack';
 import { flutterwaveVerifyTransaction } from '@/lib/providers/flutterwave';
 import { getRequestId } from '@/lib/request-id';
 import { writeAudit } from '@/lib/audit';
+import { requireCsrf } from '@/lib/csrf';
 
 export const runtime = 'nodejs';
 
@@ -16,6 +17,7 @@ function isSuccessStatus(status: string): boolean {
 export async function POST(req: NextRequest) {
   const requestId = getRequestId(req);
   try {
+    requireCsrf(req);
     const user = await requireUser(req);
     const body = await req.json();
     const { reference, provider } = body;

@@ -69,6 +69,12 @@ function makeFakeDb() {
         return updated;
       }),
     },
+    webhookEvent: {
+      create: vi.fn(async ({ data }: any) => ({ id: `we-${Date.now()}`, ...data })),
+      findFirst: vi.fn(async () => null),
+      updateMany: vi.fn(async () => ({ count: 0 })),
+      update: vi.fn(async ({ where, data }: any) => ({ id: where.id, ...data })),
+    },
     $transaction: vi.fn(async (fn: any) => fn(db)),
     _seed(tx: any) {
       transactions.set(tx.id, tx);

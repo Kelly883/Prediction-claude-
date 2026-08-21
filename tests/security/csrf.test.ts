@@ -6,6 +6,7 @@ function makeFakeDb() {
   const freeAccessRules = new Map<string, any>();
   const complimentaryAccess = new Map<string, any>();
   const predictionPosts = new Map<string, any>();
+  const userSessions = new Map<string, any>();
 
   const db: any = {
     user: {
@@ -15,6 +16,9 @@ function makeFakeDb() {
       }),
       count: vi.fn(async () => 0),
       create: vi.fn(async ({ data }: any) => data),
+    },
+    userSession: {
+      deleteMany: vi.fn(async () => ({ count: 0 })),
     },
     freeAccessRule: {
       findMany: vi.fn(async () => []),

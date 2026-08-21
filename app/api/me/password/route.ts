@@ -5,6 +5,7 @@ import { hashPassword, verifyPassword } from '@/lib/password';
 import { ChangePasswordSchema } from '@/lib/schemas';
 import { writeAudit } from '@/lib/audit';
 import { requireCsrf } from '@/lib/csrf';
+import { revokeAllRefreshSessions } from '@/lib/refresh-sessions';
 
 export const runtime = 'nodejs';
 
@@ -40,6 +41,8 @@ export async function PATCH(req: NextRequest) {
       await db.userSession.deleteMany({
         where: { userId: user.sub },
       });
+
+      await revokeAllRefreshSessions(user.sub);
     });
 
     await writeAudit({

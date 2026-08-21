@@ -39,6 +39,9 @@ function makeFakeDb() {
         return { count };
       }),
     },
+    refreshSession: {
+      updateMany: vi.fn(async () => ({ count: 0 })),
+    },
     passwordResetToken: {
       findUnique: vi.fn(async ({ where }: any) => {
         return resetTokens.get(where.tokenHash) ?? null;

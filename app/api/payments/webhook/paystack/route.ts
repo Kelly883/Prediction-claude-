@@ -4,15 +4,13 @@ import { extractReusableAuthorization } from '@/lib/providers/paystack';
 import { errorResponse } from '@/lib/rbac';
 import { writeAudit } from '@/lib/audit';
 import { getRequestId } from '@/lib/request-id';
+import { persistWebhookEvent, markWebhookProcessing, markWebhookProcessed, markWebhookFailed, markWebhookIgnored } from '@/lib/webhook-events';
 
 export const runtime = 'nodejs';
 
-// Signature is computed over the exact raw request bytes, so this handler
-// reads req.text() FIRST and never calls req.json() before verifying —
-// re-serializing a parsed body can produce different bytes (key order,
-// whitespace) and silently break signature verification.
 export async function POST(req: NextRequest) {
   const requestId = getRequestId(req);
+  let webhookEventId: string | undefined;
   try {
     const rawBody = await req.text();
     const signature = req.headers.get('x-paystack-signature');
@@ -26,12 +24,21 @@ export async function POST(req: NextRequest) {
     }
 
     const body = JSON.parse(rawBody);
-    await writeAudit({
-      action: 'payment.webhook_received',
-      metadata: { provider: 'paystack', event: body.event, reference: body.data?.reference, requestId },
+
+    const webhookEvent = await persistWebhookEvent({
+      provider: 'paystack',
+      providerEventId: body.id ?? body.data?.id ?? `${body.event}-${Date.now()}`,
+      providerReference: body.data?.reference,
+      eventType: body.event,
+      payload: body,
     });
 
+    webhookEventId = webhookEvent.id;
+
+    await markWebhookProcessing(webhookEvent.id);
+
     if (body.event !== 'charge.success') {
+      await markWebhookIgnored(webhookEvent.id);
       const res = NextResponse.json({ received: true });
       res.headers.set('x-request-id', requestId);
       return res;
@@ -42,12 +49,14 @@ export async function POST(req: NextRequest) {
     const result = await handleVerifiedWebhook({
       providerReference: body.data.reference,
       status: body.data.status === 'success' ? 'success' : 'failed',
-      amountPaid: body.data.amount / 100, // Paystack sends kobo
+      amountPaid: body.data.amount / 100,
       currencyPaid: body.data.currency,
       customerEmail,
       rawPayload: body,
       renewalToken: extractReusableAuthorization(body),
     });
+
+    await markWebhookProcessed(webhookEvent.id);
 
     await writeAudit({
       action: 'payment.webhook_processed',
@@ -66,6 +75,9 @@ export async function POST(req: NextRequest) {
     res.headers.set('x-request-id', requestId);
     return res;
   } catch (err) {
+    if (webhookEventId) {
+      await markWebhookFailed(webhookEventId, (err as Error).message).catch(() => {});
+    }
     await writeAudit({
       action: 'payment.webhook_error',
       metadata: { provider: 'paystack', error: (err as Error).message, requestId },
