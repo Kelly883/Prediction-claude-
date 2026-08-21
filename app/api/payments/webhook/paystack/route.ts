@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyPaystackSignature, handleVerifiedWebhook } from '@/lib/payments';
 import { extractReusableAuthorization } from '@/lib/providers/paystack';
 import { errorResponse } from '@/lib/rbac';
+import { writeAudit } from '@/lib/audit';
 import { getRequestId } from '@/lib/request-id';
 
 export const runtime = 'nodejs';
@@ -17,10 +18,19 @@ export async function POST(req: NextRequest) {
     const signature = req.headers.get('x-paystack-signature');
 
     if (!verifyPaystackSignature(rawBody, signature)) {
+      await writeAudit({
+        action: 'payment.webhook_rejected',
+        metadata: { provider: 'paystack', reason: 'invalid_signature', requestId },
+      });
       return NextResponse.json({ error: 'Invalid signature' }, { status: 400 });
     }
 
     const body = JSON.parse(rawBody);
+    await writeAudit({
+      action: 'payment.webhook_received',
+      metadata: { provider: 'paystack', event: body.event, reference: body.data?.reference, requestId },
+    });
+
     if (body.event !== 'charge.success') {
       const res = NextResponse.json({ received: true });
       res.headers.set('x-request-id', requestId);
@@ -39,10 +49,27 @@ export async function POST(req: NextRequest) {
       renewalToken: extractReusableAuthorization(body),
     });
 
+    await writeAudit({
+      action: 'payment.webhook_processed',
+      targetId: (result as any)?.id ?? body.data.reference,
+      metadata: {
+        provider: 'paystack',
+        reference: body.data.reference,
+        status: body.data.status,
+        amount: body.data.amount,
+        currency: body.data.currency,
+        customerEmail,
+      },
+    });
+
     const res = NextResponse.json(result);
     res.headers.set('x-request-id', requestId);
     return res;
   } catch (err) {
+    await writeAudit({
+      action: 'payment.webhook_error',
+      metadata: { provider: 'paystack', error: (err as Error).message, requestId },
+    });
     return errorResponse(err);
   }
 }

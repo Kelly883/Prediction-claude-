@@ -3,7 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { ApiError, errorResponse } from '@/lib/rbac';
 import { verifyTotpCode } from '@/lib/twofactor';
 import { writeAudit } from '@/lib/audit';
-import { checkRateLimit, bootstrapLimiter, getClientIp } from '@/lib/ratelimit';
+import { checkRateLimit, bootstrapVerifyLimiter, getClientIp } from '@/lib/ratelimit';
 import { requireSameOrigin, requireCsrf } from '@/lib/csrf';
 import { consumePending, hasSuperAdmin } from '@/lib/superadmin-setup';
 import { redis } from '@/lib/redis';
@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
     requireCsrf(req);
 
     const ip = getClientIp(req);
-    const allowed = await checkRateLimit(bootstrapLimiter, [ip]);
+    const allowed = await checkRateLimit(bootstrapVerifyLimiter, [ip]);
     if (!allowed) {
       return NextResponse.json({ error: 'Too many requests, try again shortly' }, { status: 429 });
     }
