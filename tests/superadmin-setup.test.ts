@@ -4,9 +4,35 @@ vi.mock('@/lib/prisma', () => ({
   prisma: { user: { count: vi.fn().mockResolvedValue(0) } },
 }));
 
+// Explicit mock, not reliance on lib/redis.ts's real-vs-in-memory fallback
+// behavior: that fallback depends on whether UPSTASH_REDIS_REST_URL/TOKEN
+// happen to be set in whatever environment runs this test. Locally they
+// weren't set, so the real module silently used its in-memory fallback and
+// these tests passed — accidentally, not because the test was actually
+// isolated. In CI, the workflow sets both to placeholder values
+// (ci.yml: UPSTASH_REDIS_REST_URL=https://example.upstash.io) so the real
+// module believed Redis was genuinely configured and attempted a real
+// network call to a host that doesn't resolve, failing with ENOTFOUND. A
+// unit test for lib/superadmin-setup.ts's logic should never depend on
+// which env vars happen to be present in whichever environment runs it.
+const mockRedisStore = vi.hoisted(() => new Map<string, string>());
+vi.mock('@/lib/redis', () => ({
+  redis: {
+    get: vi.fn(async (key: string) => mockRedisStore.get(key) ?? null),
+    set: vi.fn(async (key: string, value: string) => {
+      mockRedisStore.set(key, value);
+      return 'OK';
+    }),
+    del: vi.fn(async (key: string) => {
+      const existed = mockRedisStore.delete(key);
+      return existed ? 1 : 0;
+    }),
+  },
+}));
+
 describe('lib/superadmin-setup pending session storage', () => {
   beforeEach(() => {
-    vi.resetModules();
+    mockRedisStore.clear();
   });
 
   it('a value set can be read back by a separate call, not just within the same process lifetime', async () => {
