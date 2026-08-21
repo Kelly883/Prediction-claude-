@@ -7,6 +7,7 @@ import { flutterwaveVerifyTransaction } from '@/lib/providers/flutterwave';
 import { getRequestId } from '@/lib/request-id';
 import { writeAudit } from '@/lib/audit';
 import { requireCsrf } from '@/lib/csrf';
+import { toPaymentStatusDTO } from '@/lib/dtos';
 
 export const runtime = 'nodejs';
 
@@ -45,7 +46,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (tx.status === 'success') {
-      return NextResponse.json({ status: 'success', message: 'Payment already confirmed', transactionId: tx.id });
+      return NextResponse.json(toPaymentStatusDTO({ ...tx, status: 'success' }, 'Payment already confirmed'));
     }
 
     if (tx.status === 'failed' || tx.status === 'cancelled') {

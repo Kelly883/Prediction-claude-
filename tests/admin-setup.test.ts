@@ -76,13 +76,15 @@ vi.mock('@/lib/ratelimit', async () => {
 describe('One-Time Admin Setup API & Bootstrap Security', () => {
   beforeEach(() => {
     fakeDb = makeFakeDb();
-    delete process.env.ADMIN_BOOTSTRAP_SECRET;
-    process.env.ALLOW_ADMIN_BOOTSTRAP_WITHOUT_SECRET = 'true';
+    process.env.ADMIN_BOOTSTRAP_SECRET = 'test-bootstrap-secret';
+    delete process.env.ALLOW_ADMIN_BOOTSTRAP_WITHOUT_SECRET;
   });
 
   it('reports isSetupAvailable=true when no admin exists in the database', async () => {
     const { GET } = await import('@/app/api/auth/admin-setup/route');
-    const req = new NextRequest('http://localhost:3000/api/auth/admin-setup');
+    const req = new NextRequest('http://localhost:3000/api/auth/admin-setup', {
+      headers: { 'x-admin-bootstrap-secret': 'test-bootstrap-secret' },
+    });
     const res = await GET(req);
     const data = await res.json();
     expect(res.status).toBe(200);
@@ -94,7 +96,10 @@ describe('One-Time Admin Setup API & Bootstrap Security', () => {
 
     const req = new NextRequest('http://localhost:3000/api/auth/admin-setup', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-admin-bootstrap-secret': 'test-bootstrap-secret',
+      },
       body: JSON.stringify({
         name: 'Initial Admin',
         email: 'admin@predictpro.com',
@@ -113,12 +118,12 @@ describe('One-Time Admin Setup API & Bootstrap Security', () => {
     expect(data.email).toBe('admin@predictpro.com');
     expect(data.requirePasswordChange).toBe(true);
 
-    // No cookies should be set — operator must log in manually
     expect(res.cookies.get('access_token')).toBeUndefined();
     expect(res.cookies.get('refresh_token')).toBeUndefined();
 
-    // After creation, setup status must report isSetupAvailable=false
-    const getReq = new NextRequest('http://localhost:3000/api/auth/admin-setup');
+    const getReq = new NextRequest('http://localhost:3000/api/auth/admin-setup', {
+      headers: { 'x-admin-bootstrap-secret': 'test-bootstrap-secret' },
+    });
     const getRes = await GET(getReq);
     const getData = await getRes.json();
     expect(getData.isSetupAvailable).toBe(false);
@@ -127,10 +132,12 @@ describe('One-Time Admin Setup API & Bootstrap Security', () => {
   it('rejects subsequent admin registrations once an admin exists', async () => {
     const { POST } = await import('@/app/api/auth/admin-setup/route');
 
-    // Create first admin
     const firstReq = new NextRequest('http://localhost:3000/api/auth/admin-setup', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-admin-bootstrap-secret': 'test-bootstrap-secret',
+      },
       body: JSON.stringify({
         name: 'First Admin',
         email: 'first@predictpro.com',
@@ -142,10 +149,12 @@ describe('One-Time Admin Setup API & Bootstrap Security', () => {
     const firstRes = await POST(firstReq);
     expect(firstRes.status).toBe(200);
 
-    // Attempt second admin registration
     const secondReq = new NextRequest('http://localhost:3000/api/auth/admin-setup', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-admin-bootstrap-secret': 'test-bootstrap-secret',
+      },
       body: JSON.stringify({
         name: 'Second Admin',
         email: 'second@predictpro.com',
@@ -166,7 +175,6 @@ describe('One-Time Admin Setup API & Bootstrap Security', () => {
 
     const { POST } = await import('@/app/api/auth/admin-setup/route');
 
-    // Attempt without secret header
     const unauthReq = new NextRequest('http://localhost:3000/api/auth/admin-setup', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -181,7 +189,6 @@ describe('One-Time Admin Setup API & Bootstrap Security', () => {
     const unauthRes = await POST(unauthReq);
     expect(unauthRes.status).toBe(403);
 
-    // Attempt with correct secret header
     const authReq = new NextRequest('http://localhost:3000/api/auth/admin-setup', {
       method: 'POST',
       headers: {
@@ -205,7 +212,10 @@ describe('One-Time Admin Setup API & Bootstrap Security', () => {
 
     const req1 = new NextRequest('http://localhost:3000/api/auth/admin-setup', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-admin-bootstrap-secret': 'test-bootstrap-secret',
+      },
       body: JSON.stringify({
         name: 'Race Admin 1',
         email: 'race1@predictpro.com',
@@ -217,7 +227,10 @@ describe('One-Time Admin Setup API & Bootstrap Security', () => {
 
     const req2 = new NextRequest('http://localhost:3000/api/auth/admin-setup', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-admin-bootstrap-secret': 'test-bootstrap-secret',
+      },
       body: JSON.stringify({
         name: 'Race Admin 2',
         email: 'race2@predictpro.com',
@@ -235,7 +248,9 @@ describe('One-Time Admin Setup API & Bootstrap Security', () => {
     expect(successes.length).toBeLessThanOrEqual(1);
     expect(failures.length).toBeGreaterThanOrEqual(1);
 
-    const getRes = await GET(new NextRequest('http://localhost:3000/api/auth/admin-setup'));
+    const getRes = await GET(new NextRequest('http://localhost:3000/api/auth/admin-setup', {
+      headers: { 'x-admin-bootstrap-secret': 'test-bootstrap-secret' },
+    }));
     const getData = await getRes.json();
     expect(getData.isSetupAvailable).toBe(false);
   });

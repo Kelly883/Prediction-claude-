@@ -40,6 +40,14 @@ function isS3Configured(): boolean {
   return true;
 }
 
+function assertStorageAvailable(): void {
+  if (!isS3Configured()) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new ApiError(500, 'Storage service is not configured. Media operations are unavailable.');
+    }
+  }
+}
+
 let s3ClientInstance: S3Client | null = null;
 function getS3Client(): S3Client {
   if (!s3ClientInstance) {
@@ -243,6 +251,7 @@ async function saveToStorage(key: string, buffer: Buffer, mimeType: string): Pro
       })
     );
   } else {
+    assertStorageAvailable();
     const filePath = path.join(LOCAL_STORAGE_DIR, key);
     await fs.mkdir(path.dirname(filePath), { recursive: true });
     await fs.writeFile(filePath, buffer);
@@ -259,6 +268,7 @@ async function removeFromStorage(key: string): Promise<void> {
       const bucket = process.env.S3_BUCKET!;
       await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
     } else {
+      assertStorageAvailable();
       const filePath = path.join(LOCAL_STORAGE_DIR, key);
       await fs.unlink(filePath).catch(() => {});
     }
@@ -353,7 +363,7 @@ export async function getSignedUrlForViewer(userId: string, mediaId: string): Pr
   if (!allowed) throw new ApiError(403, 'Not entitled to view this content');
 
   if (!isS3Configured()) {
-    // In local development, test mode, or fallback mode, return a direct authenticated API proxy URL
+    assertStorageAvailable();
     return `/api/media/${asset.id}/raw`;
   }
 
@@ -388,6 +398,7 @@ export async function getMediaBuffer(mediaId: string): Promise<{ buffer: Buffer;
     const mimeType = asset.storageKey.endsWith('.png') ? 'image/png' : 'image/jpeg';
     return { buffer, mimeType };
   } else {
+    assertStorageAvailable();
     const filePath = path.join(LOCAL_STORAGE_DIR, asset.storageKey);
     const buffer = await fs.readFile(filePath);
     const mimeType = asset.storageKey.endsWith('.png') ? 'image/png' : 'image/jpeg';

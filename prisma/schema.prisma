@@ -47,6 +47,7 @@ enum WebhookProcessingStatus {
   processed
   failed
   ignored
+  deadLettered
 }
 
 enum PaymentProvider {
@@ -411,6 +412,7 @@ model WebhookEvent {
   processingStartedAt     DateTime?
   processedAt             DateTime?
   failedAt                DateTime?
+  deadLetteredAt          DateTime?
   errorMessage            String?
   retryCount              Int              @default(0)
 

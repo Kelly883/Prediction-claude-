@@ -4,7 +4,7 @@ import { requirePermission, errorResponse, ApiError } from '@/lib/rbac';
 import { PERMISSIONS } from '@/lib/permissions';
 import { getDistinctDeviceCount, isAnomalous } from '@/lib/sessions';
 import { writeAudit } from '@/lib/audit';
-import { redactPayload } from '@/lib/payments';
+import { toAdminTransactionDTO } from '@/lib/dtos';
 import { requireSameOrigin, requireCsrf } from '@/lib/csrf';
 
 export const runtime = 'nodejs';
@@ -27,10 +27,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     ]);
 
     const safeSubscriptions = subscriptions.map(({ renewalAuthCode, ...sub }) => sub);
-    const safeTransactions = transactions.map((tx) => ({
-      ...tx,
-      rawPayload: redactPayload(tx.rawPayload),
-    }));
+    const safeTransactions = transactions.map((tx) => toAdminTransactionDTO(tx));
 
     return NextResponse.json({
       user,

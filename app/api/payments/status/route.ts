@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireUser, errorResponse, ApiError } from '@/lib/rbac';
+import { toPaymentStatusDTO } from '@/lib/dtos';
 
 export const runtime = 'nodejs';
 
@@ -18,7 +19,7 @@ export async function GET(req: NextRequest) {
     const tx = await prisma.transaction.findUnique({ where: { providerReference: reference } });
     if (!tx || tx.userId !== user.sub) throw new ApiError(404, 'Not found');
 
-    return NextResponse.json({ status: tx.status, amount: tx.amount, currency: tx.currency }, {
+    return NextResponse.json(toPaymentStatusDTO(tx, tx.status === 'success' ? 'Payment already confirmed' : undefined), {
       headers: { 'Cache-Control': 'private, no-store' },
     });
   } catch (err) {

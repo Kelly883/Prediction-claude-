@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 function makeFakeDb() {
   const subscriptions = new Map<string, any>();
   const transactions = new Map<string, any>();
+  const paymentAttempts = new Map<string, any>();
 
   const db: any = {
     subscription: {
@@ -60,12 +61,28 @@ function makeFakeDb() {
         return record;
       }),
     },
+    paymentAttempt: {
+      create: vi.fn(async ({ data }: any) => {
+        const id = `pa-${paymentAttempts.size + 1}`;
+        const record = { id, ...data };
+        paymentAttempts.set(id, record);
+        return record;
+      }),
+      update: vi.fn(async ({ where, data }: any) => {
+        const pa = paymentAttempts.get(where.id);
+        if (!pa) throw new Error('PaymentAttempt not found');
+        const updated = { ...pa, ...data };
+        paymentAttempts.set(where.id, updated);
+        return updated;
+      }),
+    },
     $transaction: vi.fn(async (fn: any) => fn(db)),
     _seed(sub: any) {
       subscriptions.set(sub.id, sub);
     },
     _getSub: (id: string) => subscriptions.get(id),
     _getTransactions: () => [...transactions.values()],
+    _getPaymentAttempts: () => [...paymentAttempts.values()],
   };
 
   return db;

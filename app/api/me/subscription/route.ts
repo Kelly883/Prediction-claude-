@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireUser, errorResponse } from '@/lib/rbac';
+import { toSubscriptionDTO } from '@/lib/dtos';
 
 export const runtime = 'nodejs';
 
@@ -13,8 +14,7 @@ export async function GET(req: NextRequest) {
       include: { plan: true },
     });
     if (!sub) return NextResponse.json(null);
-    const { renewalAuthCode, ...safeSub } = sub;
-    return NextResponse.json(safeSub);
+    return NextResponse.json(toSubscriptionDTO(sub));
   } catch (err) {
     return errorResponse(err);
   }
