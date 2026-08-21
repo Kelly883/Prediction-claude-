@@ -6,7 +6,6 @@ vi.mock('@/lib/prisma', () => ({
 
 describe('lib/superadmin-setup pending session storage', () => {
   beforeEach(() => {
-
   });
 
   it('a value set can be read back by a separate call, not just within the same process lifetime', async () => {
