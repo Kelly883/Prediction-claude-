@@ -5,16 +5,18 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
-import { apiJson, apiFetch } from '@/lib/api-client';
+import { apiFetch } from '@/lib/api-client';
 
-type PaymentStatus = 'checking' | 'success' | 'failed' | 'pending' | 'error' | 'unauthenticated';
+type PaymentStatus = 'checking' | 'success' | 'failed' | 'pending' | 'error' | 'unauthenticated' | 'verifying';
 
 function CallbackContent() {
   const params = useSearchParams();
   const router = useRouter();
   const reference = params.get('reference') ?? params.get('tx_ref');
+  const provider = params.get('provider') as 'paystack' | 'flutterwave' | null;
   const [status, setStatus] = useState<PaymentStatus>('checking');
   const [message, setMessage] = useState<string>('Confirming your payment…');
+  const [isVerifying, setIsVerifying] = useState(false);
 
   useEffect(() => {
     if (!reference) {
@@ -88,14 +90,46 @@ function CallbackContent() {
     }
   }, [status, router]);
 
+  const handleManualVerify = async () => {
+    if (!reference || !provider || isVerifying) return;
+    setIsVerifying(true);
+    setStatus('verifying');
+    setMessage('Manually verifying your payment with the provider…');
+
+    try {
+      const res = await apiFetch('/api/payments/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reference, provider }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `Verification failed (HTTP ${res.status})`);
+      }
+
+      const data = await res.json();
+      if (data.status === 'success') {
+        setStatus('success');
+        setMessage('Payment verified manually. Your plan is now active.');
+      } else {
+        throw new Error('Unexpected verification response');
+      }
+    } catch (err) {
+      setStatus('error');
+      setMessage((err as Error).message || 'Manual verification failed. Please contact support or try again later.');
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
   const handleRetry = () => {
     setStatus('checking');
     setMessage('Re-checking payment status…');
-    // Force re-render to restart poll by toggling a dependency
     window.location.reload();
   };
 
-  const isFinal = status === 'success' || status === 'failed';
+  const canManualVerify = Boolean(reference && provider && !isVerifying);
 
   return (
     <div className="card" style={{ maxWidth: 520, margin: '0 auto', textAlign: 'center' }}>
@@ -103,6 +137,13 @@ function CallbackContent() {
         <div>
           <div className="admin-loading" style={{ marginBottom: 16 }}>{message}</div>
           <p style={{ color: 'var(--chalk-muted)', fontSize: 13 }}>Please do not close this page.</p>
+        </div>
+      )}
+
+      {status === 'verifying' && (
+        <div>
+          <div className="admin-loading" style={{ marginBottom: 16 }}>{message}</div>
+          <p style={{ color: 'var(--chalk-muted)', fontSize: 13 }}>Please wait while we confirm with your payment provider.</p>
         </div>
       )}
 
@@ -129,7 +170,12 @@ function CallbackContent() {
           <h2 className="display" style={{ fontSize: 22, marginBottom: 12 }}>Still confirming</h2>
           <p style={{ color: 'var(--chalk-muted)', marginBottom: 20 }}>{message}</p>
           <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
-            <button onClick={handleRetry} className="btn btn-primary" style={{ flex: '1 1 auto' }}>
+            {canManualVerify && (
+              <button onClick={handleManualVerify} disabled={isVerifying} className="btn btn-primary" style={{ flex: '1 1 auto' }}>
+                {isVerifying ? 'Verifying…' : 'Verify manually'}
+              </button>
+            )}
+            <button onClick={handleRetry} className="btn btn-ghost" style={{ flex: '1 1 auto' }}>
               Check again
             </button>
             <Link href="/dashboard/plans" className="btn btn-ghost" style={{ flex: '1 1 auto' }}>
@@ -144,7 +190,12 @@ function CallbackContent() {
           <h2 className="display" style={{ fontSize: 22, marginBottom: 12, color: 'var(--card-red)' }}>Couldn’t confirm payment</h2>
           <p style={{ color: 'var(--chalk-muted)', marginBottom: 20 }}>{message}</p>
           <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
-            <button onClick={handleRetry} className="btn btn-primary" style={{ flex: '1 1 auto' }}>
+            {canManualVerify && (
+              <button onClick={handleManualVerify} disabled={isVerifying} className="btn btn-primary" style={{ flex: '1 1 auto' }}>
+                {isVerifying ? 'Verifying…' : 'Verify manually'}
+              </button>
+            )}
+            <button onClick={handleRetry} className="btn btn-ghost" style={{ flex: '1 1 auto' }}>
               Try again
             </button>
             <Link href="/dashboard/plans" className="btn btn-ghost" style={{ flex: '1 1 auto' }}>

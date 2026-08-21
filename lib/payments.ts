@@ -59,7 +59,7 @@ export async function initializePayment(
   // placeholder reference and rewrite it after the fact.
   const idempotencyKey = crypto.randomUUID();
   const reference = `pp_${idempotencyKey}`;
-  const callbackUrl = `${requireAppUrl()}/payments/callback`;
+  const callbackUrl = `${requireAppUrl()}/payments/callback?provider=${provider}`;
 
   let checkoutUrl: string;
   if (provider === 'paystack') {

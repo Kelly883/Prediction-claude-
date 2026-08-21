@@ -9,6 +9,10 @@ import { writeAudit } from '@/lib/audit';
 
 export const runtime = 'nodejs';
 
+function isSuccessStatus(status: string): boolean {
+  return status === 'success' || status === 'successful';
+}
+
 export async function POST(req: NextRequest) {
   const requestId = getRequestId(req);
   try {
@@ -58,7 +62,7 @@ export async function POST(req: NextRequest) {
       throw new ApiError(400, 'Unsupported provider');
     }
 
-    if (!verification.verified || verification.status !== 'success') {
+    if (!verification.verified || !isSuccessStatus(verification.status)) {
       await writeAudit({
         actorId: user.sub,
         action: 'payment.manual_verify_failed',
