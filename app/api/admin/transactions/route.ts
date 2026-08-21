@@ -17,6 +17,11 @@ export async function GET(req: NextRequest) {
     const [transactions, total] = await Promise.all([
       prisma.transaction.findMany({
         where: status ? { status } : undefined,
+        include: {
+          user: {
+            select: { id: true, name: true, email: true },
+          },
+        },
         orderBy: { createdAt: 'desc' },
         skip: offset,
         take: pageSize,
