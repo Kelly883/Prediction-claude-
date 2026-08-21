@@ -58,7 +58,6 @@ export async function GET(req: NextRequest) {
     ]);
 
     const distinctActions = await prisma.auditLog.findMany({
-      where: action ? { action } : undefined,
       select: { action: true },
       distinct: ['action'],
       orderBy: { action: 'asc' },
@@ -68,12 +67,6 @@ export async function GET(req: NextRequest) {
 
     const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
-    // Total count and the full action list are in the JSON body, not just
-    // response headers — the frontend's fetch wrapper (apiJson) only ever
-    // returns the parsed body and discards headers, so `X-Total` etc. were
-    // being set correctly but were never actually reachable by any caller.
-    // Kept the headers too for any other consumer, but the body is now the
-    // real contract.
     const res = NextResponse.json({
       logs,
       total,
