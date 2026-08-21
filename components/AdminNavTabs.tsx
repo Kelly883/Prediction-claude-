@@ -10,6 +10,7 @@ export const ADMIN_NAV_LINKS = [
   { href: '/admin/predictions', label: 'Predictions' },
   { href: '/admin/free-access', label: 'Free Access' },
   { href: '/admin/users', label: 'Users' },
+  { href: '/admin/admins/create', label: 'Create Admin' },
   { href: '/admin/transactions', label: 'Transactions' },
   { href: '/admin/audit-logs', label: 'Audit Logs' },
   { href: '/admin/cms', label: 'CMS' },

@@ -120,7 +120,7 @@ export async function POST(req: NextRequest) {
     requireCsrf(req);
     const admin = await requirePermission(req, PERMISSIONS.admin.createAdmins);
     const body = await req.json();
-    const { name, email, phone, country, role, password, permissions } = body;
+    const { name, email, phone, country } = body;
 
     if (!name || !email) {
       throw new ApiError(400, 'Name and email are required');
@@ -131,11 +131,7 @@ export async function POST(req: NextRequest) {
       throw new ApiError(409, 'An account with this email already exists');
     }
 
-    if (role === 'superadmin') {
-      throw new ApiError(403, 'Cannot create superadmin accounts');
-    }
-
-    const defaultPassword = password || crypto.randomBytes(16).toString('hex');
+    const defaultPassword = crypto.randomBytes(16).toString('hex');
     const passwordHash = await hashPassword(defaultPassword);
 
     const newUser = await prisma.user.create({
@@ -144,8 +140,8 @@ export async function POST(req: NextRequest) {
         email,
         phone: phone || null,
         country: country || 'Nigeria',
-        role: role === 'admin' ? 'admin' : 'user',
-        permissions: role === 'admin' && Array.isArray(permissions) ? permissions : [],
+        role: 'user',
+        permissions: [],
         grantedBy: admin.sub,
         grantedAt: new Date(),
         passwordHash,

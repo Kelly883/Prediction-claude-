@@ -94,8 +94,6 @@ export default function AdminUsersPage() {
     email: '',
     phone: '',
     country: 'Nigeria',
-    role: 'user',
-    permissions: [] as string[],
   });
   const [modalSaving, setModalSaving] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
@@ -163,8 +161,6 @@ export default function AdminUsersPage() {
         email: '',
         phone: '',
         country: 'Nigeria',
-        role: 'user',
-        permissions: [],
       });
       loadData();
     } catch (err) {
@@ -560,44 +556,6 @@ export default function AdminUsersPage() {
                   />
                 </div>
               </div>
-
-              <div className="admin-form-group">
-                <label htmlFor="role" className="admin-form-label">Role</label>
-                <select
-                  id="role"
-                  value={modalForm.role}
-                  onChange={(e) => setModalForm({ ...modalForm, role: e.target.value, permissions: e.target.value === 'admin' ? modalForm.permissions : [] })}
-                  className="admin-select"
-                >
-                  <option value="user">User</option>
-                  <option value="admin">Admin</option>
-                </select>
-              </div>
-
-              {modalForm.role === 'admin' && (
-                <div className="admin-form-group">
-                  <label className="admin-form-label">Admin Permissions</label>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {Object.entries(PERMISSION_OPTIONS).map(([key, label]) => (
-                      <label key={key} className="flex items-center gap-2 text-xs text-white cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={modalForm.permissions.includes(key)}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setModalForm({ ...modalForm, permissions: [...modalForm.permissions, key] });
-                            } else {
-                              setModalForm({ ...modalForm, permissions: modalForm.permissions.filter((p) => p !== key) });
-                            }
-                          }}
-                          style={{ accentColor: 'var(--floodlight)' }}
-                        />
-                        {label}
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              )}
 
               {modalError && (
                 <div className="admin-form-error">
