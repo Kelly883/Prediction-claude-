@@ -56,11 +56,26 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       }
     }
 
+    const effectiveRole = role ?? targetUser.role;
+
     const updated = await prisma.user.update({
       where: { id },
       data: {
-        role: role ?? targetUser.role,
-        permissions: role === 'admin' && Array.isArray(permissions) ? permissions : [],
+        // `effectiveRole` fixes a real bug: the permissions conditional
+        // below previously checked the raw request field `role` directly,
+        // not what the user's role would actually become after applying
+        // the `role ?? targetUser.role` fallback used for the `role` write
+        // itself. A caller updating only `permissions` for an existing
+        // admin — reasonably omitting `role` since it isn't changing —
+        // would silently have their permissions wiped to [], because the
+        // (undefined) input `role` didn't literally equal 'admin', even
+        // though the account was an admin both before and after this
+        // update. Not yet reachable from any shipped UI (the only current
+        // frontend caller is read-only), but a real trap for the actual
+        // "update this admin's permissions" feature this endpoint exists
+        // for.
+        role: effectiveRole,
+        permissions: effectiveRole === 'admin' && Array.isArray(permissions) ? permissions : [],
         grantedBy: superAdmin.sub,
         grantedAt: new Date(),
       },

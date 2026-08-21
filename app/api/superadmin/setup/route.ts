@@ -61,7 +61,7 @@ export async function POST(req: NextRequest) {
     const encryptedSecret = encryptTotpSecret(secret);
 
     const id = crypto.randomUUID();
-    setPending(id, { name, email, passwordHash, encryptedSecret });
+    await setPending(id, { name, email, passwordHash, encryptedSecret });
 
     const otpauthUri = generateOtpAuthUri(secret, email);
 
