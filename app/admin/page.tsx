@@ -46,7 +46,7 @@ export default function AdminOverviewPage() {
     async function load() {
       try {
         const [hRes, pRes, postRes, uRes] = await Promise.all([
-          fetch('/api/admin/health'),
+          fetch('/api/admin/webhooks/health'),
           fetch('/api/plans'),
           fetch('/api/posts'),
           fetch('/api/admin/users?limit=1')
