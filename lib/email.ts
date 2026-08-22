@@ -36,28 +36,27 @@ export async function sendEmail(params: SendEmailOptions) {
   const fromAddress = from.includes('<') ? from : `${senderName} <${from}>`;
   const messageId = `<${crypto.randomUUID()}@${new URL(appUrl).hostname}>`;
 
+  const headers: Record<string, string> = {
+    'Message-ID': messageId,
+    'X-Mailer': 'PredictPro/1.0',
+  };
+
+  if (params.listUnsubscribe) {
+    headers['List-Unsubscribe'] = `<${params.listUnsubscribe}>`;
+    headers['List-Unsubscribe-Post'] = 'List-Unsubscribe=One-Click';
+  }
+
   const payload: Record<string, unknown> = {
     from: fromAddress,
     to: params.to,
     subject: params.subject,
     html: params.html,
     text: params.text,
-    headers: {
-      'Message-ID': messageId,
-      'X-Mailer': 'PredictPro/1.0',
-    },
+    headers,
   };
 
   if (params.replyTo) {
     payload.replyTo = params.replyTo;
-  }
-
-  if (params.listUnsubscribe) {
-    payload.headers = {
-      ...payload.headers,
-      'List-Unsubscribe': `<${params.listUnsubscribe}>`,
-      'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
-    };
   }
 
   const res = await fetch('https://api.resend.com/emails', {
