@@ -93,6 +93,11 @@ export const ChangePasswordSchema = z.object({
   newPassword: z.string().min(12).max(200).regex(/[A-Z]/, 'uppercase').regex(/[a-z]/, 'lowercase').regex(/[0-9]/, 'number'),
 });
 
+export const PasswordResetConfirmSchema = z.object({
+  token: z.string().min(1),
+  newPassword: z.string().min(12).max(200).regex(/[A-Z]/, 'uppercase').regex(/[a-z]/, 'lowercase').regex(/[0-9]/, 'number'),
+});
+
 /** Turns a ZodError into the same { error } shape every route already returns. */
 export function formatZodError(err: z.ZodError): string {
   return err.errors.map((e) => `${e.path.join('.')}: ${e.message}`).join('; ');

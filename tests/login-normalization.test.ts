@@ -58,7 +58,7 @@ describe('login email normalization', () => {
   });
 
   it('finds the user regardless of casing in the request', async () => {
-    mockPrisma.user.findUnique.mockResolvedValue(makeUser());
+    mockPrisma.user.findUnique.mockResolvedValue(makeUser({ emailVerifiedAt: new Date() }));
 
     const req = new Request('http://localhost/api/auth/login', {
       method: 'POST',
@@ -69,5 +69,31 @@ describe('login email normalization', () => {
 
     expect(res.status).toBe(200);
     expect(mockPrisma.user.findUnique).toHaveBeenCalledWith({ where: { email: 'test@example.com' } });
+  });
+
+  it('rejects login for unverified email', async () => {
+    mockPrisma.user.findUnique.mockResolvedValue(makeUser({ emailVerifiedAt: null }));
+
+    const req = new Request('http://localhost/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'test@example.com', password: 'password123' }),
+    });
+    const res = await POST(req as any);
+
+    expect(res.status).toBe(403);
+  });
+
+  it('allows login for verified email', async () => {
+    mockPrisma.user.findUnique.mockResolvedValue(makeUser({ emailVerifiedAt: new Date() }));
+
+    const req = new Request('http://localhost/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'test@example.com', password: 'password123' }),
+    });
+    const res = await POST(req as any);
+
+    expect(res.status).toBe(200);
   });
 });

@@ -59,6 +59,7 @@ function makeUser(overrides: any = {}) {
     role: 'user',
     failedLoginAttempts: 0,
     lockedUntil: null,
+    emailVerifiedAt: new Date(),
     ...overrides,
   };
 }

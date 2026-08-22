@@ -5,6 +5,7 @@ import { hashPassword } from '@/lib/password';
 import { checkRateLimit, authLimiter, getClientIp } from '@/lib/ratelimit';
 import { errorResponse, ApiError } from '@/lib/rbac';
 import { writeAudit } from '@/lib/audit';
+import { PasswordResetConfirmSchema } from '@/lib/schemas';
 
 export const runtime = 'nodejs';
 
@@ -16,10 +17,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Too many attempts, try again shortly' }, { status: 429 });
     }
 
-    const { token, newPassword } = await req.json();
-    if (!token || !newPassword || newPassword.length < 8) {
-      throw new ApiError(400, 'token and a newPassword of at least 8 characters are required');
-    }
+    const { token, newPassword } = PasswordResetConfirmSchema.parse(await req.json());
 
     const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
     const record = await prisma.passwordResetToken.findUnique({ where: { tokenHash } });
