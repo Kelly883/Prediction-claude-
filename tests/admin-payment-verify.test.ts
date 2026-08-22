@@ -10,6 +10,7 @@ const mockPrisma = vi.hoisted(() => ({
 
 const mockRbac = vi.hoisted(() => ({
   requirePermission: vi.fn(),
+  requirePermissionWith2FA: vi.fn(),
   errorResponse: vi.fn(),
   ApiError: class ApiError extends Error {
     constructor(public status: number, message: string) {
@@ -55,6 +56,7 @@ describe('POST /api/admin/payments/verify', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockRbac.requirePermission.mockResolvedValue({ sub: 'admin-1', role: 'admin' });
+    mockRbac.requirePermissionWith2FA.mockResolvedValue({ sub: 'admin-1', role: 'admin', permissions: [] });
     mockRbac.errorResponse.mockImplementation((err: any) => {
       const status = err?.status ?? 500;
       return new Response(JSON.stringify({ error: err?.message ?? 'Internal server error' }), { status });

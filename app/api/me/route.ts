@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireUser, errorResponse, ApiError } from '@/lib/rbac';
-import { requireCsrf } from '@/lib/csrf';
+import { requireCsrf, requireSameOrigin } from '@/lib/csrf';
 import { PERMISSIONS, ALL_PERMISSIONS } from '@/lib/permissions';
 import { UpdateProfileSchema } from '@/lib/schemas';
 
@@ -23,6 +23,7 @@ export async function GET(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   try {
+    requireSameOrigin(req);
     requireCsrf(req);
     const user = await requireUser(req);
     const dto = UpdateProfileSchema.parse(await req.json());

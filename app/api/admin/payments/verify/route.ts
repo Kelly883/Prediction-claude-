@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requirePermission, errorResponse, ApiError } from '@/lib/rbac';
+import { requirePermissionWith2FA, errorResponse, ApiError } from '@/lib/rbac';
 import { handleVerifiedWebhook } from '@/lib/payments';
 import { paystackVerifyTransaction } from '@/lib/providers/paystack';
 import { flutterwaveVerifyTransaction } from '@/lib/providers/flutterwave';
 import { getRequestId } from '@/lib/request-id';
 import { writeAudit } from '@/lib/audit';
 import { PERMISSIONS } from '@/lib/permissions';
+import { requireSameOrigin, requireCsrf } from '@/lib/csrf';
 
 export const runtime = 'nodejs';
 
@@ -17,7 +18,10 @@ function isSuccessStatus(status: string): boolean {
 export async function POST(req: NextRequest) {
   const requestId = getRequestId(req);
   try {
-    const admin = await requirePermission(req, PERMISSIONS.pages.transactions);
+    requireSameOrigin(req);
+    requireCsrf(req);
+    // Financial mutation: enforces admin permission AND two-factor auth.
+    const admin = await requirePermissionWith2FA(req, PERMISSIONS.pages.transactions);
     const body = await req.json();
     const { reference, provider } = body;
 

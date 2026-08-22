@@ -4,12 +4,13 @@ import { requireUser, errorResponse, ApiError } from '@/lib/rbac';
 import { hashPassword, verifyPassword } from '@/lib/password';
 import { ChangePasswordSchema } from '@/lib/schemas';
 import { writeAudit } from '@/lib/audit';
-import { requireCsrf } from '@/lib/csrf';
+import { requireCsrf, requireSameOrigin } from '@/lib/csrf';
 
 export const runtime = 'nodejs';
 
 export async function PATCH(req: NextRequest) {
   try {
+    requireSameOrigin(req);
     requireCsrf(req);
     const user = await requireUser(req);
     const { currentPassword, newPassword } = ChangePasswordSchema.parse(await req.json());

@@ -4,7 +4,7 @@ import { requirePermission, errorResponse } from '@/lib/rbac';
 import { PERMISSIONS } from '@/lib/permissions';
 import { writeAudit } from '@/lib/audit';
 import { FreeAccessRuleSchema } from '@/lib/schemas';
-import { requireCsrf } from '@/lib/csrf';
+import { requireSameOrigin, requireCsrf } from '@/lib/csrf';
 
 export const runtime = 'nodejs';
 
@@ -23,6 +23,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    requireSameOrigin(req);
     requireCsrf(req);
     const admin = await requirePermission(req, PERMISSIONS.pages.freeAccess);
     const dto = FreeAccessRuleSchema.parse(await req.json());
