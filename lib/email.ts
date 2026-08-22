@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import {
   verificationEmailHtml,
   verificationEmailText,
@@ -33,6 +34,7 @@ export async function sendEmail(params: SendEmailOptions) {
 
   const senderName = params.senderName || 'PredictPro';
   const fromAddress = from.includes('<') ? from : `${senderName} <${from}>`;
+  const messageId = `<${crypto.randomUUID()}@${new URL(appUrl).hostname}>`;
 
   const payload: Record<string, unknown> = {
     from: fromAddress,
@@ -40,6 +42,10 @@ export async function sendEmail(params: SendEmailOptions) {
     subject: params.subject,
     html: params.html,
     text: params.text,
+    headers: {
+      'Message-ID': messageId,
+      'X-Mailer': 'PredictPro/1.0',
+    },
   };
 
   if (params.replyTo) {
@@ -48,6 +54,7 @@ export async function sendEmail(params: SendEmailOptions) {
 
   if (params.listUnsubscribe) {
     payload.headers = {
+      ...payload.headers,
       'List-Unsubscribe': `<${params.listUnsubscribe}>`,
       'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
     };
@@ -59,10 +66,27 @@ export async function sendEmail(params: SendEmailOptions) {
     body: JSON.stringify(payload),
   });
 
+  const resBody = await res.json().catch(() => null);
+
   if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Resend send failed: ${res.status} ${body}`);
+    const bodyText = typeof resBody === 'string' ? resBody : JSON.stringify(resBody);
+    const reason = resBody && typeof resBody === 'object' && 'message' in (resBody as any)
+      ? (resBody as any).message
+      : bodyText;
+    const hint = res.status === 422
+      ? ' Check that RESEND_FROM_EMAIL domain is verified in Resend and has SPF/DKIM records.'
+      : '';
+    throw new Error(`Resend send failed: ${res.status} ${reason || bodyText}${hint}`);
   }
+
+  console.log(`[email] Sent to=${params.to} subject="${params.subject}" id=${(resBody as any)?.id} from=${fromAddress}`);
+  return resBody;
+}
+
+export function getReplyTo(): string {
+  const from = process.env.RESEND_FROM_EMAIL || '';
+  const match = from.match(/<(.+?)>/) || from.match(/(.+)/);
+  return match ? match[1] : 'support@predictpro.cloud-ip.cc';
 }
 
 export async function sendVerificationEmail(to: string, verificationUrl: string) {
@@ -72,7 +96,7 @@ export async function sendVerificationEmail(to: string, verificationUrl: string)
     html: verificationEmailHtml(verificationUrl),
     text: verificationEmailText(verificationUrl),
     listUnsubscribe: `${process.env.APP_URL}/unsubscribe?email=${encodeURIComponent(to)}`,
-    replyTo: 'support@predictpro.cloud-ip.cc',
+    replyTo: getReplyTo(),
   });
 }
 
@@ -83,7 +107,7 @@ export async function sendPasswordResetEmail(to: string, resetUrl: string, ttlMi
     html: passwordResetEmailHtml(resetUrl, ttlMinutes),
     text: passwordResetEmailText(resetUrl, ttlMinutes),
     listUnsubscribe: `${process.env.APP_URL}/unsubscribe?email=${encodeURIComponent(to)}`,
-    replyTo: 'support@predictpro.cloud-ip.cc',
+    replyTo: getReplyTo(),
   });
 }
 
@@ -99,7 +123,7 @@ export async function sendRenewalReminderEmail(
     html: renewalReminderEmailHtml(renewalUrl, planName, endDate),
     text: renewalReminderEmailText(renewalUrl, planName, endDate),
     listUnsubscribe: `${process.env.APP_URL}/unsubscribe?email=${encodeURIComponent(to)}`,
-    replyTo: 'support@predictpro.cloud-ip.cc',
+    replyTo: getReplyTo(),
   });
 }
 
@@ -110,6 +134,6 @@ export async function sendAdminVerificationEmail(to: string, verificationUrl: st
     html: adminVerificationEmailHtml(verificationUrl),
     text: adminVerificationEmailText(verificationUrl),
     listUnsubscribe: `${process.env.APP_URL}/unsubscribe?email=${encodeURIComponent(to)}`,
-    replyTo: 'support@predictpro.cloud-ip.cc',
+    replyTo: getReplyTo(),
   });
 }
