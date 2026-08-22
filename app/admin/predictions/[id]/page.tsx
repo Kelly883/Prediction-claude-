@@ -104,6 +104,7 @@ export default function EditPredictionPage() {
   useEffect(load, [id]);
 
   // When plans load and visibility is subscribers, default to all plans selected
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
     if (visibility === 'subscribers' && availablePlans.length > 0 && planIds.length === 0) {
       setPlanIds(availablePlans.map((p) => p.id));

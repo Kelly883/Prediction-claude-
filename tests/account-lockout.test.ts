@@ -8,6 +8,9 @@ const mockPrisma = vi.hoisted(() => ({
   userSession: {
     findMany: vi.fn().mockResolvedValue([]),
   },
+  refreshSession: {
+    create: vi.fn().mockResolvedValue({ id: 'rs-1' }),
+  },
 }));
 
 const mockPassword = vi.hoisted(() => ({

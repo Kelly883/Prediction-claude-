@@ -22,6 +22,7 @@ export default function AdminTransactionsPage() {
   const [loading, setLoading] = useState(true);
   const [verifyingId, setVerifyingId] = useState<string | null>(null);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
     setLoading(true);
     apiJson<Tx[]>(`/api/admin/transactions${filter ? `?status=${filter}` : ''}`)

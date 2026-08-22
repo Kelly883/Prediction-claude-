@@ -6,23 +6,29 @@ const globalForPrisma = globalThis as unknown as {
 };
 
 // Initialize store for local environment without mock data
-if (!globalForPrisma.inMemoryDb) {
-  globalForPrisma.inMemoryDb = {
-    User: [],
-    Plan: [],
-    Subscription: [],
-    Transaction: [],
-    PredictionPost: [],
-    PredictionItem: [],
-    MediaAsset: [],
-    FreeAccessRule: [],
-    ComplimentaryAccess: [],
-    AuditLog: [],
-    CmsSection: [],
-    UserSession: [],
-    PasswordResetToken: [],
-  };
-}
+  if (!globalForPrisma.inMemoryDb) {
+    globalForPrisma.inMemoryDb = {
+      User: [],
+      Plan: [],
+      Subscription: [],
+      Transaction: [],
+      PredictionPost: [],
+      PredictionItem: [],
+      MediaAsset: [],
+      FreeAccessRule: [],
+      ComplimentaryAccess: [],
+      AuditLog: [],
+      CmsSection: [],
+      UserSession: [],
+      PasswordResetToken: [],
+      EmailVerificationToken: [],
+      TwoFactorRecoveryCode: [],
+      RefreshSession: [],
+      PaymentAttempt: [],
+      WebhookEvent: [],
+      Refund: [],
+    };
+  }
 
 function matchFilter(record: any, where: any): boolean {
   if (!where || Object.keys(where).length === 0) return true;
@@ -76,6 +82,8 @@ function matchFilter(record: any, where: any): boolean {
     } else {
       if (recVal instanceof Date && val instanceof Date) {
         if (recVal.getTime() !== val.getTime()) return false;
+      } else if (recVal === undefined && val === null) {
+        // treat undefined as null for comparison
       } else if (recVal !== val) {
         return false;
       }
@@ -114,6 +122,12 @@ function resolveRelations(modelName: string, record: any, include?: any): any {
   }
   if (include.transactions && modelName === 'User') {
     clone.transactions = db.Transaction.filter((t) => t.userId === record.id);
+  }
+  if (include.refreshSessions && modelName === 'User') {
+    clone.refreshSessions = db.RefreshSession.filter((rs) => rs.userId === record.id);
+  }
+  if (include.refunds && modelName === 'Transaction') {
+    clone.refunds = db.Refund.filter((r) => r.transactionId === record.id);
   }
 
   return clone;
@@ -285,6 +299,12 @@ function createClientWrapper(): any {
         cmsSection: 'CmsSection',
         userSession: 'UserSession',
         passwordResetToken: 'PasswordResetToken',
+        emailVerificationToken: 'EmailVerificationToken',
+        twoFactorRecoveryCode: 'TwoFactorRecoveryCode',
+        refreshSession: 'RefreshSession',
+        paymentAttempt: 'PaymentAttempt',
+        webhookEvent: 'WebhookEvent',
+        refund: 'Refund',
       };
 
       const normalizedModel = modelKeyMap[prop] || (prop.charAt(0).toUpperCase() + prop.slice(1));

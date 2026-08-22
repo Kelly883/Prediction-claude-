@@ -8,6 +8,7 @@ import { touchSession, getDistinctDeviceCount, isAnomalous } from '@/lib/session
 import { LoginSchema } from '@/lib/schemas';
 import { writeAudit } from '@/lib/audit';
 import { getRequestId } from '@/lib/request-id';
+import { createRefreshSession, hashRefreshToken } from '@/lib/refresh-sessions';
 
 export const runtime = 'nodejs';
 
@@ -108,6 +109,15 @@ export async function POST(req: NextRequest) {
 
     const accessToken = await issueAccessToken({ sub: user.id, role: user.role });
     const refreshToken = await issueRefreshToken(user.id, user.tokenVersion);
+    const refreshTokenHash = hashRefreshToken(refreshToken);
+
+    await createRefreshSession({
+      userId: user.id,
+      tokenHash: refreshTokenHash,
+      tokenVersion: user.tokenVersion,
+      familyId: undefined,
+      ip,
+    });
 
     await touchSession(user.id, req);
 

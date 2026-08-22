@@ -143,6 +143,7 @@ export default function AdminAuditLogPage() {
   }, [page, pageSize, search, quickFilter, categoryFilter, dateFrom, dateTo, actionFilter]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     apiJson<AuditLogResponse>(`/api/admin/audit-logs?${queryParams}`)
       .then((data) => {

@@ -42,6 +42,7 @@ export default function SecurityPage() {
     }
   }
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
     loadStatus();
   }, []);

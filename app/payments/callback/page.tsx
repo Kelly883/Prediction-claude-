@@ -18,6 +18,7 @@ function CallbackContent() {
   const [message, setMessage] = useState<string>('Confirming your payment…');
   const [isVerifying, setIsVerifying] = useState(false);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
     if (!reference) {
       setStatus('error');

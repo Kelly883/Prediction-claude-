@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requirePermission, errorResponse } from '@/lib/rbac';
 import { PERMISSIONS } from '@/lib/permissions';
-import { redactPayload } from '@/lib/payments';
+import { toAdminTransactionDTO } from '@/lib/dtos';
 import { parsePagination, withPaginationHeaders } from '@/lib/pagination';
 
 export const runtime = 'nodejs';
@@ -29,10 +29,7 @@ export async function GET(req: NextRequest) {
       prisma.transaction.count({ where: status ? { status } : undefined }),
     ]);
 
-    const safe = transactions.map((tx) => ({
-      ...tx,
-      rawPayload: redactPayload(tx.rawPayload),
-    }));
+    const safe = transactions.map((tx) => toAdminTransactionDTO(tx));
 
     const res = NextResponse.json(safe);
     return withPaginationHeaders(res, page, pageSize, total);

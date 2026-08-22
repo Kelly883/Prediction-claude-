@@ -176,32 +176,62 @@ export async function GET(req: NextRequest) {
         continue;
       }
 
-      // 5. Execute charge against payment provider with deterministic reference
+      // 4a. Create payment attempt record BEFORE charging the provider (P0-04)
       const { amount, currency, fxRateUsed } = await resolvePrice(plan, subUser.country);
+
+      const paymentAttempt = await prisma.paymentAttempt.create({
+        data: {
+          subscriptionId: sub.id,
+          provider: sub.renewalProvider!,
+          providerReference: reference,
+          amount,
+          currency,
+          status: 'processing',
+          attemptNumber: nextAttempt,
+          startedAt: now,
+        },
+      });
+
+      // 5. Execute charge against payment provider with deterministic reference
 
       // Decrypt stored authorization code / card token immediately before provider request
       const decryptedAuthCode = sub.renewalAuthCode.startsWith('v1:')
         ? decryptPaymentToken(sub.renewalAuthCode)
         : sub.renewalAuthCode;
 
-      const chargeResult =
-        sub.renewalProvider === 'paystack'
-          ? await paystackChargeAuthorization({
-              email: subUser.email,
-              amountMinorUnits: toMinorUnits(amount, currency),
-              currency,
-              authorizationCode: decryptedAuthCode,
-              reference,
-            })
-          : await flutterwaveChargeToken({
-              token: decryptedAuthCode,
-              amount,
-              currency,
-              email: subUser.email,
-              txRef: reference,
-            });
+      let chargeResult: { success: boolean; raw?: any };
+      try {
+        chargeResult =
+          sub.renewalProvider === 'paystack'
+            ? await paystackChargeAuthorization({
+                email: subUser.email,
+                amountMinorUnits: toMinorUnits(amount, currency),
+                currency,
+                authorizationCode: decryptedAuthCode,
+                reference,
+              })
+            : await flutterwaveChargeToken({
+                token: decryptedAuthCode,
+                amount,
+                currency,
+                email: subUser.email,
+                txRef: reference,
+              });
+      } catch (providerErr) {
+        await prisma.paymentAttempt.update({
+          where: { id: paymentAttempt.id },
+          data: { status: 'unknown', completedAt: now, providerResponse: { error: (providerErr as Error).message } },
+        });
+        throw providerErr;
+      }
 
-      if (!chargeResult.success) throw new Error('Charge declined by provider');
+      if (!chargeResult.success) {
+        await prisma.paymentAttempt.update({
+          where: { id: paymentAttempt.id },
+          data: { status: 'failed', completedAt: now },
+        });
+        throw new Error('Charge declined by provider');
+      }
 
       // 6. Charge succeeded: persist transaction and advance subscription atomically
       await prisma.$transaction(async (db) => {
@@ -219,6 +249,11 @@ export async function GET(req: NextRequest) {
             completedAt: now,
             rawPayload: chargeResult.raw as any,
           },
+        });
+
+        await db.paymentAttempt.update({
+          where: { id: paymentAttempt.id },
+          data: { status: 'succeeded', completedAt: now, providerResponse: chargeResult.raw as any },
         });
 
         const durationMs = plan.durationDays * 24 * 60 * 60 * 1000;

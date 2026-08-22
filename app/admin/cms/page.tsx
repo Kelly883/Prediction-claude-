@@ -32,6 +32,7 @@ export default function AdminCmsPage() {
       .then(setSections)
       .finally(() => setLoading(false));
   }
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(load, [page]);
 
   async function save(e: React.FormEvent) {

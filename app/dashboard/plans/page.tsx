@@ -67,6 +67,7 @@ export default function DashboardPlansPage() {
       });
 
       if (res.checkoutUrl) {
+        // eslint-disable-next-line react-hooks/immutability
         window.location.href = res.checkoutUrl;
       } else {
         throw new Error('Payment URL not received. Please try again.');
@@ -137,7 +138,7 @@ export default function DashboardPlansPage() {
         </div>
       ) : plans.length === 0 ? (
         <div className="card" style={{ textAlign: 'center', color: 'var(--chalk-muted)', padding: '40px 20px' }}>
-          <p style={{ marginBottom: 12 }}>Plans aren't published yet — check back shortly.</p>
+          <p style={{ marginBottom: 12 }}>Plans aren&apos;t published yet — check back shortly.</p>
           <Link href="/dashboard" className="btn btn-ghost" style={{ fontSize: 14 }}>
             Back to overview
           </Link>

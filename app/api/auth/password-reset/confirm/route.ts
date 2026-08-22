@@ -5,6 +5,7 @@ import { hashPassword } from '@/lib/password';
 import { checkRateLimit, authLimiter, getClientIp } from '@/lib/ratelimit';
 import { errorResponse, ApiError } from '@/lib/rbac';
 import { writeAudit } from '@/lib/audit';
+import { revokeAllRefreshSessions } from '@/lib/refresh-sessions';
 
 export const runtime = 'nodejs';
 
@@ -46,6 +47,8 @@ export async function POST(req: NextRequest) {
       await db.userSession.deleteMany({
         where: { userId: record.userId },
       });
+
+      await revokeAllRefreshSessions(record.userId);
 
       await db.passwordResetToken.update({
         where: { id: record.id },

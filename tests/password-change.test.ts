@@ -40,6 +40,9 @@ const mockPrisma = vi.hoisted(() => {
         return { count };
       }),
     },
+    refreshSession: {
+      updateMany: vi.fn(async () => ({ count: 0 })),
+    },
     auditLog: {
       create: vi.fn(async ({ data }: any) => {
         auditLogs.push(data);

@@ -1,10 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
 import { issueRefreshToken } from '@/lib/auth';
+import { hashRefreshToken } from '@/lib/refresh-sessions';
 
 function makeFakeDb() {
   const users = new Map<string, any>();
   const sessions = new Map<string, any>();
+  const refreshSessions = new Map<string, any>();
 
   const db: any = {
     user: {
@@ -31,6 +33,35 @@ function makeFakeDb() {
         }
         return { count: [...sessions.values()].filter((s: any) => s.userId === where.userId).length };
       }),
+      deleteMany: vi.fn(async () => ({ count: 0 })),
+    },
+    refreshSession: {
+      findFirst: vi.fn(async ({ where }: any) => {
+        if (where.userId && where.tokenHash) {
+          return [...refreshSessions.values()].find((s: any) => s.userId === where.userId && s.tokenHash === where.tokenHash) ?? null;
+        }
+        if (where.userId && where.familyId) {
+          return [...refreshSessions.values()].find((s: any) => s.userId === where.userId && s.familyId === where.familyId) ?? null;
+        }
+        return null;
+      }),
+      update: vi.fn(async ({ where, data }: any) => {
+        const s = refreshSessions.get(where.id);
+        if (s) {
+          const updated = { ...s, ...data };
+          refreshSessions.set(where.id, updated);
+          return updated;
+        }
+        return { id: where.id, ...data };
+      }),
+      updateMany: vi.fn(async () => ({ count: 0 })),
+      deleteMany: vi.fn(async () => ({ count: 0 })),
+      create: vi.fn(async ({ data }: any) => {
+        const id = `rs-${Date.now()}`;
+        const record = { id, ...data, createdAt: new Date(), updatedAt: new Date() };
+        refreshSessions.set(id, record);
+        return record;
+      }),
     },
     $transaction: vi.fn(async (fn: any) => fn(db)),
     _seedUser(user: any) {
@@ -39,8 +70,12 @@ function makeFakeDb() {
     _seedSession(session: any) {
       sessions.set(session.id, session);
     },
+    _seedRefreshSession(session: any) {
+      refreshSessions.set(session.id, session);
+    },
     _getUser: (id: string) => users.get(id),
     _getSession: (id: string) => sessions.get(id),
+    _getRefreshSession: (id: string) => refreshSessions.get(id),
   };
   return db;
 }
@@ -83,6 +118,16 @@ describe('Refresh idle timeout', () => {
     });
 
     const refreshToken = await issueRefreshToken('user-1', 0);
+    const tokenHash = hashRefreshToken(refreshToken);
+    fakeDb._seedRefreshSession({
+      id: 'rs-1',
+      userId: 'user-1',
+      tokenHash,
+      familyId: 'family-1',
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      revokedAt: undefined,
+    });
+
     const { POST: refreshTokenRoute } = await import('@/app/api/auth/refresh/route');
     const req = new NextRequest('http://localhost/api/auth/refresh', {
       method: 'POST',
@@ -139,6 +184,16 @@ describe('Refresh idle timeout', () => {
     });
 
     const refreshToken = await issueRefreshToken('user-3', 0);
+    const tokenHash = hashRefreshToken(refreshToken);
+    fakeDb._seedRefreshSession({
+      id: 'rs-3',
+      userId: 'user-3',
+      tokenHash,
+      familyId: 'family-3',
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      revokedAt: undefined,
+    });
+
     const { POST: refreshTokenRoute } = await import('@/app/api/auth/refresh/route');
     const req = new NextRequest('http://localhost/api/auth/refresh', {
       method: 'POST',
@@ -175,6 +230,16 @@ describe('Refresh idle timeout', () => {
     });
 
     const refreshToken = await issueRefreshToken('user-4', 0);
+    const tokenHash = hashRefreshToken(refreshToken);
+    fakeDb._seedRefreshSession({
+      id: 'rs-4',
+      userId: 'user-4',
+      tokenHash,
+      familyId: 'family-4',
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      revokedAt: undefined,
+    });
+
     const { POST: refreshTokenRoute } = await import('@/app/api/auth/refresh/route');
     const req = new NextRequest('http://localhost/api/auth/refresh', {
       method: 'POST',

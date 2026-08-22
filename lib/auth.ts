@@ -42,11 +42,11 @@ export interface RefreshTokenPayload {
   sub: string;
   tv?: number; // tokenVersion / session version
   jti?: string; // refresh token ID for rotation/reuse detection
+  familyId?: string;
 }
 
-// In-memory store for used refresh token jti's (rotation detection).
-// In production, replace with Redis with TTL matching refresh token lifetime.
-export const usedRefreshJtis = new Set<string>();
+// Refresh token rotation and replay detection are now handled persistently
+// via the RefreshSession model in lib/refresh-sessions.ts.
 
 export async function issueAccessToken(payload: AccessTokenPayload): Promise<string> {
   return new SignJWT({ ...payload })
@@ -56,10 +56,11 @@ export async function issueAccessToken(payload: AccessTokenPayload): Promise<str
     .sign(getAccessSecret());
 }
 
-export async function issueRefreshToken(userId: string, tokenVersion: number = 0): Promise<string> {
+export async function issueRefreshToken(userId: string, tokenVersion: number = 0, familyId?: string): Promise<string> {
   const { randomUUID } = await import('crypto');
   const jti = randomUUID();
-  return new SignJWT({ sub: userId, type: 'refresh', tv: tokenVersion, jti })
+  const fid = familyId ?? randomUUID();
+  return new SignJWT({ sub: userId, type: 'refresh', tv: tokenVersion, jti, familyId: fid })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setExpirationTime(process.env.JWT_REFRESH_TTL ?? '7d')
@@ -81,11 +82,9 @@ export async function verifyRefreshToken(token: string): Promise<RefreshTokenPay
     if (payload.type !== 'refresh') return null;
 
     const jti = typeof payload.jti === 'string' ? payload.jti : undefined;
-    if (jti && usedRefreshJtis.has(jti)) {
-      return null;
-    }
+    const familyId = typeof payload.familyId === 'string' ? payload.familyId : undefined;
 
-    return { sub: payload.sub as string, tv: typeof payload.tv === 'number' ? payload.tv : undefined, jti };
+    return { sub: payload.sub as string, tv: typeof payload.tv === 'number' ? payload.tv : undefined, jti, familyId };
   } catch {
     return null;
   }

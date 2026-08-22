@@ -14,7 +14,7 @@ export const runtime = 'nodejs';
 function verifyBootstrapSecret(req: NextRequest): boolean {
   const secret = process.env.ADMIN_BOOTSTRAP_SECRET;
   if (!secret) {
-    return process.env.ALLOW_ADMIN_BOOTSTRAP_WITHOUT_SECRET === 'true';
+    return false;
   }
 
   const headerSecret =
@@ -29,10 +29,10 @@ export async function GET(req: NextRequest) {
   try {
     const hasSecretConfigured = Boolean(process.env.ADMIN_BOOTSTRAP_SECRET);
 
-    if (!hasSecretConfigured && process.env.ALLOW_ADMIN_BOOTSTRAP_WITHOUT_SECRET !== 'true') {
+    if (!hasSecretConfigured) {
       return NextResponse.json({
         isSetupAvailable: false,
-        message: 'Public admin setup is disabled. Use operator CLI.',
+        message: 'Bootstrap secret is not configured.',
       });
     }
 

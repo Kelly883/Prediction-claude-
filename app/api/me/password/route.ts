@@ -5,6 +5,8 @@ import { hashPassword, verifyPassword } from '@/lib/password';
 import { ChangePasswordSchema } from '@/lib/schemas';
 import { writeAudit } from '@/lib/audit';
 import { requireCsrf } from '@/lib/csrf';
+import { checkRateLimit, authLimiter, getClientIp } from '@/lib/ratelimit';
+import { revokeAllRefreshSessions } from '@/lib/refresh-sessions';
 
 export const runtime = 'nodejs';
 
@@ -12,6 +14,12 @@ export async function PATCH(req: NextRequest) {
   try {
     requireCsrf(req);
     const user = await requireUser(req);
+    const ip = getClientIp(req);
+    const allowed = await checkRateLimit(authLimiter, [ip, `user:${user.sub}`]);
+    if (!allowed) {
+      return NextResponse.json({ error: 'Too many requests, try again shortly' }, { status: 429 });
+    }
+
     const { currentPassword, newPassword } = ChangePasswordSchema.parse(await req.json());
 
     const record = await prisma.user.findUniqueOrThrow({ where: { id: user.sub } });
@@ -40,6 +48,8 @@ export async function PATCH(req: NextRequest) {
       await db.userSession.deleteMany({
         where: { userId: user.sub },
       });
+
+      await revokeAllRefreshSessions(user.sub);
     });
 
     await writeAudit({

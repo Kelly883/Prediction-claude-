@@ -1,9 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
-  // sharp is a native module — mark it external so Next.js's server bundler
-  // doesn't try to bundle it and instead lets Node's normal require() find
-  // the platform-specific binary that `npm install` placed in node_modules.
+  generateBuildId: () => {
+    return process.env.NEXT_BUILD_ID || `build-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  },
   serverExternalPackages: ['sharp'],
   async headers() {
     return [
@@ -16,6 +16,8 @@ const nextConfig = {
           { key: 'X-Content-Type-Options', value: 'nosniff' },
           { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
           { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
+          { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
+          { key: 'Cross-Origin-Embedder-Policy', value: 'require-corp' },
           {
             key: 'Strict-Transport-Security',
             value: 'max-age=63072000; includeSubDomains; preload',
