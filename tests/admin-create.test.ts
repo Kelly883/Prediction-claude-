@@ -19,9 +19,16 @@ const mockAudit = vi.hoisted(() => ({
   writeAudit: vi.fn(),
 }));
 
+const mockRateLimit = vi.hoisted(() => ({
+  checkRateLimit: vi.fn(),
+  adminLimiter: {},
+  getClientIp: vi.fn(() => '127.0.0.1'),
+}));
+
 vi.mock('@/lib/prisma', () => ({ prisma: mockPrisma }));
 vi.mock('@/lib/rbac', () => mockRbac);
 vi.mock('@/lib/audit', () => mockAudit);
+vi.mock('@/lib/ratelimit', () => mockRateLimit);
 
 import { POST as createAdminPost } from '@/app/api/admin/admins/route';
 
@@ -42,6 +49,7 @@ describe('POST /api/admin/admins', () => {
       return new Response(JSON.stringify({ error: err?.message ?? 'Internal server error' }), { status });
     });
     mockAudit.writeAudit.mockResolvedValue(undefined);
+    mockRateLimit.checkRateLimit.mockResolvedValue(true);
   });
 
   it('returns 400 when name is missing', async () => {
