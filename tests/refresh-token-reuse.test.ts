@@ -47,7 +47,32 @@ vi.mock('@/lib/prisma', () => ({
   },
 }));
 
+// Explicit NX-aware mock of @/lib/redis — same rationale as
+// tests/superadmin-setup.test.ts: ci.yml sets placeholder Upstash env vars,
+// so without a mock, lib/redis.ts builds a real client that DNS-fails on
+// example.upstash.io with retries and blows past vitest's 5s timeout. The
+// mock honors SET NX so consumeRefreshJti's claim-on-consume semantics are
+// genuinely exercised rather than accidentally passing via fail-open.
+const mockRedisStore = vi.hoisted(() => new Map<string, string>());
+vi.mock('@/lib/redis', () => ({
+  redis: {
+    get: vi.fn(async (key: string) => mockRedisStore.get(key) ?? null),
+    set: vi.fn(async (key: string, value: string, opts?: { nx?: boolean }) => {
+      if (opts?.nx && mockRedisStore.has(key)) {
+        return null;
+      }
+      mockRedisStore.set(key, value);
+      return 'OK';
+    }),
+    del: vi.fn(async (key: string) => (mockRedisStore.delete(key) ? 1 : 0)),
+  },
+}));
+
 describe('consumeRefreshJti claim-on-consume semantics', () => {
+  beforeEach(() => {
+    mockRedisStore.clear();
+  });
+
   it('claims a fresh jti and rejects the same jti on second consume', async () => {
     const first = await consumeRefreshJti('jti-test-1');
     expect(first).toBe(true);
