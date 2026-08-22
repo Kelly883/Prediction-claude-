@@ -3,6 +3,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const mockPrisma = vi.hoisted(() => ({
   user: { findUnique: vi.fn(), update: vi.fn() },
   userSession: { findFirst: vi.fn(), findMany: vi.fn().mockReturnValue([]), create: vi.fn(), update: vi.fn(), deleteMany: vi.fn() },
+  emailVerificationToken: {
+    updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+    create: vi.fn().mockResolvedValue({ id: 'evt-1', userId: 'user-1', tokenHash: 'hash', expiresAt: new Date() }),
+  },
+  $transaction: vi.fn(async (fn: any) => fn(mockPrisma)),
 }));
 
 const mockPassword = vi.hoisted(() => ({
@@ -20,6 +25,10 @@ const mockAudit = vi.hoisted(() => ({
   writeAudit: vi.fn(),
 }));
 
+const mockEmails = vi.hoisted(() => ({
+  sendVerificationEmail: vi.fn(),
+}));
+
 const mockRatelimit = vi.hoisted(() => ({
   checkRateLimit: vi.fn().mockResolvedValue(true),
   authLimiter: {},
@@ -31,6 +40,7 @@ vi.mock('@/lib/prisma', () => ({ prisma: mockPrisma }));
 vi.mock('@/lib/password', () => mockPassword);
 vi.mock('@/lib/auth', () => mockAuth);
 vi.mock('@/lib/audit', () => mockAudit);
+vi.mock('@/lib/emails', () => mockEmails);
 vi.mock('@/lib/ratelimit', () => mockRatelimit);
 
 import { POST } from '@/app/api/auth/login/route';
@@ -71,7 +81,7 @@ describe('login email normalization', () => {
     expect(mockPrisma.user.findUnique).toHaveBeenCalledWith({ where: { email: 'test@example.com' } });
   });
 
-  it('rejects login for unverified email', async () => {
+  it('rejects login for unverified email and sends verification email', async () => {
     mockPrisma.user.findUnique.mockResolvedValue(makeUser({ emailVerifiedAt: null }));
 
     const req = new Request('http://localhost/api/auth/login', {
@@ -82,6 +92,8 @@ describe('login email normalization', () => {
     const res = await POST(req as any);
 
     expect(res.status).toBe(403);
+    expect(mockEmails.sendVerificationEmail).toHaveBeenCalledTimes(1);
+    expect(mockPrisma.emailVerificationToken.create).toHaveBeenCalledTimes(1);
   });
 
   it('allows login for verified email', async () => {
