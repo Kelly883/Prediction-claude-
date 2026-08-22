@@ -133,7 +133,7 @@ export default function DashboardPage() {
               </>
             ) : (
               <>
-                <p style={{ color: 'var(--chalk-muted)', marginBottom: 16 }}>You don't have an active plan yet.</p>
+                <p style={{ color: 'var(--chalk-muted)', marginBottom: 16 }}>You don&apos;t have an active plan yet.</p>
                 <Link href="/dashboard/plans" className="btn btn-primary">See plans</Link>
               </>
             )}

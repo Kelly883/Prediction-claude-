@@ -87,6 +87,7 @@ function VerifyContent() {
   const [message, setMessage] = useState<string>('');
   const [email, setEmail] = useState<string>('');
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
     if (!token) {
       setStatus('missing');

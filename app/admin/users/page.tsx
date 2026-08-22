@@ -123,6 +123,7 @@ export default function AdminUsersPage() {
       .finally(() => setLoading(false));
   }
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
     loadData();
   }, [activeTab, searchQuery]);

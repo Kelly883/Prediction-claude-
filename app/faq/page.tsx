@@ -21,7 +21,7 @@ export default async function FaqPage() {
 
           {keys.length === 0 ? (
             <p style={{ color: 'var(--chalk-muted)' }}>
-              This page is managed from the admin CMS and hasn't been published yet.
+              This page is managed from the admin CMS and hasn&apos;t been published yet.
             </p>
           ) : (
             keys.map((key) => {
