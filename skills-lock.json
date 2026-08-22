@@ -6,6 +6,18 @@
       "sourceType": "github",
       "skillPath": "skills/frontend-design/SKILL.md",
       "computedHash": "4eabc66183767153e404b39d1b839b1c37f2d82d86f0a0d7e880a579d8d62336"
+    },
+    "flow-by-flow": {
+      "source": ".kilo/skills/flow-by-flow",
+      "sourceType": "local",
+      "skillPath": ".agents/skills/flow-by-flow/SKILL.md",
+      "computedHash": "9bbe80f8b5441b48e471a9d122c913314274cc9db2df1e6917550de9f57b72ef"
+    },
+    "flow-prototype": {
+      "source": ".kilo/skills/flow-prototype",
+      "sourceType": "local",
+      "skillPath": ".agents/skills/flow-prototype/SKILL.md",
+      "computedHash": "13366d25fd6ab3ba7ac45cddde8d3748bd88479008284202eda621b12fc8d1fd"
     }
   }
 }
