@@ -4,6 +4,7 @@ import { requireSuperAdmin, errorResponse, ApiError } from '@/lib/rbac';
 import { hashPassword } from '@/lib/password';
 import { writeAudit } from '@/lib/audit';
 import { requireSameOrigin, requireCsrf } from '@/lib/csrf';
+import { checkRateLimit, adminLimiter, getClientIp } from '@/lib/ratelimit';
 import crypto from 'crypto';
 
 export const runtime = 'nodejs';
@@ -13,6 +14,12 @@ export async function POST(req: NextRequest) {
     requireSameOrigin(req);
     requireCsrf(req);
     const superadmin = await requireSuperAdmin(req);
+    const ip = getClientIp(req);
+    const allowed = await checkRateLimit(adminLimiter, [ip, `superadmin:${superadmin.sub}`]);
+    if (!allowed) {
+      return NextResponse.json({ error: 'Too many requests, try again shortly' }, { status: 429 });
+    }
+
     const body = await req.json();
     const { name, email, phone, country, password, permissions } = body;
 
