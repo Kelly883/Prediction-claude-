@@ -103,6 +103,31 @@ describe('Password Reset Session Revocation & Token Versioning', () => {
     fakeDb._seedSession({ id: 'sess-2', userId: 'user-reset-1', deviceFingerprint: 'fp-2' });
   });
 
+  it('rejects short passwords below 12 characters', async () => {
+    const rawToken = 'test-raw-reset-token-short';
+    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+
+    fakeDb._seedResetToken({
+      id: 'tok-short',
+      userId: 'user-reset-1',
+      tokenHash,
+      expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+      usedAt: null,
+    });
+
+    const { POST: confirmPasswordReset } = await import('@/app/api/auth/password-reset/confirm/route');
+    const req = new NextRequest('http://localhost/api/auth/password-reset/confirm', {
+      method: 'POST',
+      body: JSON.stringify({
+        token: rawToken,
+        newPassword: 'Short1!!',
+      }),
+    });
+
+    const res = await confirmPasswordReset(req);
+    expect(res.status).toBe(400);
+  });
+
   it('revokes all active sessions and increments tokenVersion on password reset', async () => {
     const rawToken = 'test-raw-reset-token-123';
     const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');

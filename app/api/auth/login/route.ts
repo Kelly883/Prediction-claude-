@@ -87,6 +87,15 @@ export async function POST(req: NextRequest) {
       data: { failedLoginAttempts: 0, lockedUntil: null },
     });
 
+    if (!user.emailVerifiedAt) {
+      await writeAudit({
+        actorId: user.id,
+        action: 'auth.login_unverified_email',
+        metadata: { requestId, ip, emailNormalized: normalizedEmail },
+      });
+      throw new ApiError(403, 'Please verify your email before logging in');
+    }
+
     // Password rehash: if the stored hash was created with a lower cost factor,
     // rehash with the current default so that password security improves over time
     // without forcing a reset.
