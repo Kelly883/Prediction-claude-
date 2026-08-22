@@ -5,10 +5,10 @@ import { writeAudit } from '@/lib/audit';
 
 export const runtime = 'nodejs';
 
-export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await requireUser(req);
-    const sessionId = params.id;
+    const { id: sessionId } = await params;
 
     const session = await prisma.userSession.findUnique({ where: { id: sessionId } });
     if (!session) {

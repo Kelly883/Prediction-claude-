@@ -38,55 +38,55 @@ describe('P0-06 Production Storage Fail-Closed', () => {
   });
 
   it('allows local fallback in development when S3 is missing', async () => {
-    process.env.NODE_ENV = 'development';
+    (process.env as any).NODE_ENV = 'development';
     const { uploadMedia } = await import('@/lib/media');
     const buffer = await createValidJpegBuffer();
 
-    const file = new File([buffer], 'test.jpg', { type: 'image/jpeg' });
+    const file = new File([buffer.buffer as ArrayBuffer], 'test.jpg', { type: 'image/jpeg' });
     const result = await uploadMedia('post-1', file);
     expect(result.id).toBe('media-1');
   });
 
   it('allows local fallback in test when S3 is missing', async () => {
-    process.env.NODE_ENV = 'test';
+    (process.env as any).NODE_ENV = 'test';
     const { uploadMedia } = await import('@/lib/media');
     const buffer = await createValidJpegBuffer();
 
-    const file = new File([buffer], 'test.jpg', { type: 'image/jpeg' });
+    const file = new File([buffer.buffer as ArrayBuffer], 'test.jpg', { type: 'image/jpeg' });
     const result = await uploadMedia('post-1', file);
     expect(result.id).toBe('media-1');
   });
 
   it('fails closed in production when S3 is missing', async () => {
-    process.env.NODE_ENV = 'production';
+    (process.env as any).NODE_ENV = 'production';
     const { uploadMedia } = await import('@/lib/media');
     const buffer = await createValidJpegBuffer();
 
-    const file = new File([buffer], 'test.jpg', { type: 'image/jpeg' });
+    const file = new File([buffer.buffer as ArrayBuffer], 'test.jpg', { type: 'image/jpeg' });
     await expect(uploadMedia('post-1', file)).rejects.toThrow('Storage service is not configured');
   });
 
   it('fails closed in production when S3 is configured as ci-placeholder', async () => {
-    process.env.NODE_ENV = 'production';
+    (process.env as any).NODE_ENV = 'production';
     process.env.S3_BUCKET = 'ci-placeholder';
     process.env.S3_ACCESS_KEY_ID = 'ci-placeholder';
     process.env.S3_SECRET_ACCESS_KEY = 'ci-placeholder';
     const { uploadMedia } = await import('@/lib/media');
     const buffer = await createValidJpegBuffer();
 
-    const file = new File([buffer], 'test.jpg', { type: 'image/jpeg' });
+    const file = new File([buffer.buffer as ArrayBuffer], 'test.jpg', { type: 'image/jpeg' });
     await expect(uploadMedia('post-1', file)).rejects.toThrow('Storage service is not configured');
   });
 
   it('allows S3 in production when properly configured', async () => {
-    process.env.NODE_ENV = 'production';
+    (process.env as any).NODE_ENV = 'production';
     process.env.S3_BUCKET = 'real-bucket';
     process.env.S3_ACCESS_KEY_ID = 'real-key';
     process.env.S3_SECRET_ACCESS_KEY = 'real-secret';
     const { uploadMedia } = await import('@/lib/media');
     const buffer = await createValidJpegBuffer();
 
-    const file = new File([buffer], 'test.jpg', { type: 'image/jpeg' });
+    const file = new File([buffer.buffer as ArrayBuffer], 'test.jpg', { type: 'image/jpeg' });
     await expect(uploadMedia('post-1', file)).rejects.toThrow();
   });
 });

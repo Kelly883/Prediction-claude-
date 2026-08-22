@@ -11,7 +11,7 @@ export async function createRefreshSession(params: {
   userId: string;
   tokenHash: string;
   tokenVersion: number;
-  familyId: string;
+  familyId?: string;
   ip?: string | null;
   userAgent?: string | null;
   ttlSeconds?: number;
@@ -21,7 +21,7 @@ export async function createRefreshSession(params: {
     data: {
       userId: params.userId,
       tokenHash: params.tokenHash,
-      familyId: params.familyId,
+      familyId: params.familyId ?? crypto.randomUUID(),
       expiresAt,
       ip: params.ip ?? null,
       userAgent: params.userAgent ?? null,

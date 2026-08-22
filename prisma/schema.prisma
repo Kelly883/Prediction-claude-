@@ -129,6 +129,7 @@ model User {
 
   @@index([role])
   @@index([email])
+  @@index([deletedAt])
 }
 
 model Plan {
@@ -276,6 +277,7 @@ model ComplimentaryAccess {
   createdAt DateTime        @default(now())
 
   @@index([userId])
+  @@index([postId])
 }
 
 model AuditLog {
@@ -289,6 +291,8 @@ model AuditLog {
   createdAt  DateTime @default(now())
 
   @@index([action, createdAt])
+  @@index([actorId, createdAt])
+  @@index([targetType, targetId])
 }
 
 model CmsSection {
@@ -435,4 +439,5 @@ model Refund {
   processedAt     DateTime?
 
   @@index([transactionId])
+  @@index([status])
 }

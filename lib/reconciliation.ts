@@ -40,9 +40,6 @@ export async function generateReconciliationReport(
         lte: endDate,
       },
     },
-    include: {
-      webhookEvents: true,
-    },
     orderBy: { createdAt: 'desc' },
   });
 
@@ -71,7 +68,14 @@ export async function generateReconciliationReport(
     byProvider[providerKey].count++;
     byProvider[providerKey].amount = String(Number(byProvider[providerKey].amount) + amount);
 
-    if (tx.status === 'success' && tx.webhookEvents.length === 0) {
+    const webhookCount = await prisma.webhookEvent.count({
+      where: {
+        providerReference: tx.providerReference,
+        status: { in: ['processed', 'failed', 'deadLettered', 'ignored'] },
+      },
+    });
+
+    if (tx.status === 'success' && webhookCount === 0) {
       missingWebhooks.push({
         providerReference: tx.providerReference,
         provider: tx.provider,

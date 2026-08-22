@@ -72,6 +72,10 @@ function makeFakeDb() {
     webhookEvent: {
       create: vi.fn(async ({ data }: any) => ({ id: `we-${Date.now()}`, ...data })),
       findFirst: vi.fn(async () => null),
+      findUnique: vi.fn(async ({ where }: any) => {
+        if (where.id) return { id: where.id, retryCount: 0, status: 'processing' };
+        return null;
+      }),
       updateMany: vi.fn(async () => ({ count: 0 })),
       update: vi.fn(async ({ where, data }: any) => ({ id: where.id, ...data })),
     },

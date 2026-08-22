@@ -6,6 +6,7 @@ import { getDistinctDeviceCount, isAnomalous } from '@/lib/sessions';
 import { writeAudit } from '@/lib/audit';
 import { toAdminTransactionDTO } from '@/lib/dtos';
 import { requireSameOrigin, requireCsrf } from '@/lib/csrf';
+import { checkRateLimit, adminLimiter, getClientIp } from '@/lib/ratelimit';
 
 export const runtime = 'nodejs';
 
@@ -45,6 +46,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     requireSameOrigin(req);
     requireCsrf(req);
     const admin = await requirePermission(req, PERMISSIONS.pages.users);
+    const ip = getClientIp(req);
+    const allowed = await checkRateLimit(adminLimiter, [ip, `admin:${admin.sub}`]);
+    if (!allowed) {
+      return NextResponse.json({ error: 'Too many requests, try again shortly' }, { status: 429 });
+    }
+
     const { id } = await params;
     const body = await req.json();
 

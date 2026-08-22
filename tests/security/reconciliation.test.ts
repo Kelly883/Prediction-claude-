@@ -42,8 +42,24 @@ function makeFakeDb() {
     },
     webhookEvent: {
       findMany: vi.fn(async ({ where }: any) => {
-        if (!where.transactionId) return [];
-        return [...webhookEvents.values()].filter((we) => we.transactionId === where.transactionId);
+        if (!where.transactionId && !where.providerReference) return [];
+        if (where.transactionId) {
+          return [...webhookEvents.values()].filter((we) => we.transactionId === where.transactionId);
+        }
+        if (where.providerReference) {
+          return [...webhookEvents.values()].filter((we) => we.providerReference === where.providerReference);
+        }
+        return [];
+      }),
+      count: vi.fn(async ({ where }: any) => {
+        let list = [...webhookEvents.values()];
+        if (where.providerReference) {
+          list = list.filter((we) => we.providerReference === where.providerReference);
+        }
+        if (where.status?.in) {
+          list = list.filter((we) => where.status.in.includes(we.status));
+        }
+        return list.length;
       }),
     },
     _seedTx(tx: any) {
@@ -154,7 +170,7 @@ describe('P1-03 Payment Reconciliation', () => {
         eventType: 'charge.success',
         providerReference: 'ref-1',
         payload: {},
-        processingStatus: 'processed',
+        status: 'processed',
       });
 
       const { generateReconciliationReport } = await import('@/lib/reconciliation');

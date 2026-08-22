@@ -111,7 +111,7 @@ describe('P1-02 Session Management APIs', () => {
       const { DELETE } = await import('@/app/api/me/sessions/[id]/route');
       const req = new NextRequest('http://localhost:3000/api/me/sessions/sess-1', { method: 'DELETE' });
 
-      const res = await DELETE(req, { params: { id: 'sess-1' } });
+      const res = await DELETE(req, { params: Promise.resolve({ id: 'sess-1' }) });
       expect(res.status).toBe(200);
       const data = await res.json();
       expect(data.success).toBe(true);
@@ -124,7 +124,7 @@ describe('P1-02 Session Management APIs', () => {
       const { DELETE } = await import('@/app/api/me/sessions/[id]/route');
       const req = new NextRequest('http://localhost:3000/api/me/sessions/sess-1', { method: 'DELETE' });
 
-      const res = await DELETE(req, { params: { id: 'sess-1' } });
+      const res = await DELETE(req, { params: Promise.resolve({ id: 'sess-1' }) });
       expect(res.status).toBe(403);
     });
 
@@ -134,7 +134,7 @@ describe('P1-02 Session Management APIs', () => {
       const { DELETE } = await import('@/app/api/me/sessions/[id]/route');
       const req = new NextRequest('http://localhost:3000/api/me/sessions/nonexistent', { method: 'DELETE' });
 
-      const res = await DELETE(req, { params: { id: 'nonexistent' } });
+      const res = await DELETE(req, { params: Promise.resolve({ id: 'nonexistent' }) });
       expect(res.status).toBe(404);
     });
   });
