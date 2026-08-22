@@ -21,7 +21,14 @@ function createRedisClient(): any {
       const val = inMemoryStore.get(k);
       return (val as T) ?? null;
     },
-    set: async (k: string, v: any, _opts?: any) => {
+    // Honors SET NX semantics used by lib/refresh-jti.ts claim-on-consume:
+    // when nx is set and the key already exists, return null (claim failed)
+    // instead of blindly overwriting — otherwise refresh-token replay
+    // detection silently no-ops in every environment without Upstash.
+    set: async (k: string, v: any, opts?: { nx?: boolean; ex?: number }) => {
+      if (opts?.nx && inMemoryStore.has(k)) {
+        return null;
+      }
       inMemoryStore.set(k, v);
       return 'OK';
     },
