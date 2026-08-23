@@ -88,6 +88,37 @@ export function getReplyTo(): string {
   return match ? match[1] : 'support@predictpro.cloud-ip.cc';
 }
 
+function validateEmailConfig() {
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.RESEND_FROM_EMAIL;
+  const appUrl = process.env.APP_URL;
+
+  if (!apiKey) {
+    console.warn('[email] RESEND_API_KEY is not set — all email sending will fail');
+  }
+  if (!from) {
+    console.warn('[email] RESEND_FROM_EMAIL is not set — all email sending will fail');
+  }
+  if (!appUrl) {
+    console.warn('[email] APP_URL is not set — verification links will be broken');
+  }
+
+  if (from && appUrl) {
+    const fromDomain = (from.match(/@([^>]+)/) || [])[1] || '';
+    let appHost = '';
+    try {
+      appHost = new URL(appUrl).hostname;
+    } catch {
+      // ignore invalid APP_URL
+    }
+    if (fromDomain && appHost && !appHost.includes(fromDomain) && !fromDomain.includes(appHost)) {
+      console.warn(`[email] RESEND_FROM_EMAIL domain (${fromDomain}) does not match APP_URL hostname (${appHost}). This may cause deliverability issues.`);
+    }
+  }
+}
+
+validateEmailConfig();
+
 export async function sendVerificationEmail(to: string, verificationUrl: string) {
   return sendEmail({
     to,

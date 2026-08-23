@@ -96,13 +96,15 @@ export async function PATCH(req: NextRequest) {
       });
 
       const verificationUrl = `${process.env.APP_URL}/verify-email?token=${rawToken}`;
+      let verificationEmailSent = false;
       try {
         await sendVerificationEmail(updated.email, verificationUrl);
+        verificationEmailSent = true;
       } catch (emailErr) {
         console.error('Failed to send verification email after email change', emailErr);
       }
 
-      return NextResponse.json({ id: updated.id, name: updated.name, email: updated.email, phone: updated.phone, country: updated.country, role: updated.role, emailVerified: false });
+      return NextResponse.json({ id: updated.id, name: updated.name, email: updated.email, phone: updated.phone, country: updated.country, role: updated.role, emailVerified: false, verificationEmailSent });
     }
 
     const record = await prisma.user.update({ where: { id: user.sub }, data: dto });

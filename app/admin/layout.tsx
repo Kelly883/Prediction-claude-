@@ -20,12 +20,12 @@ function VerificationBanner() {
   async function resend() {
     setResending(true);
     try {
-      await apiJson('/api/auth/resend-verification', {
+      const result = await apiJson<{ emailSent: boolean }>('/api/auth/resend-verification', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
       });
-      setSent(true);
+      setSent(result.emailSent);
     } finally {
       setResending(false);
     }
@@ -41,6 +41,11 @@ function VerificationBanner() {
         <p style={{ color: 'var(--chalk-muted)', fontSize: 13 }}>
                   {sent ? 'Check your inbox for a new link.' : `We haven't confirmed ${email} yet.`}
         </p>
+        {!sent && (
+          <p style={{ color: 'var(--chalk-muted)', fontSize: 11, marginTop: 4 }}>
+            Not seeing it? Check your spam or junk folder.
+          </p>
+        )}
       </div>
       <button
         onClick={resend}

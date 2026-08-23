@@ -54,7 +54,11 @@ export default function AdminProfilePage() {
       });
       setSaved(true);
       if (res.emailVerified === false && payload.email) {
-        setEmailSent(true);
+        if (res.verificationEmailSent) {
+          setEmailSent(true);
+        } else {
+          setError('Email updated, but we could not send the verification email. Please try resending from your dashboard or contact support.');
+        }
       }
     } catch (err) {
       setError((err as Error).message);

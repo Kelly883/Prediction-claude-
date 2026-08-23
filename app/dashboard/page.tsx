@@ -65,12 +65,12 @@ export default function DashboardPage() {
     if (!me) return;
     setResendingVerification(true);
     try {
-      await apiJson('/api/auth/resend-verification', {
+      const result = await apiJson<{ emailSent: boolean }>('/api/auth/resend-verification', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: me.email }),
       });
-      setVerificationResent(true);
+      setVerificationResent(result.emailSent);
     } finally {
       setResendingVerification(false);
     }
@@ -100,6 +100,11 @@ export default function DashboardPage() {
                 <p style={{ color: 'var(--chalk-muted)', fontSize: 13 }}>
                   {verificationResent ? 'Check your inbox for a new link.' : `We haven't confirmed ${me.email} yet.`}
                 </p>
+                {!verificationResent && (
+                  <p style={{ color: 'var(--chalk-muted)', fontSize: 11, marginTop: 4 }}>
+                    Not seeing it? Check your spam or junk folder.
+                  </p>
+                )}
               </div>
               <button
                 onClick={resendVerification}

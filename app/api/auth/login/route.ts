@@ -100,6 +100,7 @@ export async function POST(req: NextRequest) {
       const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
       const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
+      let verificationEmailSent = false;
       try {
         await prisma.$transaction(async (db) => {
           await db.emailVerificationToken.updateMany({
@@ -113,9 +114,17 @@ export async function POST(req: NextRequest) {
 
         const verificationUrl = `${process.env.APP_URL}/verify-email?token=${rawToken}`;
         await sendVerificationEmail(user.email, verificationUrl);
+        verificationEmailSent = true;
       } catch (emailErr) {
         console.error('Failed to send verification email on login', emailErr);
       }
+
+      const accessToken = await issueAccessToken({ sub: user.id, role: user.role });
+      const refreshToken = await issueRefreshToken(user.id, user.tokenVersion);
+      const res = withRequestId(req, NextResponse.json({ id: user.id, email: user.email, role: user.role, emailVerified: false, verificationEmailSent }));
+      res.cookies.set('access_token', accessToken, cookieOptions(15 * 60));
+      res.cookies.set('refresh_token', refreshToken, cookieOptions(7 * 24 * 60 * 60));
+      return res;
     }
 
     // Password rehash: if the stored hash was created with a lower cost factor,
