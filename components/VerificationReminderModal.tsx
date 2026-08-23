@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { apiJson } from '@/lib/api-client';
 
 type Props = {
@@ -11,6 +12,7 @@ export default function VerificationReminderModal({ openIntervalMs = 300000 }: P
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const router = useRouter();
 
   useEffect(() => {
     let timer: ReturnType<typeof setInterval> | null = null;
@@ -40,6 +42,10 @@ export default function VerificationReminderModal({ openIntervalMs = 300000 }: P
     };
   }, [openIntervalMs]);
 
+  function dismiss() {
+    setOpen(false);
+  }
+
   async function resend() {
     if (!email) return;
     await apiJson('/api/auth/resend-verification', {
@@ -47,6 +53,12 @@ export default function VerificationReminderModal({ openIntervalMs = 300000 }: P
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email }),
     });
+    dismiss();
+  }
+
+  function changeEmail() {
+    dismiss();
+    router.push('/dashboard/profile');
   }
 
   if (loading || !open) return null;
@@ -89,15 +101,15 @@ export default function VerificationReminderModal({ openIntervalMs = 300000 }: P
           >
             Resend verification email
           </button>
-          <a
-            href="/dashboard/profile"
+          <button
+            onClick={changeEmail}
             className="btn btn-ghost"
             style={{ width: '100%', textAlign: 'center', display: 'block' }}
           >
             Change email address
-          </a>
+          </button>
           <button
-            onClick={() => setOpen(false)}
+            onClick={dismiss}
             className="btn btn-ghost"
             style={{ width: '100%', textAlign: 'center', color: 'var(--chalk-muted)' }}
           >
