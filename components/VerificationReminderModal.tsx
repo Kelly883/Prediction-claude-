@@ -13,6 +13,8 @@ export default function VerificationReminderModal({ openIntervalMs = 300000 }: P
   const [email, setEmail] = useState<string | null>(null);
   const [role, setRole] = useState<'admin' | 'user' | 'superadmin' | null>(null);
   const [loading, setLoading] = useState(true);
+  const [resending, setResending] = useState(false);
+  const [resentResult, setResentResult] = useState<string | null>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -50,12 +52,24 @@ export default function VerificationReminderModal({ openIntervalMs = 300000 }: P
 
   async function resend() {
     if (!email) return;
-    await apiJson('/api/auth/resend-verification', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email }),
-    });
-    dismiss();
+    setResending(true);
+    setResentResult(null);
+    try {
+      const result = await apiJson<{ emailSent: boolean }>('/api/auth/resend-verification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      if (result.emailSent) {
+        setResentResult('sent');
+      } else {
+        setResentResult('failed');
+      }
+    } catch {
+      setResentResult('error');
+    } finally {
+      setResending(false);
+    }
   }
 
   function changeEmail() {
@@ -97,15 +111,34 @@ export default function VerificationReminderModal({ openIntervalMs = 300000 }: P
             We sent a verification link to <strong style={{ color: 'var(--chalk)' }}>{email}</strong>.
             Please verify to unlock all features and secure your account.
           </p>
+          <p style={{ color: 'var(--chalk-muted)', fontSize: 12, marginTop: 8 }}>
+            Not seeing it? Check your spam or junk folder.
+          </p>
+          {resentResult === 'failed' && (
+            <p style={{ color: 'var(--card-red)', fontSize: 13, marginTop: 8 }}>
+              We could not send the verification email. Please try again later or contact support.
+            </p>
+          )}
+          {resentResult === 'error' && (
+            <p style={{ color: 'var(--card-red)', fontSize: 13, marginTop: 8 }}>
+              Something went wrong while sending the email. Please try again.
+            </p>
+          )}
+          {resentResult === 'sent' && (
+            <p style={{ color: 'var(--floodlight)', fontSize: 13, marginTop: 8 }}>
+              Verification email sent! Please check your inbox.
+            </p>
+          )}
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <button
             onClick={resend}
+            disabled={resending}
             className="btn btn-primary"
             style={{ width: '100%', textAlign: 'center' }}
           >
-            Resend verification email
+            {resending ? 'Sending…' : 'Resend verification email'}
           </button>
           <button
             onClick={changeEmail}

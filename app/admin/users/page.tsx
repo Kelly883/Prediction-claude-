@@ -35,6 +35,7 @@ const PERMISSION_OPTIONS: Record<string, string> = {
   'pages.security': 'Security',
   'admin.createAdmins': 'Create Admins',
   'admin.grantPermissions': 'Grant Permissions',
+  'admin.changeEmail': 'Change Email After Verification',
 };
 
 type UserRow = {

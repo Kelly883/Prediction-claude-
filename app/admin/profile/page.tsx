@@ -2,14 +2,16 @@
 
 import { useEffect, useState } from 'react';
 import { apiJson } from '@/lib/api-client';
+import { PERMISSIONS } from '@/lib/permissions';
 
-type Me = { id: string; name: string; email: string; phone: string | null; country: string; role: 'admin' | 'user' | 'superadmin'; emailVerified: boolean };
+type Me = { id: string; name: string; email: string; phone: string | null; country: string; role: 'admin' | 'user' | 'superadmin'; emailVerified: boolean; permissions: string[] };
 
 export default function AdminProfilePage() {
   const [me, setMe] = useState<Me | null>(null);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
+  const [twoFactorCode, setTwoFactorCode] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -27,6 +29,10 @@ export default function AdminProfilePage() {
       .finally(() => setLoading(false));
   }, []);
 
+  const canChangeEmail = !me?.emailVerified || (me.permissions || []).includes(PERMISSIONS.admin.changeEmail) || me?.role === 'superadmin';
+  const isSuperadminChangingEmail = me?.role === 'superadmin' && me.emailVerified && email !== me.email;
+  const showEmailField = !me?.emailVerified || canChangeEmail;
+
   async function save(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
@@ -35,17 +41,24 @@ export default function AdminProfilePage() {
     setError(null);
     try {
       const payload: Record<string, string | null> = { name, phone: phone || null };
-      if (!me?.emailVerified && email !== me?.email) {
+      if (showEmailField && email !== me?.email) {
         payload.email = email;
       }
-      const res = await apiJson<{ id: string; email: string; emailVerified: boolean }>('/api/me', {
+      if (isSuperadminChangingEmail) {
+        payload.twoFactorCode = twoFactorCode;
+      }
+      const res = await apiJson<{ id: string; email: string; emailVerified: boolean; verificationEmailSent?: boolean }>('/api/me', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
       setSaved(true);
       if (res.emailVerified === false && payload.email) {
-        setEmailSent(true);
+        if (res.verificationEmailSent) {
+          setEmailSent(true);
+        } else {
+          setError('Email updated, but we could not send the verification email. Please try resending from your dashboard or contact support.');
+        }
       }
     } catch (err) {
       setError((err as Error).message);
@@ -75,9 +88,7 @@ export default function AdminProfilePage() {
           </div>
           <div className="field">
             <label htmlFor="email">Email</label>
-            {me?.emailVerified ? (
-              <div style={{ padding: '12px 0', color: 'var(--chalk-muted)' }}>{me.email} (verified — contact support to change)</div>
-            ) : (
+            {showEmailField ? (
               <>
                 <input
                   id="email"
@@ -91,8 +102,27 @@ export default function AdminProfilePage() {
                   Changing your email will require re-verification.
                 </p>
               </>
+            ) : (
+              <div style={{ padding: '12px 0', color: 'var(--chalk-muted)' }}>{me?.email} (verified — contact support to change)</div>
             )}
           </div>
+          {isSuperadminChangingEmail && showEmailField && (
+            <div className="field">
+              <label htmlFor="twoFactorCode">Two-Factor Authentication Code</label>
+              <input
+                id="twoFactorCode"
+                type="text"
+                inputMode="numeric"
+                value={twoFactorCode}
+                onChange={(e) => setTwoFactorCode(e.target.value)}
+                placeholder="123456"
+                required
+              />
+              <p style={{ fontSize: 12, color: 'var(--chalk-muted)', marginTop: 6 }}>
+                Enter a code from your authenticator app to confirm this change.
+              </p>
+            </div>
+          )}
           <div className="field">
             <label htmlFor="phone">Phone</label>
             <input id="phone" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+234..." />

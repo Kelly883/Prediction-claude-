@@ -70,6 +70,7 @@ export const UpdateProfileSchema = z.object({
   name: z.string().min(1).max(120).optional(),
   email: z.string().email().max(255).optional(),
   phone: z.string().min(5).max(32).nullable().optional(),
+  twoFactorCode: z.string().length(6).optional(),
 });
 
 export const FreeAccessRuleSchema = z.object({

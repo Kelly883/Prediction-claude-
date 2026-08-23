@@ -67,6 +67,11 @@ function LoginForm() {
         return;
       }
 
+      if (data.emailVerified === false && data.verificationEmailSent === false) {
+        setError('Login successful, but we could not send the verification email automatically. Please use "Resend verification email" on your dashboard or contact support.');
+        return;
+      }
+
       const targetPath = homeFor(data.role);
 
       await router.push(targetPath);
