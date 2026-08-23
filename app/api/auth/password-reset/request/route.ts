@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { sendPasswordResetEmail } from '@/lib/email';
+import { sendPasswordResetEmail, getAppUrl } from '@/lib/email';
 import { checkRateLimit, authLimiter, getClientIp, normalizeIdentifier } from '@/lib/ratelimit';
 import { errorResponse } from '@/lib/rbac';
 import { writeAudit } from '@/lib/audit';
@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
       data: { userId: user.id, tokenHash, expiresAt: new Date(Date.now() + TOKEN_TTL_MINUTES * 60 * 1000) },
     });
 
-    const resetUrl = `${process.env.APP_URL}/reset-password?token=${rawToken}`;
+    const resetUrl = `${getAppUrl()}/reset-password?token=${rawToken}`;
 
     try {
       await sendPasswordResetEmail(user.email, resetUrl, TOKEN_TTL_MINUTES);

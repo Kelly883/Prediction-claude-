@@ -4,7 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { resolvePrice, toMinorUnits } from '@/lib/payments';
 import { paystackChargeAuthorization } from '@/lib/providers/paystack';
 import { flutterwaveChargeToken } from '@/lib/providers/flutterwave';
-import { sendRenewalReminderEmail } from '@/lib/email';
+import { sendRenewalReminderEmail, getAppUrl } from '@/lib/email';
 import { timingSafeStringEqual } from '@/lib/timing-safe';
 import { decryptPaymentToken } from '@/lib/encryption';
 import { getRequestId } from '@/lib/request-id';
@@ -96,7 +96,7 @@ export async function GET(req: NextRequest) {
       // Send at most one reminder per subscription — renewalReminderSentAt is the dedupe marker
       if (!sub.renewalReminderSentAt) {
         try {
-          const renewalUrl = `${process.env.APP_URL}/dashboard/plans`;
+          const renewalUrl = `${getAppUrl()}/dashboard/plans`;
           await sendRenewalReminderEmail(
             sub.user.email,
             renewalUrl,

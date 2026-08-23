@@ -4,6 +4,8 @@ export {
   sendPasswordResetEmail,
   sendRenewalReminderEmail,
   sendAdminVerificationEmail,
+  getReplyTo,
+  getAppUrl,
 } from '../email';
 
 export {

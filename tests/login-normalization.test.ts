@@ -27,6 +27,7 @@ const mockAudit = vi.hoisted(() => ({
 
 const mockEmails = vi.hoisted(() => ({
   sendVerificationEmail: vi.fn(),
+  getAppUrl: vi.fn(() => 'http://localhost:3000'),
 }));
 
 const mockRatelimit = vi.hoisted(() => ({

@@ -89,6 +89,7 @@ vi.mock('@/lib/providers/flutterwave', () => ({
 
 vi.mock('@/lib/email', () => ({
   sendEmail: vi.fn().mockResolvedValue(true),
+  getAppUrl: vi.fn(() => 'http://localhost:3000'),
 }));
 
 describe('Subscription Auto-Renewal Locking & Concurrency', () => {
