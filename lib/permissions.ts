@@ -13,6 +13,7 @@ export const PERMISSIONS = {
   admin: {
     createAdmins: 'admin.createAdmins',
     grantPermissions: 'admin.grantPermissions',
+    changeEmail: 'admin.changeEmail',
   },
 } as const;
 
@@ -27,7 +28,8 @@ export type Permission =
   | typeof PERMISSIONS.pages.cms
   | typeof PERMISSIONS.pages.security
   | typeof PERMISSIONS.admin.createAdmins
-  | typeof PERMISSIONS.admin.grantPermissions;
+  | typeof PERMISSIONS.admin.grantPermissions
+  | typeof PERMISSIONS.admin.changeEmail;
 
 export const ALL_PERMISSIONS: Permission[] = [
   PERMISSIONS.pages.overview,
@@ -41,6 +43,7 @@ export const ALL_PERMISSIONS: Permission[] = [
   PERMISSIONS.pages.security,
   PERMISSIONS.admin.createAdmins,
   PERMISSIONS.admin.grantPermissions,
+  PERMISSIONS.admin.changeEmail,
 ];
 
 export const NAV_PERMISSIONS: Record<string, Permission> = {
@@ -69,6 +72,7 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   [PERMISSIONS.pages.security]: 'Security',
   [PERMISSIONS.admin.createAdmins]: 'Create Admins',
   [PERMISSIONS.admin.grantPermissions]: 'Grant Permissions',
+  [PERMISSIONS.admin.changeEmail]: 'Change Email After Verification',
 };
 
 export const PERMISSION_GROUPS = [
@@ -91,6 +95,7 @@ export const PERMISSION_GROUPS = [
     permissions: [
       PERMISSIONS.admin.createAdmins,
       PERMISSIONS.admin.grantPermissions,
+      PERMISSIONS.admin.changeEmail,
     ],
   },
 ];
