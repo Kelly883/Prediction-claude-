@@ -47,7 +47,7 @@ export default function AdminProfilePage() {
       if (isSuperadminChangingEmail) {
         payload.twoFactorCode = twoFactorCode;
       }
-      const res = await apiJson<{ id: string; email: string; emailVerified: boolean }>('/api/me', {
+      const res = await apiJson<{ id: string; email: string; emailVerified: boolean; verificationEmailSent?: boolean }>('/api/me', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
