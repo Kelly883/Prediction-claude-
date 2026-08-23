@@ -4,7 +4,7 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 import { apiJson } from './api-client';
 import type { Permission } from './permissions';
 
-type DashboardUser = { id: string; name: string; email: string; country: string; role: 'admin' | 'user' | 'superadmin'; permissions: Permission[] } | null;
+type DashboardUser = { id: string; name: string; email: string; country: string; role: 'admin' | 'user' | 'superadmin'; permissions: Permission[]; emailVerified: boolean } | null;
 
 const DashboardUserContext = createContext<{ user: DashboardUser; loading: boolean }>({ user: null, loading: true });
 

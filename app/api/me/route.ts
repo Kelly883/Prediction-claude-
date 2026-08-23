@@ -4,6 +4,8 @@ import { requireUser, errorResponse, ApiError } from '@/lib/rbac';
 import { requireCsrf, requireSameOrigin } from '@/lib/csrf';
 import { PERMISSIONS, ALL_PERMISSIONS } from '@/lib/permissions';
 import { UpdateProfileSchema } from '@/lib/schemas';
+import { sendVerificationEmail } from '@/lib/emails';
+import crypto from 'crypto';
 
 export const runtime = 'nodejs';
 
@@ -27,6 +29,52 @@ export async function PATCH(req: NextRequest) {
     requireCsrf(req);
     const user = await requireUser(req);
     const dto = UpdateProfileSchema.parse(await req.json());
+
+    if (dto.email) {
+      const normalizedNew = dto.email.trim().toLowerCase();
+      const existing = await prisma.user.findUnique({ where: { email: normalizedNew } });
+      if (existing && existing.id !== user.sub) {
+        throw new ApiError(409, 'Email is already in use');
+      }
+
+      const rawToken = crypto.randomBytes(32).toString('hex');
+      const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+      const record = await prisma.$transaction(async (db) => {
+        await db.emailVerificationToken.updateMany({
+          where: { userId: user.sub, usedAt: null, expiresAt: { gt: new Date() } },
+          data: { usedAt: new Date() },
+        });
+
+        const updated = await db.user.update({
+          where: { id: user.sub },
+          data: {
+            name: dto.name ?? undefined,
+            email: normalizedNew,
+            phone: dto.phone,
+            emailVerifiedAt: null,
+            emailVerifications: { create: { tokenHash, expiresAt } },
+          },
+        });
+
+        await db.emailVerificationToken.findFirst({
+          where: { userId: user.sub, tokenHash, usedAt: null },
+        });
+
+        return updated;
+      });
+
+      const verificationUrl = `${process.env.APP_URL}/verify-email?token=${rawToken}`;
+      try {
+        await sendVerificationEmail(record.email, verificationUrl);
+      } catch (emailErr) {
+        console.error('Failed to send verification email after email change', emailErr);
+      }
+
+      return NextResponse.json({ id: record.id, name: record.name, email: record.email, phone: record.phone, country: record.country, role: record.role, emailVerified: false });
+    }
+
     const record = await prisma.user.update({ where: { id: user.sub }, data: dto });
     return NextResponse.json({ id: record.id, name: record.name, email: record.email, phone: record.phone, country: record.country, role: record.role });
   } catch (err) {

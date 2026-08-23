@@ -59,6 +59,10 @@ vi.mock('@/lib/ratelimit', () => ({
   getClientIp: () => '127.0.0.1',
 }));
 
+vi.mock('@/lib/refresh-jti', () => ({
+  consumeRefreshJti: vi.fn(async () => true),
+}));
+
 describe('Refresh idle timeout', () => {
   beforeEach(() => {
     fakeDb = makeFakeDb();
