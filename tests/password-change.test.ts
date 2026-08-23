@@ -75,6 +75,14 @@ vi.mock('@/lib/password', async () => {
   };
 });
 
+const mockRateLimit = vi.hoisted(() => ({
+  checkRateLimit: vi.fn(),
+  authLimiter: {},
+  getClientIp: vi.fn(() => '127.0.0.1'),
+}));
+
+vi.mock('@/lib/ratelimit', () => mockRateLimit);
+
 import { PATCH as changePassword } from '@/app/api/me/password/route';
 
 describe('Password Change API', () => {
@@ -83,6 +91,7 @@ describe('Password Change API', () => {
     mockPrisma.sessions.clear();
     mockPrisma.auditLogs.length = 0;
     vi.clearAllMocks();
+    mockRateLimit.checkRateLimit.mockResolvedValue(true);
 
     mockPrisma.seedUser({
       id: 'user-pw-1',

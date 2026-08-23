@@ -8,6 +8,8 @@ import { touchSession, getDistinctDeviceCount, isAnomalous } from '@/lib/session
 import { LoginSchema } from '@/lib/schemas';
 import { writeAudit } from '@/lib/audit';
 import { getRequestId } from '@/lib/request-id';
+import { sendVerificationEmail } from '@/lib/emails';
+import crypto from 'crypto';
 
 export const runtime = 'nodejs';
 
@@ -86,6 +88,37 @@ export async function POST(req: NextRequest) {
       where: { id: user.id },
       data: { failedLoginAttempts: 0, lockedUntil: null },
     });
+
+    if (!user.emailVerifiedAt) {
+      await writeAudit({
+        actorId: user.id,
+        action: 'auth.login_unverified_email',
+        metadata: { requestId, ip, emailNormalized: normalizedEmail },
+      });
+
+      const rawToken = crypto.randomBytes(32).toString('hex');
+      const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+      try {
+        await prisma.$transaction(async (db) => {
+          await db.emailVerificationToken.updateMany({
+            where: { userId: user.id, usedAt: null, expiresAt: { gt: new Date() } },
+            data: { usedAt: new Date() },
+          });
+          await db.emailVerificationToken.create({
+            data: { userId: user.id, tokenHash, expiresAt },
+          });
+        });
+
+        const verificationUrl = `${process.env.APP_URL}/verify-email?token=${rawToken}`;
+        await sendVerificationEmail(user.email, verificationUrl);
+      } catch (emailErr) {
+        console.error('Failed to send verification email on login', emailErr);
+      }
+
+      throw new ApiError(403, 'Please verify your email before logging in. A new verification email has been sent.');
+    }
 
     // Password rehash: if the stored hash was created with a lower cost factor,
     // rehash with the current default so that password security improves over time

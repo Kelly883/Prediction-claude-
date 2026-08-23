@@ -36,12 +36,6 @@ describe('lib/superadmin-setup pending session storage', () => {
   });
 
   it('a value set can be read back by a separate call, not just within the same process lifetime', async () => {
-    // The bug this covers: the old implementation used a plain
-    // module-level Map. That happens to "work" within a single test file's
-    // module instance, which is exactly why this needs to go through the
-    // shared `redis` client (even the in-memory fallback) rather than
-    // asserting against the old Map directly — the whole point of the fix
-    // is that state must not live in per-instance JS memory.
     const { setPending, getPending } = await import('@/lib/superadmin-setup');
     await setPending('session-1', { name: 'Ada', email: 'ada@example.com', passwordHash: 'hash', encryptedSecret: 'v1:enc' });
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { verifyRefreshToken, issueAccessToken, issueRefreshToken, cookieOptions } from '@/lib/auth';
+import { consumeRefreshJti } from '@/lib/refresh-jti';
 import { errorResponse, ApiError } from '@/lib/rbac';
 import { writeAudit } from '@/lib/audit';
 
@@ -57,10 +58,20 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Refresh token rotation: mark the old jti as used to prevent reuse
+    // Refresh token rotation: claim this JTI atomically in Redis. If it was
+    // already consumed (replay of a rotated token — possible token theft),
+    // reject the request. Claim-on-consume via SET NX makes concurrent replays
+    // race-safe across serverless instances.
     if (payload.jti) {
-      const { usedRefreshJtis } = await import('@/lib/auth');
-      usedRefreshJtis.add(payload.jti);
+      const claimed = await consumeRefreshJti(payload.jti);
+      if (!claimed) {
+        await writeAudit({
+          actorId: user.id,
+          action: 'auth.refresh_token_replay',
+          metadata: { reason: 'jti_already_consumed' },
+        });
+        throw new ApiError(401, 'Session revoked. Please log in again.');
+      }
     }
 
     const accessToken = await issueAccessToken({ sub: user.id, role: user.role });

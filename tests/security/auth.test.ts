@@ -12,6 +12,19 @@ function makeFakeDb() {
         if (where.email) return [...users.values()].find((u) => u.email === where.email) ?? null;
         return null;
       }),
+      findUniqueOrThrow: vi.fn(async ({ where }: any) => {
+        if (where.id) {
+          const found = users.get(where.id);
+          if (!found) throw new Error('User not found');
+          return found;
+        }
+        if (where.email) {
+          const found = [...users.values()].find((u) => u.email === where.email);
+          if (!found) throw new Error('User not found');
+          return found;
+        }
+        throw new Error('User not found');
+      }),
     },
     userSession: {
       findMany: vi.fn(async () => []),
@@ -66,5 +79,25 @@ describe('Security: authentication', () => {
     const refreshToken = await issueRefreshToken('user-1', 0);
     const payload = await verifyAccessToken(refreshToken);
     expect(payload).toBeNull();
+  });
+
+  it('returns all permissions for superadmin users via /api/me', async () => {
+    const { issueAccessToken } = await import('@/lib/auth');
+    const token = await issueAccessToken({ sub: 'superadmin-1', role: 'superadmin' });
+
+    fakeDb._seedUser({ id: 'superadmin-1', email: 'super@test.com', role: 'superadmin', deletedAt: null });
+
+    const { GET } = await import('@/app/api/me/route');
+    const req = new NextRequest('http://localhost/api/me', {
+      headers: { cookie: `access_token=${token}` },
+    });
+    const res = await GET(req);
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.role).toBe('superadmin');
+    expect(Array.isArray(json.permissions)).toBe(true);
+    expect(json.permissions.length).toBeGreaterThan(0);
+    expect(json.permissions).toContain('pages.overview');
+    expect(json.permissions).toContain('admin.createAdmins');
   });
 });

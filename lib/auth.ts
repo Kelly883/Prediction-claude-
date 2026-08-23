@@ -44,9 +44,13 @@ export interface RefreshTokenPayload {
   jti?: string; // refresh token ID for rotation/reuse detection
 }
 
-// In-memory store for used refresh token jti's (rotation detection).
-// In production, replace with Redis with TTL matching refresh token lifetime.
-export const usedRefreshJtis = new Set<string>();
+// NOTE: refresh-token JTI rotation/reuse detection deliberately does NOT live
+// here. This module is imported by middleware.ts on the Edge runtime, where
+// there is no shared memory or Redis client — an in-process Set would give a
+// false sense of security across serverless instances. Reuse detection now
+// happens in the Node-runtime refresh route via lib/refresh-jti.ts (Redis,
+// claim-on-consume semantics). verifyRefreshToken below only validates
+// signature, expiry, and the `type` claim.
 
 export async function issueAccessToken(payload: AccessTokenPayload): Promise<string> {
   return new SignJWT({ ...payload })
@@ -81,9 +85,6 @@ export async function verifyRefreshToken(token: string): Promise<RefreshTokenPay
     if (payload.type !== 'refresh') return null;
 
     const jti = typeof payload.jti === 'string' ? payload.jti : undefined;
-    if (jti && usedRefreshJtis.has(jti)) {
-      return null;
-    }
 
     return { sub: payload.sub as string, tv: typeof payload.tv === 'number' ? payload.tv : undefined, jti };
   } catch {

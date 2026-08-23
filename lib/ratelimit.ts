@@ -3,7 +3,7 @@ import { NextRequest } from 'next/server';
 import { redis } from './redis';
 import { ApiError } from './rbac';
 
-export type RateLimitPolicy = 'AUTH' | 'PAYMENT' | 'ADMIN' | 'PUBLIC' | 'BOOTSTRAP';
+export type RateLimitPolicy = 'AUTH' | 'PAYMENT' | 'ADMIN' | 'PUBLIC' | 'BOOTSTRAP' | 'BOOTSTRAP_VERIFY';
 
 export interface RateLimitOptions {
   failClosed?: boolean;
@@ -62,6 +62,16 @@ export const bootstrapLimiter = new Ratelimit({
 (bootstrapLimiter as any).policy = 'BOOTSTRAP';
 (bootstrapLimiter as any).failClosed = true;
 
+// 6. BOOTSTRAP_VERIFY policy: 5 requests per 300s, strictly fail-closed (superadmin 2FA verification)
+// Separate from bootstrapLimiter so setup and verify don't compete for the same bucket.
+export const bootstrapVerifyLimiter = new Ratelimit({
+  redis,
+  limiter: Ratelimit.slidingWindow(5, '300 s'),
+  prefix: 'rl:bootstrap-verify',
+});
+(bootstrapVerifyLimiter as any).policy = 'BOOTSTRAP';
+(bootstrapVerifyLimiter as any).failClosed = true;
+
 // Alias for backwards compatibility
 export const defaultLimiter = publicLimiter;
 
@@ -71,6 +81,7 @@ export const POLICY_LIMITERS: Record<RateLimitPolicy, { limiter: Ratelimit; fail
   ADMIN: { limiter: adminLimiter, failClosed: true },
   PUBLIC: { limiter: publicLimiter, failClosed: false },
   BOOTSTRAP: { limiter: bootstrapLimiter, failClosed: true },
+  BOOTSTRAP_VERIFY: { limiter: bootstrapVerifyLimiter, failClosed: true },
 };
 
 /**

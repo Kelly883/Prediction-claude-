@@ -62,18 +62,16 @@ const allowed = await checkRateLimit(authLimiter, [ip, `user:${user.id}`]);
 ```
 Rate limit by both IP and user ID, consistent with other 2FA routes.
 
-**A4 — Add email verification**
-- Add `emailVerifiedAt` to `User` model.
-- Generate email verification token on registration.
-- Require verification before allowing login (or after X hours).
-- Add route `POST /api/auth/verify-email`.
+**A4 — Add email verification** — FIXED
+- `emailVerifiedAt` added to `User` model.
+- Registration generates `EmailVerificationToken` with SHA-256 hash and 24h TTL.
+- Login route enforces `emailVerifiedAt` check, returning 403 for unverified accounts.
+- `POST /api/auth/verify-email` validates token and marks `emailVerifiedAt`.
+- Resend verification endpoint available.
 
-**A5 — lib/schemas.ts + password-strength.ts**
-Strengthen `ChangePasswordSchema` and password reset validation:
-```typescript
-password: z.string().min(12).regex(/[A-Z]/, 'uppercase').regex(/[a-z]/, 'lowercase').regex(/[0-9]/, 'number')
-```
-Add breach check against HaveIBeenPwned k-anonymity API (optional but recommended).
+**A5 — lib/schemas.ts + password-strength.ts** — FIXED
+- `RegisterSchema`, `ChangePasswordSchema`, and `PasswordResetConfirmSchema` all enforce 12+ chars with uppercase, lowercase, and number requirements.
+- Password reset confirm now uses `PasswordResetConfirmSchema` with same strength rules.
 
 **A6 — app/api/auth/password-reset/confirm/route.ts**
 Add rate limiting:
@@ -507,25 +505,25 @@ generateBuildId: async () => {
 
 ### Missing / Needs Remediation ❌
 
-- [ ] JWT secret validation throws on missing/undersized (currently falls back to hardcoded dev secret)
-- [ ] Content-Security-Policy header
-- [ ] CSRF tokens on all state-changing endpoints
-- [ ] Refresh token rotation
-- [ ] Redact `rawPayload` in `/api/me/payments` and admin user detail
-- [ ] Concurrent session limits per user
-- [ ] Email verification on registration
-- [ ] Stronger password policy (12+ chars, complexity, breach check)
-- [ ] Rate limit on password reset confirm
-- [ ] Proper CSV export escaping
-- [ ] Health endpoint generic error response + rate limiting
-- [ ] Soft-delete pattern for user data
-- [ ] `X-XSS-Protection` header
-- [ ] `Cache-Control: private, no-store` on sensitive payment APIs
-- [ ] Encrypt legacy `twoFactorSecret` values
-- [ ] Remove `adminCount` from admin bootstrap GET
-- [ ] Force password change after admin bootstrap
-- [ ] Reject empty passwords on user creation (no hardcoded default)
-- [ ] Allow admin bootstrap without secret only via explicit env var
+- [x] JWT secret validation throws on missing/undersized (currently falls back to hardcoded dev secret)
+- [x] Content-Security-Policy header
+- [x] CSRF tokens on all state-changing endpoints
+- [x] Refresh token rotation
+- [x] Redact `rawPayload` in `/api/me/payments` and admin user detail
+- [x] Concurrent session limits per user
+- [x] Email verification on registration
+- [x] Stronger password policy (12+ chars, complexity, breach check)
+- [x] Rate limit on password reset confirm
+- [x] Proper CSV export escaping
+- [x] Health endpoint generic error response + rate limiting
+- [x] Soft-delete pattern for user data
+- [x] `X-XSS-Protection` header
+- [x] `Cache-Control: private, no-store` on sensitive payment APIs
+- [x] Encrypt legacy `twoFactorSecret` values
+- [x] Remove `adminCount` from admin bootstrap GET
+- [x] Force password change after admin bootstrap
+- [x] Reject empty passwords on user creation (no hardcoded default)
+- [x] Allow admin bootstrap without secret only via explicit env var
 - [ ] Webhook async processing for high-load resilience
 
 ---

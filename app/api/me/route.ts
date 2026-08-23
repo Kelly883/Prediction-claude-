@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireUser, errorResponse, ApiError } from '@/lib/rbac';
-import { requireCsrf } from '@/lib/csrf';
-import { PERMISSIONS } from '@/lib/permissions';
+import { requireCsrf, requireSameOrigin } from '@/lib/csrf';
+import { PERMISSIONS, ALL_PERMISSIONS } from '@/lib/permissions';
 import { UpdateProfileSchema } from '@/lib/schemas';
 
 export const runtime = 'nodejs';
@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
     const record = await prisma.user.findUniqueOrThrow({ where: { id: user.sub } });
     if (record.deletedAt) throw new ApiError(403, 'Account has been deactivated');
     const permissions = record.role === 'superadmin'
-      ? Object.values(PERMISSIONS).flat()
+      ? ALL_PERMISSIONS
       : record.permissions;
     return NextResponse.json({ id: record.id, name: record.name, email: record.email, phone: record.phone, country: record.country, role: record.role, emailVerified: !!record.emailVerifiedAt, permissions });
   } catch (err) {
@@ -23,6 +23,7 @@ export async function GET(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   try {
+    requireSameOrigin(req);
     requireCsrf(req);
     const user = await requireUser(req);
     const dto = UpdateProfileSchema.parse(await req.json());

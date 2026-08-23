@@ -16,6 +16,7 @@ vi.mock('@/lib/redis', () => ({ redis: mockRedis }));
 vi.mock('@/lib/ratelimit', () => ({
   checkRateLimit: vi.fn().mockResolvedValue(true),
   bootstrapLimiter: {},
+  bootstrapVerifyLimiter: {},
   getClientIp: vi.fn().mockReturnValue('127.0.0.1'),
 }));
 
@@ -40,15 +41,15 @@ function makeRequest(id: string, code = '123456') {
 describe('POST /api/superadmin/setup/verify — TOCTOU race protection', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockPrisma.user.count.mockResolvedValue(0); // hasSuperAdmin() -> false
+    mockPrisma.user.count.mockResolvedValue(0);
     mockRedis.get.mockResolvedValue(JSON.stringify({
       name: 'Ada', email: 'ada@example.com', passwordHash: 'hash', encryptedSecret: 'v1:enc',
     }));
     mockRedis.del.mockResolvedValue(1);
+    mockRedis.set.mockResolvedValue('OK');
   });
 
   it('creates the superadmin when the lock is acquired successfully', async () => {
-    mockRedis.set.mockResolvedValue('OK'); // lock acquired
     mockPrisma.user.create.mockResolvedValue({
       id: 'user-1', name: 'Ada', email: 'ada@example.com', role: 'superadmin', twoFactorEnabled: true, createdAt: new Date(),
     });
@@ -58,24 +59,16 @@ describe('POST /api/superadmin/setup/verify — TOCTOU race protection', () => {
 
     expect(res.status).toBe(200);
     expect(mockPrisma.user.create).toHaveBeenCalledTimes(1);
-    // Lock must be attempted with nx (only-set-if-absent) — that's the
-    // actual mechanism that makes this safe under concurrency.
     expect(mockRedis.set).toHaveBeenCalledWith(
       expect.any(String),
       expect.any(String),
       expect.objectContaining({ nx: true }),
     );
-    // And released afterward, so a legitimate retry isn't blocked forever
-    // by a stray lock.
     expect(mockRedis.del).toHaveBeenCalled();
   });
 
   it('refuses to create a second superadmin when the lock is already held by a concurrent request', async () => {
-    // This is the actual race this fix closes: two bootstrap completions
-    // submitted close together. Simulated here by the lock acquisition
-    // itself failing (as it would for the second of two concurrent
-    // requests against real Redis's SET NX).
-    mockRedis.set.mockResolvedValue(null); // lock NOT acquired — someone else holds it
+    mockRedis.set.mockResolvedValue(null);
 
     const { POST } = await import('@/app/api/superadmin/setup/verify/route');
     const res = await POST(makeRequest('session-1'));
@@ -103,8 +96,9 @@ describe('POST /api/superadmin/setup/verify — TOCTOU race protection', () => {
     mockPrisma.user.create.mockRejectedValue(new Error('DB connection lost'));
 
     const { POST } = await import('@/app/api/superadmin/setup/verify/route');
-    await POST(makeRequest('session-1'));
+    const res = await POST(makeRequest('session-1'));
 
+    expect(res.status).toBe(500);
     expect(mockRedis.del).toHaveBeenCalled();
   });
 });
