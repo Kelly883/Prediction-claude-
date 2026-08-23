@@ -6,6 +6,7 @@ import DashboardHeader from '@/components/DashboardHeader';
 import AdminNavTabs from '@/components/AdminNavTabs';
 import { DashboardUserProvider, useDashboardUser } from '@/lib/dashboard-user-context';
 import { apiJson } from '@/lib/api-client';
+import VerificationReminderModal from '@/components/VerificationReminderModal';
 
 function VerificationBanner() {
   const { user } = useDashboardUser();
@@ -83,6 +84,7 @@ function AdminChrome({ children }: { children: React.ReactNode }) {
           <div className="dashboard-content">{children}</div>
         </div>
       </section>
+      <VerificationReminderModal />
     </>
   );
 }
