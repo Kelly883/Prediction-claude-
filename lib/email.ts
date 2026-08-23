@@ -26,10 +26,13 @@ export async function sendEmail(params: SendEmailOptions) {
   const appUrl = process.env.APP_URL;
 
   if (!apiKey || !from) {
-    throw new Error('RESEND_API_KEY / RESEND_FROM_EMAIL not configured — cannot send email');
+    const missing = [];
+    if (!apiKey) missing.push('RESEND_API_KEY');
+    if (!from) missing.push('RESEND_FROM_EMAIL');
+    throw new Error(`Cannot send email: missing ${missing.join(' and ')}`);
   }
   if (!appUrl) {
-    throw new Error('APP_URL is not configured — verification links will be broken');
+    throw new Error('Cannot send email: APP_URL is not configured — verification links will be broken');
   }
 
   const senderName = params.senderName || 'PredictPro';
@@ -59,6 +62,8 @@ export async function sendEmail(params: SendEmailOptions) {
     payload.replyTo = params.replyTo;
   }
 
+  console.log(`[email] Sending to=${params.to} subject="${params.subject}" from=${fromAddress}`);
+
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
@@ -75,6 +80,7 @@ export async function sendEmail(params: SendEmailOptions) {
     const hint = res.status === 422
       ? ' Check that RESEND_FROM_EMAIL domain is verified in Resend and has SPF/DKIM records.'
       : '';
+    console.error(`[email] Resend rejected status=${res.status} reason=${reason || bodyText}${hint}`);
     throw new Error(`Resend send failed: ${res.status} ${reason || bodyText}${hint}`);
   }
 
