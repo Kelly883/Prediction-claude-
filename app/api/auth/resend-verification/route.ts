@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { sendVerificationEmail } from '@/lib/emails';
+import { sendVerificationEmail, getAppUrl } from '@/lib/emails';
 import { checkRateLimit, authLimiter, getClientIp, normalizeIdentifier } from '@/lib/ratelimit';
 import { errorResponse } from '@/lib/rbac';
 import { writeAudit } from '@/lib/audit';
@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
         data: { userId: user.id, tokenHash, expiresAt: new Date(Date.now() + TOKEN_TTL_HOURS * 60 * 60 * 1000) },
       });
 
-      const verificationUrl = `${process.env.APP_URL}/verify-email?token=${rawToken}`;
+      const verificationUrl = `${getAppUrl()}/verify-email?token=${rawToken}`;
       try {
         await sendVerificationEmail(user.email, verificationUrl);
         emailSent = true;

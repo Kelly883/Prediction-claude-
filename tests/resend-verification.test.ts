@@ -12,7 +12,7 @@ const mockPrisma = vi.hoisted(() => ({
 vi.mock('@/lib/prisma', () => ({ prisma: mockPrisma }));
 
 const mockSendEmail = vi.hoisted(() => vi.fn());
-vi.mock('@/lib/email', () => ({ sendVerificationEmail: mockSendEmail }));
+vi.mock('@/lib/emails', () => ({ sendVerificationEmail: mockSendEmail, getAppUrl: vi.fn(() => 'http://localhost:3000') }));
 
 vi.mock('@/lib/ratelimit', () => ({
   checkRateLimit: vi.fn().mockResolvedValue(true),

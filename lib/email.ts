@@ -23,7 +23,7 @@ export interface SendEmailOptions {
 export async function sendEmail(params: SendEmailOptions) {
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.RESEND_FROM_EMAIL;
-  const appUrl = process.env.APP_URL;
+  const appUrl = normalizeAppUrl(process.env.APP_URL || '');
 
   if (!apiKey || !from) {
     const missing = [];
@@ -94,10 +94,22 @@ export function getReplyTo(): string {
   return match ? match[1] : 'support@predictpro.cloud-ip.cc';
 }
 
+export function getAppUrl(): string {
+  return normalizeAppUrl(process.env.APP_URL || '');
+}
+
+function normalizeAppUrl(raw: string): string {
+  if (!raw) return '';
+  const trimmed = raw.trim();
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return `https://${trimmed}`;
+}
+
 function validateEmailConfig() {
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.RESEND_FROM_EMAIL;
-  const appUrl = process.env.APP_URL;
+  const rawAppUrl = process.env.APP_URL || '';
+  const appUrl = normalizeAppUrl(rawAppUrl);
 
   if (!apiKey) {
     console.warn('[email] RESEND_API_KEY is not set — all email sending will fail');
@@ -105,7 +117,7 @@ function validateEmailConfig() {
   if (!from) {
     console.warn('[email] RESEND_FROM_EMAIL is not set — all email sending will fail');
   }
-  if (!appUrl) {
+  if (!rawAppUrl) {
     console.warn('[email] APP_URL is not set — verification links will be broken');
   }
 

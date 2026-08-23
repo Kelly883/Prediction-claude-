@@ -5,7 +5,7 @@ import { checkRateLimit, authLimiter, getClientIp, normalizeIdentifier } from '@
 import { errorResponse, ApiError } from '@/lib/rbac';
 import { RegisterSchema } from '@/lib/schemas';
 import { writeAudit } from '@/lib/audit';
-import { sendVerificationEmail } from '@/lib/emails';
+import { sendVerificationEmail, getAppUrl } from '@/lib/emails';
 import crypto from 'crypto';
 
 export const runtime = 'nodejs';
@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
       metadata: { email: normalizedEmail, country },
     });
 
-    const verificationUrl = `${process.env.APP_URL}/verify-email?token=${rawToken}`;
+    const verificationUrl = `${getAppUrl()}/verify-email?token=${rawToken}`;
     let emailSent = false;
     try {
       await sendVerificationEmail(user.email, verificationUrl);

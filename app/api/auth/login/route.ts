@@ -8,7 +8,7 @@ import { touchSession, getDistinctDeviceCount, isAnomalous } from '@/lib/session
 import { LoginSchema } from '@/lib/schemas';
 import { writeAudit } from '@/lib/audit';
 import { getRequestId } from '@/lib/request-id';
-import { sendVerificationEmail } from '@/lib/emails';
+import { sendVerificationEmail, getAppUrl } from '@/lib/emails';
 import crypto from 'crypto';
 
 export const runtime = 'nodejs';
@@ -112,7 +112,7 @@ export async function POST(req: NextRequest) {
           });
         });
 
-        const verificationUrl = `${process.env.APP_URL}/verify-email?token=${rawToken}`;
+        const verificationUrl = `${getAppUrl()}/verify-email?token=${rawToken}`;
         await sendVerificationEmail(user.email, verificationUrl);
         verificationEmailSent = true;
       } catch (emailErr) {

@@ -4,7 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { requirePermission, errorResponse, ApiError } from '@/lib/rbac';
 import { PERMISSIONS } from '@/lib/permissions';
 import { requireSameOrigin, requireCsrf } from '@/lib/csrf';
-import { sendAdminVerificationEmail } from '@/lib/email';
+import { sendAdminVerificationEmail, getAppUrl } from '@/lib/email';
 import { writeAudit } from '@/lib/audit';
 
 export const runtime = 'nodejs';
@@ -36,7 +36,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     await writeAudit({ actorId: admin.sub, action: 'admin.email_verification_resent', targetId: user.id });
 
-    const verificationUrl = `${process.env.APP_URL}/verify-email?token=${rawToken}`;
+      const verificationUrl = `${getAppUrl()}/verify-email?token=${rawToken}`;
 
     try {
       await sendAdminVerificationEmail(user.email, verificationUrl);

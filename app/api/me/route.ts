@@ -4,7 +4,7 @@ import { requireUser, errorResponse, ApiError } from '@/lib/rbac';
 import { requireCsrf, requireSameOrigin } from '@/lib/csrf';
 import { PERMISSIONS, ALL_PERMISSIONS } from '@/lib/permissions';
 import { UpdateProfileSchema } from '@/lib/schemas';
-import { sendVerificationEmail } from '@/lib/emails';
+import { sendVerificationEmail, getAppUrl } from '@/lib/emails';
 import { verifyTotpCode } from '@/lib/twofactor';
 import crypto from 'crypto';
 
@@ -95,7 +95,7 @@ export async function PATCH(req: NextRequest) {
         return userUpdated;
       });
 
-      const verificationUrl = `${process.env.APP_URL}/verify-email?token=${rawToken}`;
+      const verificationUrl = `${getAppUrl()}/verify-email?token=${rawToken}`;
       let verificationEmailSent = false;
       try {
         await sendVerificationEmail(updated.email, verificationUrl);

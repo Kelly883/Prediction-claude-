@@ -90,6 +90,7 @@ vi.mock('@/lib/twofactor', () => ({
 
 vi.mock('@/lib/emails', () => ({
   sendVerificationEmail: vi.fn(),
+  getAppUrl: vi.fn(() => 'http://localhost:3000'),
 }));
 
 describe('Security: authentication', () => {
