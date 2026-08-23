@@ -8,6 +8,7 @@ import VerificationReminderModal from '@/components/VerificationReminderModal';
 const USER_LINKS = [
   { href: '/dashboard', label: 'Overview', exact: true },
   { href: '/dashboard/predictions', label: 'Predictions' },
+  { href: '/dashboard/predictions/archive', label: 'Archive' },
   { href: '/dashboard/plans', label: 'Plans' },
   { href: '/dashboard/profile', label: 'Profile' },
   { href: '/dashboard/security', label: 'Security' },

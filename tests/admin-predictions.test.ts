@@ -77,12 +77,23 @@ describe('Admin Predictions API - Plan Specific Visibility', () => {
   });
 
   it('updates an existing prediction post with updated planIds', async () => {
+    const existingPost = {
+      id: 'post-100',
+      title: 'Old Title',
+      visibility: 'subscribers',
+      planIds: [],
+      items: [],
+      outcome: 'pending',
+    };
     const updatedPost = {
       id: 'post-100',
       title: 'Updated VIP Picks',
       visibility: 'plan_specific',
       planIds: ['plan-3'],
+      items: [],
+      outcome: 'pending',
     };
+    mockPrisma.predictionPost.findUnique.mockResolvedValue(existingPost);
     mockPrisma.predictionPost.update.mockResolvedValue(updatedPost);
 
     const body = {
@@ -109,6 +120,121 @@ describe('Admin Predictions API - Plan Specific Visibility', () => {
         title: 'Updated VIP Picks',
         visibility: 'plan_specific',
         planIds: ['plan-3'],
+      }),
+    });
+  });
+
+  it('auto-archives post when outcome is set to won', async () => {
+    const existingPost = {
+      id: 'post-100',
+      title: 'Old Title',
+      status: 'published',
+      outcome: 'pending',
+      items: [],
+    };
+    const updatedPost = {
+      id: 'post-100',
+      title: 'Old Title',
+      status: 'archived',
+      outcome: 'won',
+      items: [],
+    };
+    mockPrisma.predictionPost.findUnique.mockResolvedValue(existingPost);
+    mockPrisma.predictionPost.update.mockResolvedValue(updatedPost);
+
+    const body = { outcome: 'won' };
+
+    const req = new NextRequest('http://localhost:3000/api/admin/predictions/post-100', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    const res = await updatePrediction(req, { params: Promise.resolve({ id: 'post-100' }) });
+    expect(res.status).toBe(200);
+
+    expect(mockPrisma.predictionPost.update).toHaveBeenCalledWith({
+      where: { id: 'post-100' },
+      data: expect.objectContaining({
+        outcome: 'won',
+        status: 'archived',
+      }),
+    });
+  });
+
+  it('auto-archives post when outcome is set to lost', async () => {
+    const existingPost = {
+      id: 'post-100',
+      title: 'Old Title',
+      status: 'published',
+      outcome: 'pending',
+      items: [],
+    };
+    const updatedPost = {
+      id: 'post-100',
+      title: 'Old Title',
+      status: 'archived',
+      outcome: 'lost',
+      items: [],
+    };
+    mockPrisma.predictionPost.findUnique.mockResolvedValue(existingPost);
+    mockPrisma.predictionPost.update.mockResolvedValue(updatedPost);
+
+    const body = { outcome: 'lost' };
+
+    const req = new NextRequest('http://localhost:3000/api/admin/predictions/post-100', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    const res = await updatePrediction(req, { params: Promise.resolve({ id: 'post-100' }) });
+    expect(res.status).toBe(200);
+
+    expect(mockPrisma.predictionPost.update).toHaveBeenCalledWith({
+      where: { id: 'post-100' },
+      data: expect.objectContaining({
+        outcome: 'lost',
+        status: 'archived',
+      }),
+    });
+  });
+
+  it('does not change status when outcome remains pending', async () => {
+    const existingPost = {
+      id: 'post-100',
+      title: 'Old Title',
+      status: 'published',
+      outcome: 'pending',
+      items: [],
+    };
+    const updatedPost = {
+      id: 'post-100',
+      title: 'Updated Title',
+      status: 'published',
+      outcome: 'pending',
+      items: [],
+    };
+    mockPrisma.predictionPost.findUnique.mockResolvedValue(existingPost);
+    mockPrisma.predictionPost.update.mockResolvedValue(updatedPost);
+
+    const body = { title: 'Updated Title', outcome: 'pending' };
+
+    const req = new NextRequest('http://localhost:3000/api/admin/predictions/post-100', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    const res = await updatePrediction(req, { params: Promise.resolve({ id: 'post-100' }) });
+    expect(res.status).toBe(200);
+
+    expect(mockPrisma.predictionPost.update).toHaveBeenCalledWith({
+      where: { id: 'post-100' },
+      data: expect.objectContaining({
+        title: 'Updated Title',
+        status: 'published',
+        outcome: 'pending',
       }),
     });
   });

@@ -34,9 +34,28 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (dto.scheduledAt) data.scheduledAt = new Date(dto.scheduledAt);
     if (dto.freeUntil !== undefined) data.freeUntil = dto.freeUntil ? new Date(dto.freeUntil) : null;
 
-    const post = await prisma.predictionPost.update({ where: { id }, data });
-    await writeAudit({ actorId: admin.sub, action: 'prediction.update', targetId: post.id, metadata: dto });
-    return NextResponse.json(post);
+    if (dto.outcome && ['won', 'lost'].includes(dto.outcome)) {
+      data.status = 'archived';
+    }
+
+    const post = await prisma.predictionPost.findUnique({ where: { id }, include: { items: true } });
+    if (!post) throw new ApiError(404, 'Not found');
+
+    const updatePayload: any = { ...data };
+    if (dto.items) {
+      updatePayload.items = {
+        deleteMany: {},
+        create: dto.items.map((item) => ({
+          match: item.match,
+          prediction: item.prediction,
+          matchDateTime: item.matchDateTime ? new Date(item.matchDateTime) : undefined,
+        })),
+      };
+    }
+
+    const updated = await prisma.predictionPost.update({ where: { id }, data: updatePayload });
+    await writeAudit({ actorId: admin.sub, action: 'prediction.update', targetId: updated.id, metadata: dto });
+    return NextResponse.json(updated);
   } catch (err) {
     return errorResponse(err);
   }

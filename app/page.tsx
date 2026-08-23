@@ -36,10 +36,11 @@ export default async function HomePage() {
             Verified football predictions with the booking code included, delivered before every matchday.
             Subscribe once, get every tip your plan covers.
           </p>
-          <div style={{ display: 'flex', gap: 14, marginTop: 32 }}>
-            <Link href="/register" className="btn btn-primary">Get started</Link>
-            <Link href="/login" className="btn btn-ghost">Sign in to account</Link>
-          </div>
+      <div style={{ display: 'flex', gap: 14, marginTop: 32 }}>
+        <Link href="/register" className="btn btn-primary">Get started</Link>
+        <Link href="/login" className="btn btn-ghost">Sign in to account</Link>
+        <Link href="/dashboard/predictions/archive" className="btn btn-ghost">Prediction Archive</Link>
+      </div>
         </div>
       </section>
 

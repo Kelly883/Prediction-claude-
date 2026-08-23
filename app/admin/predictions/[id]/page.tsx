@@ -37,6 +37,7 @@ type Post = {
   bookingCode: string;
   bodyNotes: string | null;
   status: string;
+  outcome: string;
   visibility: 'plan_specific' | 'subscribers' | 'free_window';
   planIds?: string[];
   freeUntil: string | null;
@@ -59,6 +60,8 @@ export default function EditPredictionPage() {
   const [visibility, setVisibility] = useState<'plan_specific' | 'subscribers' | 'free_window'>('subscribers');
   const [planIds, setPlanIds] = useState<string[]>([]);
   const [freeUntil, setFreeUntil] = useState('');
+  const [outcome, setOutcome] = useState<string>('pending');
+  const [editableItems, setEditableItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -93,6 +96,8 @@ export default function EditPredictionPage() {
         setVisibility(p.visibility);
         setPlanIds(p.planIds ?? []);
         setFreeUntil(p.freeUntil ? p.freeUntil.slice(0, 16) : '');
+        setOutcome(p.outcome || 'pending');
+        setEditableItems(p.items || []);
       })
       .finally(() => setLoading(false));
 
@@ -135,6 +140,12 @@ export default function EditPredictionPage() {
           visibility,
           planIds: (visibility === 'subscribers' || visibility === 'plan_specific') ? planIds : [],
           freeUntil: visibility === 'free_window' && freeUntil ? new Date(freeUntil).toISOString() : null,
+          outcome,
+          items: editableItems.map((item) => ({
+            id: item.id,
+            match: item.match,
+            prediction: item.prediction,
+          })),
         }),
       });
       load();
@@ -260,6 +271,11 @@ export default function EditPredictionPage() {
               >
                 {post.status}
               </span>
+              <span
+                className={`admin-status-pill ${post.outcome === 'won' ? 'admin-status-pill-success' : post.outcome === 'lost' ? 'admin-status-pill-error' : 'admin-status-pill-warning'}`}
+              >
+                {post.outcome}
+              </span>
             </div>
             <p className="text-xs text-[var(--chalk-muted)] font-mono mt-0.5 truncate">
               Post ID: {post.id}
@@ -382,6 +398,20 @@ export default function EditPredictionPage() {
               )}
 
               <div className="admin-form-group">
+                <label htmlFor="outcome" className="admin-form-label">Outcome</label>
+                <select
+                  id="outcome"
+                  value={outcome}
+                  onChange={(e) => setOutcome(e.target.value)}
+                  className="admin-select"
+                >
+                  <option value="pending">Pending</option>
+                  <option value="won">Won</option>
+                  <option value="lost">Lost</option>
+                </select>
+              </div>
+
+              <div className="admin-form-group">
                 <label htmlFor="bodyNotes" className="admin-form-label">Analyst Notes &amp; Insights</label>
                 <textarea
                   id="bodyNotes"
@@ -416,21 +446,47 @@ export default function EditPredictionPage() {
           {/* Attached Matches Summary */}
           <div className="admin-compose-card">
             <div className="admin-card-header">
-              <h2 className="admin-card-title">Attached Match Picks ({(post.items ?? []).length})</h2>
+              <h2 className="admin-card-title">Attached Match Picks ({(editableItems ?? []).length})</h2>
             </div>
             <div className="flex flex-col gap-2">
-              {(post.items ?? []).length === 0 ? (
+              {(editableItems ?? []).length === 0 ? (
                 <p className="text-xs text-[var(--chalk-muted)] py-2">No match picks items attached to this post.</p>
               ) : (
-                (post.items ?? []).map((item) => (
+                (editableItems ?? []).map((item, idx) => (
                   <div
-                    key={item.id}
-                    className="p-3 rounded-lg bg-[var(--pitch)] border border-[rgba(243,245,236,0.08)] flex items-center justify-between text-xs gap-3"
+                    key={item.id || idx}
+                    className="p-3 rounded-lg bg-[var(--pitch)] border border-[rgba(243,245,236,0.08)] flex flex-col gap-2 text-xs"
                   >
-                    <span className="text-white font-medium truncate">{item.match}</span>
-                    <span className="mono text-[var(--floodlight)] font-bold shrink-0">
-                      {item.prediction}
-                    </span>
+                    <input
+                      value={item.match}
+                      onChange={(e) => {
+                        const next = [...editableItems];
+                        next[idx] = { ...next[idx], match: e.target.value };
+                        setEditableItems(next);
+                      }}
+                      placeholder="Teams (e.g. Arsenal vs Chelsea)"
+                      className="admin-match-item-input"
+                    />
+                    <input
+                      value={item.prediction}
+                      onChange={(e) => {
+                        const next = [...editableItems];
+                        next[idx] = { ...next[idx], prediction: e.target.value };
+                        setEditableItems(next);
+                      }}
+                      placeholder="Pick (e.g. Over 2.5 @ 1.85)"
+                      className="admin-match-item-input-pick"
+                    />
+                    {(editableItems ?? []).length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => setEditableItems(editableItems.filter((_, i) => i !== idx))}
+                        className="p-1 bg-transparent border-none text-zinc-400 cursor-pointer hover:text-red-400 transition-colors"
+                        style={{ alignSelf: 'flex-end' }}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
                   </div>
                 ))
               )}
