@@ -68,6 +68,7 @@ export const TwoFactorVerifySchema = z.object({ code: z.string().length(6) });
 
 export const UpdateProfileSchema = z.object({
   name: z.string().min(1).max(120).optional(),
+  email: z.string().email().max(255).optional(),
   phone: z.string().min(5).max(32).nullable().optional(),
 });
 

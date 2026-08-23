@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import DashboardHeader from '@/components/DashboardHeader';
 import Sidebar from '@/components/Sidebar';
 import { DashboardUserProvider, useDashboardUser } from '@/lib/dashboard-user-context';
+import VerificationReminderModal from '@/components/VerificationReminderModal';
 
 const USER_LINKS = [
   { href: '/dashboard', label: 'Overview', exact: true },
@@ -41,6 +42,7 @@ function DashboardChrome({ children }: { children: React.ReactNode }) {
           <div className="dashboard-content">{children}</div>
         </div>
       </section>
+      <VerificationReminderModal />
     </>
   );
 }
