@@ -8,6 +8,7 @@ export const ADMIN_NAV_LINKS = [
   { href: '/admin', label: 'Overview', exact: true },
   { href: '/admin/plans', label: 'Plans' },
   { href: '/admin/predictions', label: 'Predictions' },
+  { href: '/admin/predictions/archive', label: 'Archive' },
   { href: '/admin/free-access', label: 'Free Access' },
   { href: '/admin/users', label: 'Users' },
   { href: '/admin/admins/create', label: 'Create Admin' },

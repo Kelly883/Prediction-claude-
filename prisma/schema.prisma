@@ -68,6 +68,12 @@ enum PostStatus {
   archived
 }
 
+enum OutcomeStatus {
+  pending
+  won
+  lost
+}
+
 enum FreeAccessRuleType {
   global_trial
   promo_window
@@ -200,6 +206,7 @@ model PredictionPost {
   freeUntil   DateTime?
   planIds     String[]       @default([])
   status      PostStatus     @default(draft)
+  outcome     OutcomeStatus  @default(pending)
   createdById String
   createdBy   User           @relation("PostCreator", fields: [createdById], references: [id])
   createdAt   DateTime       @default(now())
@@ -210,6 +217,7 @@ model PredictionPost {
   complimentaryAccess  ComplimentaryAccess[]
 
   @@index([status, scheduledAt])
+  @@index([outcome, status])
 }
 
 model PredictionItem {

@@ -49,6 +49,8 @@ export const UpdatePredictionSchema = z.object({
   freeUntil: z.string().datetime().nullable().optional(),
   planIds: z.array(z.string()).optional(),
   status: z.enum(['draft', 'scheduled', 'published', 'archived']).optional(),
+  outcome: z.enum(['pending', 'won', 'lost']).optional(),
+  items: z.array(z.object({ id: z.string().optional(), match: z.string(), prediction: z.string(), matchDateTime: z.string().datetime().optional() })).optional(),
 });
 
 export const CsvConfirmSchema = z.object({

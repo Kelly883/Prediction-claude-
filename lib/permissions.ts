@@ -50,6 +50,7 @@ export const NAV_PERMISSIONS: Record<string, Permission> = {
   '/admin': PERMISSIONS.pages.overview,
   '/admin/plans': PERMISSIONS.pages.plans,
   '/admin/predictions': PERMISSIONS.pages.predictions,
+  '/admin/predictions/archive': PERMISSIONS.pages.predictions,
   '/admin/free-access': PERMISSIONS.pages.freeAccess,
   '/admin/users': PERMISSIONS.pages.users,
   '/admin/admins/create': PERMISSIONS.admin.createAdmins,

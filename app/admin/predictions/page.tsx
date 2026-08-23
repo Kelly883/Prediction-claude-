@@ -16,6 +16,7 @@ import {
   ChevronRight,
   X,
   ShieldAlert,
+  Archive,
 } from 'lucide-react';
 
 type MediaAsset = { id: string; storageKey: string };
@@ -143,6 +144,23 @@ export default function AdminPredictionsPage() {
 
       {/* Primary Actions */}
       <div className="admin-actions-row">
+        <Link
+          href="/admin/predictions/archive"
+          className="admin-action-secondary"
+          style={{ textDecoration: 'none' }}
+        >
+          <div className="admin-action-left">
+            <div className="admin-action-icon-box-gold">
+              <Archive size={16} />
+            </div>
+            <div>
+              <div style={{ display: 'block', fontWeight: 700, fontSize: 15 }}>Archive</div>
+              <div style={{ display: 'block', fontSize: 12, opacity: 0.75, marginTop: 2 }}>Won / Lost predictions</div>
+            </div>
+          </div>
+          <ChevronRight size={16} style={{ opacity: 0.6 }} />
+        </Link>
+
         <Link
           href="/admin/predictions/csv"
           className="admin-action-secondary"
