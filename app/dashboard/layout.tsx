@@ -19,12 +19,12 @@ function DashboardChrome({ children }: { children: React.ReactNode }) {
   const router = useRouter();
 
   useEffect(() => {
-    if (!loading && user?.role === 'admin') {
+    if (!loading && (user?.role === 'admin' || user?.role === 'superadmin')) {
       router.replace('/admin');
     }
   }, [user, loading, router]);
 
-  if (!loading && user?.role === 'admin') {
+  if (!loading && (user?.role === 'admin' || user?.role === 'superadmin')) {
     return (
       <div className="p-8 text-center text-sm text-[var(--chalk-muted)]">
         Redirecting to Admin Portal…

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { apiJson } from '@/lib/api-client';
 
-type Me = { id: string; name: string; email: string; country: string; role: 'admin' | 'user'; emailVerified: boolean };
+type Me = { id: string; name: string; email: string; country: string; role: 'admin' | 'user' | 'superadmin'; emailVerified: boolean };
 type SubscriptionView = {
   id: string;
   status: string;

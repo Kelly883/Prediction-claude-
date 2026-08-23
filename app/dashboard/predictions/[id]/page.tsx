@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { apiJson } from '@/lib/api-client';
 
-type Me = { role: 'admin' | 'user' };
+type Me = { role: 'admin' | 'user' | 'superadmin' };
 type MediaAsset = { id: string };
 type PostDetail = {
   id: string;
