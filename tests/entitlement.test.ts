@@ -22,6 +22,7 @@ const basePost = {
   freeUntil: null,
   planIds: [],
   status: 'published' as const,
+  outcome: 'pending' as const,
   createdById: 'admin-1',
   createdAt: new Date(),
   updatedAt: new Date(),
