@@ -11,6 +11,7 @@ type Props = {
 export default function VerificationReminderModal({ openIntervalMs = 300000 }: Props) {
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState<string | null>(null);
+  const [role, setRole] = useState<'admin' | 'user' | 'superadmin' | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
@@ -20,10 +21,11 @@ export default function VerificationReminderModal({ openIntervalMs = 300000 }: P
 
     async function load() {
       try {
-        const me = await apiJson<{ email: string; emailVerified: boolean }>('/api/me');
+        const me = await apiJson<{ email: string; emailVerified: boolean; role: 'admin' | 'user' | 'superadmin' }>('/api/me');
         if (!mounted) return;
         if (!me.emailVerified) {
           setEmail(me.email);
+          setRole(me.role);
           setOpen(true);
           timer = setInterval(() => {
             if (mounted) setOpen(true);
@@ -58,7 +60,11 @@ export default function VerificationReminderModal({ openIntervalMs = 300000 }: P
 
   function changeEmail() {
     dismiss();
-    router.push('/dashboard/profile');
+    if (role === 'admin' || role === 'superadmin') {
+      router.push('/admin/profile');
+    } else {
+      router.push('/dashboard/profile');
+    }
   }
 
   if (loading || !open) return null;

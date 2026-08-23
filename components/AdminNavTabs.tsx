@@ -16,6 +16,7 @@ export const ADMIN_NAV_LINKS = [
   { href: '/admin/cms', label: 'CMS' },
   { href: '/admin/security', label: 'Security' },
   { href: '/admin/permissions', label: 'Permissions' },
+  { href: '/admin/profile', label: 'Profile' },
 ];
 
 type AdminNavTabsProps = {
