@@ -81,7 +81,7 @@ describe('login email normalization', () => {
     expect(mockPrisma.user.findUnique).toHaveBeenCalledWith({ where: { email: 'test@example.com' } });
   });
 
-  it('rejects login for unverified email and sends verification email', async () => {
+  it('allows login for unverified email and sends a verification email', async () => {
     mockPrisma.user.findUnique.mockResolvedValue(makeUser({ emailVerifiedAt: null }));
 
     const req = new Request('http://localhost/api/auth/login', {
@@ -91,7 +91,9 @@ describe('login email normalization', () => {
     });
     const res = await POST(req as any);
 
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.emailVerified).toBe(false);
     expect(mockEmails.sendVerificationEmail).toHaveBeenCalledTimes(1);
     expect(mockPrisma.emailVerificationToken.create).toHaveBeenCalledTimes(1);
   });

@@ -116,8 +116,6 @@ export async function POST(req: NextRequest) {
       } catch (emailErr) {
         console.error('Failed to send verification email on login', emailErr);
       }
-
-      throw new ApiError(403, 'Please verify your email before logging in. A new verification email has been sent.');
     }
 
     // Password rehash: if the stored hash was created with a lower cost factor,
@@ -172,7 +170,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const res = withRequestId(req, NextResponse.json({ id: user.id, email: user.email, role: user.role }));
+    const res = withRequestId(req, NextResponse.json({ id: user.id, email: user.email, role: user.role, emailVerified: !!user.emailVerifiedAt }));
     res.cookies.set('access_token', accessToken, cookieOptions(15 * 60));
     res.cookies.set('refresh_token', refreshToken, cookieOptions(7 * 24 * 60 * 60));
     return res;
