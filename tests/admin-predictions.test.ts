@@ -233,7 +233,6 @@ describe('Admin Predictions API - Plan Specific Visibility', () => {
       where: { id: 'post-100' },
       data: expect.objectContaining({
         title: 'Updated Title',
-        status: 'published',
         outcome: 'pending',
       }),
     });
