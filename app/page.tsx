@@ -39,7 +39,7 @@ export default async function HomePage() {
       <div style={{ display: 'flex', gap: 14, marginTop: 32 }}>
         <Link href="/register" className="btn btn-primary">Get started</Link>
         <Link href="/login" className="btn btn-ghost">Sign in to account</Link>
-        <Link href="/dashboard/predictions/archive" className="btn btn-ghost">Prediction Archive</Link>
+        <Link href="/archive" className="btn btn-ghost">Prediction Archive</Link>
       </div>
         </div>
       </section>
