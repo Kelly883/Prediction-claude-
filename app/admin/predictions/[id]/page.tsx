@@ -457,6 +457,9 @@ export default function EditPredictionPage() {
                     key={item.id || idx}
                     className="p-3 rounded-lg bg-[var(--pitch)] border border-[rgba(243,245,236,0.08)] flex flex-col gap-2 text-xs"
                   >
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <span style={{ color: '#85a694', fontWeight: 700, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Match {idx + 1}</span>
+                    </div>
                     <input
                       value={item.match}
                       onChange={(e) => {
@@ -490,6 +493,15 @@ export default function EditPredictionPage() {
                   </div>
                 ))
               )}
+              <button
+                type="button"
+                onClick={() => setEditableItems([...editableItems, { id: '', match: '', prediction: '' }])}
+                className="text-xs text-[#f5b335] bg-transparent border-none cursor-pointer font-semibold inline-flex items-center gap-1"
+                style={{ padding: '4px 0' }}
+              >
+                <Plus size={12} />
+                Add Match
+              </button>
             </div>
           </div>
         </div>

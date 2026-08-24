@@ -129,13 +129,17 @@ export default function AdminArchivePage() {
                       </span>
                       <span style={{ color: '#9fb3a6' }}>•</span>
                       <span style={{ color: '#f5b335', fontWeight: 700 }}>Booking Code: {p.bookingCode}</span>
-                      {p.items && p.items.length > 0 && (
-                        <>
-                          <span style={{ color: '#9fb3a6' }}>•</span>
-                          <span>{p.items.length} match pick{p.items.length > 1 ? 's' : ''}</span>
-                        </>
-                      )}
                     </div>
+                    {p.items && p.items.length > 0 && (
+                      <div className="flex flex-col gap-1.5 mt-1">
+                        {p.items.map((item, idx) => (
+                          <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, fontSize: 12, padding: '4px 0', borderBottom: '1px solid rgba(243,245,236,0.06)' }}>
+                            <span style={{ color: 'var(--chalk)', fontWeight: 500 }}>{item.match}</span>
+                            <span style={{ color: 'var(--floodlight)', fontWeight: 700, fontFamily: 'var(--font-mono), monospace' }}>{item.prediction}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <div className="admin-post-card-actions">
                     <Link

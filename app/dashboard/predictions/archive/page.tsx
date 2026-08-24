@@ -106,25 +106,25 @@ export default function DashboardArchivePage() {
                       </p>
                     )}
                   </div>
-                ) : (
+                 ) : (
                   <div style={{ marginTop: 10 }}>
                     {p.bookingCode && (
                       <p className="mono" style={{ fontSize: 13, color: 'var(--chalk-muted)', marginBottom: 8 }}>
                         Booking code: <span style={{ color: 'var(--floodlight)' }}>{p.bookingCode}</span>
                       </p>
                     )}
-                    {p.items?.length ? (
-                      <div style={{ display: 'grid', gap: 4 }}>
-                        {p.items.map((item) => (
-                          <div key={item.id} style={{ fontSize: 14, display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
-                            <span>{item.match}</span>
-                            <span className="mono" style={{ color: 'var(--chalk-muted)' }}>{item.prediction}</span>
-                          </div>
-                        ))}
-                      </div>
-                    ) : null}
                   </div>
                 )}
+                {p.items?.length ? (
+                  <div style={{ display: 'grid', gap: 4, marginTop: 6 }}>
+                    {p.items.map((item) => (
+                      <div key={item.id} style={{ fontSize: 14, display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderTop: '1px solid rgba(243,245,236,0.06)' }}>
+                        <span>{item.match}</span>
+                        <span className="mono" style={{ color: 'var(--chalk-muted)' }}>{item.prediction}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             ))}
           </div>
