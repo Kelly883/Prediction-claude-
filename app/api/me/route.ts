@@ -108,7 +108,10 @@ export async function PATCH(req: NextRequest) {
     }
 
     const record = await prisma.user.update({ where: { id: user.sub }, data: dto });
-    return NextResponse.json({ id: record.id, name: record.name, email: record.email, phone: record.phone, country: record.country, role: record.role });
+    const permissions = record.role === 'superadmin'
+      ? ALL_PERMISSIONS
+      : record.permissions;
+    return NextResponse.json({ id: record.id, name: record.name, email: record.email, phone: record.phone, country: record.country, role: record.role, emailVerified: !!record.emailVerifiedAt, permissions });
   } catch (err) {
     return errorResponse(err);
   }
