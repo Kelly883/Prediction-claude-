@@ -10,6 +10,7 @@ export const viewport: Viewport = {
 };
 
 export const metadata = {
+  metadataBase: new URL(process.env.APP_URL || 'http://localhost:3000'),
   title: 'PredictPro — Verified football predictions',
   description: 'Football prediction subscriptions with real booking codes, delivered before every matchday.',
 };

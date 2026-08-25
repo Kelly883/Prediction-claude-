@@ -8,6 +8,7 @@ import { flutterwaveInitialize } from './providers/flutterwave';
 import { timingSafeStringEqual } from './timing-safe';
 import { encryptPaymentToken } from './encryption';
 import { writeAudit } from './audit';
+import { getEnv } from '@/lib/env';
 
 const REDACTED_PAYLOAD_KEYS = new Set([
   'authorization_code',
@@ -59,7 +60,7 @@ export async function initializePayment(
   // placeholder reference and rewrite it after the fact.
   const idempotencyKey = crypto.randomUUID();
   const reference = `pp_${idempotencyKey}`;
-  const callbackUrl = `${requireAppUrl()}/payments/callback?provider=${provider}`;
+  const callbackUrl = `${getEnv().APP_URL}/payments/callback?provider=${provider}`;
 
   let checkoutUrl: string;
   if (provider === 'paystack') {
@@ -107,12 +108,6 @@ export async function resolvePrice(
 /** Paystack wants amounts in the smallest currency unit (kobo/cents); Flutterwave wants major units. */
 export function toMinorUnits(amount: number, currency: string): number {
   return Math.round(amount * 100);
-}
-
-function requireAppUrl(): string {
-  const url = process.env.APP_URL;
-  if (!url) throw new Error('APP_URL env var is required to build payment callback/redirect URLs');
-  return url;
 }
 
 export async function handleVerifiedWebhook(params: {
@@ -271,18 +266,12 @@ export async function cancelAutoRenew(userId: string) {
 }
 
 export function verifyPaystackSignature(rawBody: string, signature: string | null): boolean {
-  // Verified against Paystack's current docs (paystack.com/docs/payments/webhooks):
-  // x-paystack-signature header, HMAC-SHA512 of the raw body, keyed with the
-  // secret key. Note it's SHA-512, not the SHA-256 most other providers use.
-  if (!signature || !process.env.PAYSTACK_SECRET_KEY) return false;
-  const expected = crypto.createHmac('sha512', process.env.PAYSTACK_SECRET_KEY).update(rawBody).digest('hex');
+  if (!signature || !getEnv().PAYSTACK_SECRET_KEY) return false;
+  const expected = crypto.createHmac('sha512', getEnv().PAYSTACK_SECRET_KEY).update(rawBody).digest('hex');
   return timingSafeStringEqual(expected, signature);
 }
 
 export function verifyFlutterwaveSignature(hash: string | null): boolean {
-  // Verified against Flutterwave's current docs: verif-hash header, plain
-  // string equality against the secret hash configured in the dashboard —
-  // not HMAC.
-  if (!hash || !process.env.FLUTTERWAVE_WEBHOOK_SECRET_HASH) return false;
-  return timingSafeStringEqual(hash, process.env.FLUTTERWAVE_WEBHOOK_SECRET_HASH);
+  if (!hash || !getEnv().FLUTTERWAVE_WEBHOOK_SECRET_HASH) return false;
+  return timingSafeStringEqual(hash, getEnv().FLUTTERWAVE_WEBHOOK_SECRET_HASH);
 }

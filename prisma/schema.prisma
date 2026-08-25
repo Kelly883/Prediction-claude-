@@ -116,6 +116,7 @@ model User {
 
   @@index([role])
   @@index([email])
+  @@index([createdAt])
 }
 
 model Plan {
@@ -192,7 +193,9 @@ model Transaction {
   completedAt       DateTime?
 
   @@index([status])
+  @@index([status, createdAt])
   @@index([userId, createdAt])
+  @@index([providerReference, status])
 }
 
 model PredictionPost {
@@ -217,6 +220,7 @@ model PredictionPost {
   complimentaryAccess  ComplimentaryAccess[]
 
   @@index([status, scheduledAt])
+  @@index([status, visibility])
   @@index([outcome, status])
 }
 
@@ -301,6 +305,7 @@ model UserSession {
   createdAt         DateTime @default(now())
 
   @@index([userId, lastSeenAt])
+  @@index([userId, createdAt])
 }
 
 model PasswordResetToken {
