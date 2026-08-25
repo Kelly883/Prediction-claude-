@@ -1,8 +1,9 @@
 import { MetadataRoute } from 'next';
 import { getPublishedTipCount } from '@/lib/stats';
+import { getBaseUrl } from '@/lib/seo/metadata';
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const baseUrl = process.env.APP_URL || 'http://localhost:3000';
+  const baseUrl = getBaseUrl();
 
   const publicPages = [
     { url: `${baseUrl}/`, priority: 1.0, changeFrequency: 'daily' as const },

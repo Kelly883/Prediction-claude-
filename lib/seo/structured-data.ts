@@ -1,8 +1,10 @@
+import { getBaseUrl } from './metadata';
+
 export const ORG_JSON_LD = {
   '@context': 'https://schema.org',
   '@type': 'Organization',
   name: 'PredictPro',
-  url: process.env.APP_URL || 'http://localhost:3000',
+  url: getBaseUrl(),
   description: 'Football prediction subscription platform',
 };
 
@@ -10,7 +12,7 @@ export const WEBSITE_JSON_LD = {
   '@context': 'https://schema.org',
   '@type': 'WebSite',
   name: 'PredictPro',
-  url: process.env.APP_URL || 'http://localhost:3000',
+  url: getBaseUrl(),
   description: 'Football prediction subscriptions with real booking codes',
 };
 
@@ -45,7 +47,7 @@ export function articleJsonLd(params: {
     author: params.authorName ? { '@type': 'Person', name: params.authorName } : undefined,
     mainEntityOfPage: {
       '@type': 'WebPage',
-      '@id': `${process.env.APP_URL || 'http://localhost:3000'}${params.pathname}`,
+      '@id': `${getBaseUrl()}${params.pathname}`,
     },
   };
 }
