@@ -1,5 +1,12 @@
 import type { MetadataRoute } from 'next';
 
+function toAbsoluteUrl(input: string): string {
+  if (!input.startsWith('http://') && !input.startsWith('https://')) {
+    return `https://${input}`;
+  }
+  return input;
+}
+
 export function buildMetadata(base: {
   title: string;
   description: string;
@@ -7,7 +14,8 @@ export function buildMetadata(base: {
   image?: string;
   noIndex?: boolean;
 }) {
-  const baseUrl = process.env.APP_URL || 'http://localhost:3000';
+  const rawBase = process.env.APP_URL || 'http://localhost:3000';
+  const baseUrl = toAbsoluteUrl(rawBase);
   const url = baseUrl + (base.pathname || '');
   const imageUrl = base.image || `${baseUrl}/og-default.png`;
 
@@ -33,3 +41,9 @@ export function buildMetadata(base: {
     },
   };
 }
+
+export function getBaseUrl(): string {
+  const raw = process.env.APP_URL || 'http://localhost:3000';
+  return toAbsoluteUrl(raw);
+}
+
