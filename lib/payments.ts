@@ -8,7 +8,7 @@ import { flutterwaveInitialize } from './providers/flutterwave';
 import { timingSafeStringEqual } from './timing-safe';
 import { encryptPaymentToken } from './encryption';
 import { writeAudit } from './audit';
-import { getEnv } from '@/lib/env';
+import { getEnv, requireAppUrl, requirePaystack, requireFlutterwave } from '@/lib/env';
 
 const REDACTED_PAYLOAD_KEYS = new Set([
   'authorization_code',
@@ -60,7 +60,7 @@ export async function initializePayment(
   // placeholder reference and rewrite it after the fact.
   const idempotencyKey = crypto.randomUUID();
   const reference = `pp_${idempotencyKey}`;
-  const callbackUrl = `${getEnv().APP_URL}/payments/callback?provider=${provider}`;
+  const callbackUrl = `${requireAppUrl()}/payments/callback?provider=${provider}`;
 
   let checkoutUrl: string;
   if (provider === 'paystack') {
@@ -266,12 +266,22 @@ export async function cancelAutoRenew(userId: string) {
 }
 
 export function verifyPaystackSignature(rawBody: string, signature: string | null): boolean {
-  if (!signature || !getEnv().PAYSTACK_SECRET_KEY) return false;
-  const expected = crypto.createHmac('sha512', getEnv().PAYSTACK_SECRET_KEY).update(rawBody).digest('hex');
+  if (!signature) return false;
+  try {
+    requirePaystack();
+  } catch {
+    return false;
+  }
+  const expected = crypto.createHmac('sha512', getEnv().PAYSTACK_SECRET_KEY!).update(rawBody).digest('hex');
   return timingSafeStringEqual(expected, signature);
 }
 
 export function verifyFlutterwaveSignature(hash: string | null): boolean {
-  if (!hash || !getEnv().FLUTTERWAVE_WEBHOOK_SECRET_HASH) return false;
-  return timingSafeStringEqual(hash, getEnv().FLUTTERWAVE_WEBHOOK_SECRET_HASH);
+  if (!hash) return false;
+  try {
+    requireFlutterwave();
+  } catch {
+    return false;
+  }
+  return timingSafeStringEqual(hash, getEnv().FLUTTERWAVE_WEBHOOK_SECRET_HASH!);
 }
