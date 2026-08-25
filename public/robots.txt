@@ -3,5 +3,9 @@ Allow: /
 Disallow: /admin/
 Disallow: /api/
 Disallow: /dashboard/
+Disallow: /forgot-password
+Disallow: /reset-password
+Disallow: /payments/callback
+Disallow: /superadmin/setup
 
-Sitemap: https://predictpro.example.com/sitemap.xml
+Sitemap: /sitemap.xml
