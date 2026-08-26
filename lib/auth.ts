@@ -1,36 +1,23 @@
 import { SignJWT, jwtVerify } from 'jose';
-
-// jose (not jsonwebtoken) because it works in both the Node.js runtime and
-// the Edge runtime without native bindings — needed since middleware.ts
-// checks auth at the edge. Password hashing (bcryptjs, NOT edge-compatible)
-// lives in lib/password.ts instead — see the comment there for why that
-// split matters, not just style preference.
+import { getEnv } from '@/lib/env';
 
 const encoder = new TextEncoder();
 
-/**
- * SECURITY: TextEncoder.encode(undefined) silently produces an empty-string
- * key, not an error — so if JWT_ACCESS_SECRET is ever missing in production
- * (a misconfigured deploy, a typo'd env var name), every token gets signed
- * with an empty HMAC key, which anyone can forge, including admin sessions.
- * Fail loudly instead of failing open at request time.
- */
-function requireSecret(name: string, value: string | undefined): Uint8Array {
-  if (!value || value.length < 32) {
-    throw new Error(`Missing or undersized JWT secret: ${name}. Set a value >= 32 characters.`);
-  }
-  return encoder.encode(value);
-}
-
 function getAccessSecret(): Uint8Array {
-  return requireSecret('JWT_ACCESS_SECRET', process.env.JWT_ACCESS_SECRET);
+  const secret = getEnv().JWT_ACCESS_SECRET;
+  if (!secret || secret.length < 32) {
+    throw new Error('Missing or undersized JWT secret: JWT_ACCESS_SECRET. Set a value >= 32 characters.');
+  }
+  return encoder.encode(secret);
 }
 
 function getRefreshSecret(): Uint8Array {
-  return requireSecret(
-    'JWT_REFRESH_SECRET (or JWT_ACCESS_SECRET as fallback)',
-    process.env.JWT_REFRESH_SECRET ?? process.env.JWT_ACCESS_SECRET,
-  );
+  const env = getEnv();
+  const secret = env.JWT_REFRESH_SECRET || env.JWT_ACCESS_SECRET;
+  if (!secret || secret.length < 32) {
+    throw new Error('Missing or undersized JWT secret: JWT_REFRESH_SECRET. Set a value >= 32 characters.');
+  }
+  return encoder.encode(secret);
 }
 
 export interface AccessTokenPayload {
@@ -56,7 +43,7 @@ export async function issueAccessToken(payload: AccessTokenPayload): Promise<str
   return new SignJWT({ ...payload })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
-    .setExpirationTime(process.env.JWT_ACCESS_TTL ?? '15m')
+    .setExpirationTime(getEnv().JWT_ACCESS_TTL)
     .sign(getAccessSecret());
 }
 
@@ -66,7 +53,7 @@ export async function issueRefreshToken(userId: string, tokenVersion: number = 0
   return new SignJWT({ sub: userId, type: 'refresh', tv: tokenVersion, jti })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
-    .setExpirationTime(process.env.JWT_REFRESH_TTL ?? '7d')
+    .setExpirationTime(getEnv().JWT_REFRESH_TTL)
     .sign(getRefreshSecret());
 }
 
