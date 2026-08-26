@@ -115,7 +115,12 @@ export default function DashboardArchivePage() {
                     )}
                   </div>
                 )}
-                {p.items?.length ? (
+                {/* !p.locked is redundant given toTeaser() never sends items for a
+                    locked post in the first place — but this is the paywall
+                    boundary for the app's entire business model, so the client
+                    checks it explicitly too rather than relying solely on the
+                    backend never changing that contract. */}
+                {p.items?.length && !p.locked ? (
                   <div style={{ display: 'grid', gap: 4, marginTop: 6 }}>
                     {p.items.map((item) => (
                       <div key={item.id} style={{ fontSize: 14, display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderTop: '1px solid rgba(243,245,236,0.06)' }}>

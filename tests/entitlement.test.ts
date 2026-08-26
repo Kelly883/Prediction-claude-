@@ -131,4 +131,23 @@ describe('toTeaser', () => {
     expect(teaser.matchCount).toBe(3);
     expect(teaser).not.toHaveProperty('bookingCode');
   });
+
+  it('strips match/prediction items even when the post object carries them (e.g. from Prisma include: { items: true })', () => {
+    // This is the actual paywall boundary for the app's entire business
+    // model — toTeaser is the one place that decides what a non-paying
+    // viewer receives. A frontend page rendering `post.items` outside its
+    // own `locked` check (a real bug found and fixed separately in
+    // app/dashboard/predictions/archive/page.tsx) is only harmless because
+    // this function's allowlist never sends items in the first place.
+    // Locking that guarantee in here, not just relying on it being true
+    // today by inspection.
+    const postWithItems = {
+      ...basePost,
+      items: [{ id: 'item-1', postId: basePost.id, match: 'Arsenal vs Chelsea', prediction: 'Over 2.5', matchDateTime: null }],
+    };
+    const teaser = toTeaser(postWithItems, 1);
+    expect(teaser).not.toHaveProperty('items');
+    expect(teaser).not.toHaveProperty('bodyNotes');
+    expect(teaser).not.toHaveProperty('outcome');
+  });
 });
