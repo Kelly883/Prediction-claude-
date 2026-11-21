@@ -15,7 +15,6 @@ export default [
     },
     plugins: {
       next: nextPlugin,
-      '@next/next': nextPlugin,
       vitest: vitestPlugin,
       '@typescript-eslint': tsPlugin,
     },
