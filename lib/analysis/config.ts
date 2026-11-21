@@ -88,7 +88,9 @@ export function configValueForSeed(key: ConfigKey): unknown {
 }
 
 export function configDescriptionForSeed(key: ConfigKey): string {
-  if (key === 'confidence_threshold') return 'Minimum confidence percentage for a pick to be generated';
+  // Deliberately "model score", not "confidence percentage": the threshold gates
+  // the heuristic model score, which is not a calibrated win probability (audit §E).
+  if (key === 'confidence_threshold') return 'Minimum model score (0-100) for a pick to be generated';
   if (key === 'market_weights') return 'Default factor weights for the ten analysis markets';
   return 'Preferred order of football data providers';
 }

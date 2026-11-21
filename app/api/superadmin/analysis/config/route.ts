@@ -36,8 +36,17 @@ export async function PATCH(req: NextRequest) {
       value: validateConfigUpdate(update.key, update.value) as Prisma.InputJsonValue,
     }));
 
+    // Capture the pre-change values so the audit trail records a verifiable
+    // before/after pair rather than only the new value (§5 audit attribution).
+    const existing = await prisma.analysisConfig.findMany({
+      where: { key: { in: validated.map((update) => update.key) } },
+      select: { key: true, value: true },
+    });
+    const previousByKey = new Map(existing.map((config) => [config.key, config.value]));
+
     const updated = [];
     for (const update of validated) {
+      const previousValue = previousByKey.get(update.key) ?? null;
       const record = await prisma.analysisConfig.upsert({
         where: { key: update.key },
         create: {
@@ -56,7 +65,11 @@ export async function PATCH(req: NextRequest) {
         action: 'analysis.config.update',
         targetType: 'analysis_config',
         targetId: record.id,
-        metadata: { key: update.key, value: update.value },
+        metadata: {
+          key: update.key,
+          previousValue,
+          newValue: update.value,
+        },
       });
     }
 

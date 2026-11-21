@@ -49,7 +49,20 @@ export async function GET(req: NextRequest) {
       prisma.analysisResult.count({ where }),
     ]);
 
-    const response = NextResponse.json({ results, total, page, pageSize, totalPages: Math.max(1, Math.ceil(total / pageSize)) });
+    const response = NextResponse.json({
+      results: results.map((result) => ({
+        ...result,
+        // Honest, additive alias: the stored `confidence` is a heuristic model
+        // score, not a calibrated probability (audit §E). `modelScore` exposes
+        // the same value under a non-probabilistic name; `confidence` is kept
+        // for backwards compatibility with existing consumers and records.
+        modelScore: Number(result.confidence),
+      })),
+      total,
+      page,
+      pageSize,
+      totalPages: Math.max(1, Math.ceil(total / pageSize)),
+    });
     return withPaginationHeaders(response, page, pageSize, total);
   } catch (err) {
     return errorResponse(err);

@@ -1,22 +1,46 @@
 import type { MarketScore } from '@/types/analysis';
-import { clamp, evidenceScore, normalize, weightedScore } from '../utils/confidence';
+import { clamp, evidenceScore, normalize } from '../utils/confidence';
 import { h2hHomeScore } from '../utils/normalization';
-import { buildFactors, injuriesImpact, matchResultDirection, oddsOrDefault, scoreOf } from './shared';
+import { buildScorelineModel } from '../utils/poisson';
+import { buildFactors, injuriesImpact, oddsOrDefault } from './shared';
 import type { MarketContext } from './shared';
+
+/**
+ * Double Chance is derived from the Match Result probabilities of the Poisson
+ * scoreline model, so the three options are mathematically consistent
+ * (Home/Draw + Away/Draw + Home/Away = 2). All three supported options are
+ * considered and the highest-probability one is selected.
+ */
+const DOUBLE_CHANCE_NEUTRAL = 2 / 3; // the three options average 2/3
+const DOUBLE_CHANCE_RANGE = 45; // maps the widest outcome (p→1) to a 95 ceiling
 
 export function scoreDoubleChance(context: MarketContext): MarketScore {
   const { fixture, enrichment, weights } = context;
-  const match = matchResultDirection(enrichment, weights);
-  const direction = scoreOf(match.factors, 'homeXgVsAwayXg') !== 50
-    ? weightedScore(match.factors)
-    : scoreOf(match.factors, 'h2h');
+  const model = buildScorelineModel(enrichment);
+
+  const options = [
+    {
+      selection: `${fixture.homeTeam} or Draw`,
+      probability: model.homeOrDraw,
+      odds: enrichment.odds?.doubleChance?.homeDraw,
+    },
+    {
+      selection: `${fixture.awayTeam} or Draw`,
+      probability: model.awayOrDraw,
+      odds: enrichment.odds?.doubleChance?.drawAway,
+    },
+    {
+      selection: `${fixture.homeTeam} or ${fixture.awayTeam}`,
+      probability: model.homeOrAway,
+      odds: enrichment.odds?.doubleChance?.homeAway,
+    },
+  ];
+  const chosen = options.reduce((best, current) => (current.probability > best.probability ? current : best));
+
   const factors = buildFactors(weights, {
-    matchResultProbability: direction,
+    matchResultProbability: normalize(model.homeWin * 100),
     h2h: h2hHomeScore(enrichment.h2h),
     injuries: injuriesImpact(enrichment),
-    homeXgVsAwayXg: scoreOf(match.factors, 'homeXgVsAwayXg'),
-    form: scoreOf(match.factors, 'form'),
-    homeAdvantage: scoreOf(match.factors, 'homeAdvantage'),
   });
   const evidence = evidenceScore([
     enrichment.homeStats?.xgFor ?? enrichment.homeStats?.goalsFor,
@@ -25,15 +49,13 @@ export function scoreDoubleChance(context: MarketContext): MarketScore {
     enrichment.injuries?.home,
     enrichment.injuries?.away,
   ]);
-  const homeSide = direction >= 50;
-  const selection = homeSide ? `${fixture.homeTeam} or Draw` : `${fixture.awayTeam} or Draw`;
-  const confidence = normalize(clamp(58 + Math.abs(direction - 50) * 1.4 * evidence, 0, 95));
-  const odds = homeSide ? enrichment.odds?.doubleChance?.homeDraw : enrichment.odds?.doubleChance?.drawAway;
+
   return {
     market: 'DOUBLE_CHANCE',
-    selection,
-    odds: oddsOrDefault(odds),
-    confidence,
+    selection: chosen.selection,
+    odds: oddsOrDefault(chosen.odds),
+    confidence: normalize(clamp(50 + ((chosen.probability - DOUBLE_CHANCE_NEUTRAL) / (1 - DOUBLE_CHANCE_NEUTRAL)) * DOUBLE_CHANCE_RANGE * evidence, 0, 100)),
+    modelProbability: chosen.probability,
     factors,
   };
 }

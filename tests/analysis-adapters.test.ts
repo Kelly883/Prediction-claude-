@@ -17,6 +17,8 @@ import {
   fetchFootballDataEnrichment,
   fetchFootballDataFixtures,
 } from '@/lib/api/football-data';
+import { ProviderQuotaExhaustedError } from '@/lib/api/retry';
+import { recordProviderSuccess } from '@/lib/api/circuit-breaker';
 
 function jsonResponse(payload: unknown, ok = true, status = 200) {
   return {
@@ -34,19 +36,17 @@ describe('football provider adapters', () => {
   });
 
   it('normalizes API-Football fixtures and sends its API key header', async () => {
-    mocks.fetch
-      .mockResolvedValueOnce(jsonResponse({ response: [{ league: { id: 39 } }] }))
-      .mockResolvedValueOnce(jsonResponse({
-        response: [{
-          fixture: {
-            id: 101,
-            date: '2026-11-22T15:00:00Z',
-            venue: { lat: 51.5, long: -0.1 },
-          },
-          league: { name: 'Premier League' },
-          teams: { home: { id: 1, name: 'Arsenal' }, away: { id: 2, name: 'Chelsea' } },
-        }],
-      }));
+    mocks.fetch.mockResolvedValueOnce(jsonResponse({
+      response: [{
+        fixture: {
+          id: 101,
+          date: '2026-11-22T15:00:00Z',
+          venue: { lat: 51.5, long: -0.1 },
+        },
+        league: { name: 'Premier League' },
+        teams: { home: { id: 1, name: 'Arsenal' }, away: { id: 2, name: 'Chelsea' } },
+      }],
+    }));
 
     const fixtures = await fetchApiFootballFixtures(['PL'], '2026-11-21', '2026-11-23');
 
@@ -62,7 +62,7 @@ describe('football provider adapters', () => {
       source: 'api-football',
     });
     expect(fixtures[0].venueLatitude).toBe(51.5);
-    expect(mocks.fetch).toHaveBeenCalledTimes(2);
+    expect(mocks.fetch).toHaveBeenCalledTimes(1);
     expect(mocks.fetch.mock.calls[0][1].headers).toMatchObject({
       'x-apisports-key': 'test-api-football-key',
     });
@@ -152,5 +152,32 @@ describe('football provider adapters', () => {
 
     expect((enrichment.errors ?? []).length).toBeGreaterThan(0);
     expect(enrichment.homeStats).toBeUndefined();
+  });
+
+  it('surfaces quota exhaustion instead of reporting an empty ingestion result', async () => {
+    mocks.fetch.mockResolvedValueOnce(jsonResponse({
+      errors: { requests: 'You have reached the request limit for the day' },
+    }));
+
+    await expect(fetchApiFootballFixtures(['PL'], '2026-11-21', '2026-11-23'))
+      .rejects.toBeInstanceOf(ProviderQuotaExhaustedError);
+  });
+
+  it('opens the provider circuit after failures and short-circuits further calls', async () => {
+    process.env.PROVIDER_CIRCUIT_THRESHOLD = '1';
+    try {
+      mocks.fetch.mockRejectedValueOnce(new Error('network down'));
+
+      await expect(fetchApiFootballFixtures(['PL'], '2026-11-21', '2026-11-23')).rejects.toThrow();
+      const callsAfterFailure = mocks.fetch.mock.calls.length;
+      expect(callsAfterFailure).toBe(1);
+
+      // Circuit is now open: the next call must not reach the network.
+      await expect(fetchApiFootballFixtures(['PL'], '2026-11-21', '2026-11-23')).rejects.toThrow();
+      expect(mocks.fetch.mock.calls.length).toBe(callsAfterFailure);
+    } finally {
+      await recordProviderSuccess('api-football');
+      process.env.PROVIDER_CIRCUIT_THRESHOLD = '100';
+    }
   });
 });

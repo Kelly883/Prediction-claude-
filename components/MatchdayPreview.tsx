@@ -111,7 +111,7 @@ function FixtureCard({ fixture, isEntitled }: FixtureCardProps) {
                 {fixture.prediction.market}: {fixture.prediction.selection}
               </p>
               <p style={{ fontSize: 12, color: '#9CA3AF', margin: '2px 0 0' }}>
-                Odds {fixture.prediction.odds.toFixed(2)} • Confidence {fixture.prediction.confidence}%
+                Odds {fixture.prediction.odds.toFixed(2)} • Model score {fixture.prediction.confidence}
               </p>
             </div>
             <ChevronRight size={18} style={{ color: '#6B7280', flexShrink: 0 }} />

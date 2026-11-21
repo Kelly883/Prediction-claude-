@@ -2,6 +2,8 @@ import { prisma } from '@/lib/prisma';
 import type { AnalysisSettings, DataSource, Fixture, LeagueConfigRecord } from '@/types/analysis';
 import { fetchApiFootballFixtures } from '@/lib/api/football-api';
 import { fetchFootballDataFixtures } from '@/lib/api/football-data';
+import { partitionByProviderSupport } from '@/lib/api/provider-mapping';
+import { ProviderAuthError, ProviderQuotaExhaustedError } from '@/lib/api/retry';
 
 export const FIXTURE_WINDOW_HOURS = 48;
 
@@ -35,10 +37,21 @@ export async function fetchFixtures(
   const providers = settings.dataSourcePriorities;
 
   for (const provider of providers) {
+    const { supported, unsupported } = partitionByProviderSupport(provider, codes);
+    if (unsupported.length > 0) {
+      errors.push(`${provider}: unsupported leagues skipped: ${unsupported.join(', ')}`);
+    }
+    if (supported.length === 0) {
+      errors.push(`${provider}: no enabled leagues are supported`);
+      continue;
+    }
     try {
-      const fixtures = await loadFromProvider(provider, codes, from, to);
+      const fixtures = await loadFromProvider(provider, supported, from, to);
       return { fixtures: dedupeFixtures(fixtures), errors };
     } catch (err) {
+      // Entitlement exhaustion is a hard operational failure: surface it instead
+      // of silently falling through to a provider that cannot serve the request.
+      if (err instanceof ProviderQuotaExhaustedError || err instanceof ProviderAuthError) throw err;
       errors.push(`${provider}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }

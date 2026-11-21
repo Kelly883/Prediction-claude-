@@ -20,7 +20,13 @@ export async function GET(req: NextRequest, context: Context) {
       include: { results: { orderBy: { confidence: 'desc' } } },
     });
     if (!run) throw new ApiError(404, 'Analysis run not found');
-    return NextResponse.json(run);
+    return NextResponse.json({
+      ...run,
+      // `modelScore` mirrors the stored heuristic `confidence` under an honest,
+      // non-probabilistic name (audit §E); `confidence` is retained for
+      // backwards compatibility.
+      results: run.results.map((result) => ({ ...result, modelScore: Number(result.confidence) })),
+    });
   } catch (err) {
     return errorResponse(err);
   }

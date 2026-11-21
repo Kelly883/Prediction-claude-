@@ -119,7 +119,19 @@ export interface MarketScore {
   market: MarketType;
   selection: string;
   odds: number;
+  /**
+   * Heuristic model score (0–100). This is NOT a calibrated win probability —
+   * it combines weighted factor direction with data availability. The field
+   * name is preserved for database/API compatibility; user-facing surfaces
+   * label it "Model score". See docs/PHASE_1_PRODUCTION_READINESS_AUDIT.md §E.
+   */
   confidence: number;
+  /**
+   * Model-derived probability (0–1) for the selected outcome, where the market
+   * has a genuine probabilistic model (Match Result, Double Chance, Correct
+   * Score, Asian Handicap). Still a MODEL estimate, not a calibrated figure.
+   */
+  modelProbability?: number;
   factors: FactorScore[];
 }
 

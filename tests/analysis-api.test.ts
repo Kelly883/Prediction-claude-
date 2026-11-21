@@ -93,6 +93,11 @@ describe('daily analysis cron API', () => {
     expect(mocks.writeAudit).toHaveBeenCalledWith(expect.objectContaining({
       action: 'analysis.run',
       targetId: 'run-1',
+      metadata: expect.objectContaining({
+        actorType: 'system',
+        trigger: 'cron',
+        force: true,
+      }),
     }));
   });
 });
@@ -187,6 +192,29 @@ describe('superadmin analysis results API', () => {
     expect(res.status).toBe(409);
     expect(mocks.transaction).not.toHaveBeenCalled();
   });
+
+  it('rejects publishing a pick that is already published', async () => {
+    mocks.analysisResult.findUnique.mockResolvedValue({
+      id: 'result-3',
+      homeTeam: 'A',
+      awayTeam: 'B',
+      bestMarket: 'MATCH_RESULT',
+      bestSelection: 'Home',
+      kickoff: new Date('2026-11-23T15:00:00.000Z'),
+      status: 'published',
+      predictionPostId: 'post-existing',
+    });
+
+    const res = await publishResult(request('/api/superadmin/analysis/results/result-3/publish', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ bookingCode: 'BC-123' }),
+    }), { params: Promise.resolve({ id: 'result-3' }) });
+
+    expect(res.status).toBe(409);
+    expect(mocks.transaction).not.toHaveBeenCalled();
+    expect(mocks.createPost).not.toHaveBeenCalled();
+  });
 });
 
 describe('superadmin analysis config API', () => {
@@ -194,6 +222,7 @@ describe('superadmin analysis config API', () => {
     vi.clearAllMocks();
     mocks.requireAnalysisAdmin.mockResolvedValue(mocks.admin);
     mocks.writeAudit.mockResolvedValue(undefined);
+    mocks.analysisConfig.findMany.mockResolvedValue([]);
   });
 
   it('validates and stores threshold updates', async () => {
@@ -217,5 +246,51 @@ describe('superadmin analysis config API', () => {
       create: expect.objectContaining({ value: 82 }),
     }));
     expect(mocks.requireAnalysisAdmin).toHaveBeenCalledWith(expect.anything(), true);
+  });
+
+  it('records the previous and new config values in the audit trail', async () => {
+    mocks.analysisConfig.findMany.mockResolvedValue([
+      { key: 'confidence_threshold', value: 75 },
+    ]);
+    mocks.analysisConfig.upsert.mockResolvedValue({
+      id: 'config-1',
+      key: 'confidence_threshold',
+      value: 82,
+    });
+
+    const res = await patchConfig(request('/api/superadmin/analysis/config', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ key: 'confidence_threshold', value: 82 }),
+    }));
+
+    expect(res.status).toBe(200);
+    expect(mocks.writeAudit).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'analysis.config.update',
+      metadata: expect.objectContaining({
+        key: 'confidence_threshold',
+        previousValue: 75,
+        newValue: 82,
+      }),
+    }));
+  });
+
+  it('records a null previousValue when the config did not exist', async () => {
+    mocks.analysisConfig.findMany.mockResolvedValue([]);
+    mocks.analysisConfig.upsert.mockResolvedValue({
+      id: 'config-2',
+      key: 'confidence_threshold',
+      value: 90,
+    });
+
+    await patchConfig(request('/api/superadmin/analysis/config', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ key: 'confidence_threshold', value: 90 }),
+    }));
+
+    expect(mocks.writeAudit).toHaveBeenCalledWith(expect.objectContaining({
+      metadata: expect.objectContaining({ previousValue: null, newValue: 90 }),
+    }));
   });
 });

@@ -1,7 +1,10 @@
 import { prisma } from '@/lib/prisma';
+import { Prisma } from '@prisma/client';
 import { redis } from '@/lib/redis';
+import { logger } from '@/lib/logger';
 import { parseStoredConfigs } from './config';
 import { filterPicks, scoreFixture } from './engine';
+import { toPersistableResult } from './persistence';
 import { enrichFixtures } from './ingestion/enrichment';
 import { dateOnly, fetchFixtures, getEnabledLeagues } from './ingestion/fixtures';
 import type { AnalysisSettings, Fixture, FixtureEnrichment } from '@/types/analysis';
@@ -42,6 +45,12 @@ export async function runDailyAnalysis(options: {
   const enrich = dependencies.enrichFixtures ?? enrichFixtures;
   const score = dependencies.scoreFixture ?? scoreFixture;
 
+  // Same-day idempotency: by default a scheduled run re-uses an existing
+  // `running`/`completed` run for the day instead of creating a second one.
+  // Re-runs are an intentional product feature, so we deliberately do NOT add a
+  // unique constraint on `AnalysisRun.runDate` — instead callers must pass
+  // `force: true` to start an additional run. Duplicate fixtures *within* a run
+  // are prevented by the unique `AnalysisResult(runId, fixtureId)` index.
   if (!options.force) {
     const existing = await prisma.analysisRun.findFirst({
       where: { runDate, status: { in: ['running', 'completed'] } },
@@ -64,8 +73,10 @@ export async function runDailyAnalysis(options: {
     const result = await redis.set(lockKey, '1', { nx: true, ex: 600 });
     hasLock = result === 'OK';
   } catch (err) {
-    console.warn('Analysis lock unavailable, continuing without distributed lock', err);
-    hasLock = true;
+    // Do NOT pretend to hold a distributed lock. If Redis is unavailable we log
+    // it and fall through; the database-level single-running-run-per-day guard
+    // below still prevents concurrent runs.
+    logger.warn('analysis.lock.unavailable', { day, error: err instanceof Error ? err.message : String(err) });
   }
 
   if (!hasLock) {
@@ -84,9 +95,35 @@ export async function runDailyAnalysis(options: {
     }
   }
 
-  const run = await prisma.analysisRun.create({
-    data: { runDate, status: 'running', startedAt: now },
-  });
+  let run: { id: string };
+  try {
+    run = await prisma.analysisRun.create({
+      data: { runDate, status: 'running', startedAt: now },
+    });
+  } catch (err) {
+    // The partial unique index `AnalysisRun(runDate) WHERE status='running'`
+    // rejects a second concurrent run for the same day (e.g. overlapping cron
+    // invocations when the distributed lock was unavailable). Report the
+    // in-flight run instead of failing.
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+      const existing = await prisma.analysisRun.findFirst({
+        where: { runDate, status: 'running' },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (existing) {
+        return {
+          runId: existing.id,
+          status: 'running',
+          fixturesAnalyzed: existing.fixturesAnalyzed,
+          picksGenerated: existing.picksGenerated,
+          alreadyRunning: true,
+        };
+      }
+    }
+    throw err;
+  }
+
+  logger.info('analysis.run.started', { runId: run.id, day });
 
   try {
     const settings = await loadAnalysisSettings();
@@ -96,33 +133,39 @@ export async function runDailyAnalysis(options: {
     const outcomes = enriched.map(({ fixture, enrichment }) => score(fixture, enrichment, settings));
     const picks = filterPicks(outcomes, settings.threshold);
 
-    if (picks.length > 0) {
-      await prisma.analysisResult.createMany({
-        data: picks.map((pick) => ({
-          runId: run.id,
-          fixtureId: pick.fixture.id,
-          homeTeam: pick.fixture.homeTeam,
-          awayTeam: pick.fixture.awayTeam,
-          league: pick.fixture.leagueCode,
-          kickoff: pick.fixture.kickoff,
-          bestMarket: pick.best.market,
-          bestSelection: pick.best.selection,
-          bestOdds: pick.best.odds,
-          confidence: pick.best.confidence,
-          marketScores: pick.scores as unknown as object,
-          topFactors: pick.topFactors as unknown as object,
-        })),
-      });
-    }
+    // Validate + map before touching the database so a malformed payload fails
+    // the run before any rows are written.
+    const rows = picks.map((pick) => toPersistableResult(run.id, pick));
 
-    const completed = await prisma.analysisRun.update({
-      where: { id: run.id },
-      data: {
-        status: 'completed',
-        fixturesAnalyzed: fixtureResult.fixtures.length,
-        picksGenerated: picks.length,
-        completedAt: new Date(),
-      },
+    // Atomic finalisation: result persistence and run completion commit together
+    // (or roll back together). A crash between the two can no longer leave a
+    // `running` run that already has stored results. `skipDuplicates` makes the
+    // write retry-safe against the unique `(runId, fixtureId)` index.
+    const { inserted, completed } = await prisma.$transaction(async (tx) => {
+      let inserted = 0;
+      if (rows.length > 0) {
+        const created = await tx.analysisResult.createMany({
+          data: rows as unknown as Prisma.AnalysisResultCreateManyInput[],
+          skipDuplicates: true,
+        });
+        inserted = created.count;
+      }
+      const updated = await tx.analysisRun.update({
+        where: { id: run.id },
+        data: {
+          status: 'completed',
+          fixturesAnalyzed: fixtureResult.fixtures.length,
+          picksGenerated: inserted,
+          completedAt: new Date(),
+        },
+      });
+      return { inserted, completed: updated };
+    });
+
+    logger.info('analysis.run.completed', {
+      runId: completed.id,
+      fixturesAnalyzed: completed.fixturesAnalyzed,
+      picksGenerated: completed.picksGenerated,
     });
 
     return {
@@ -134,6 +177,7 @@ export async function runDailyAnalysis(options: {
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    logger.error('analysis.run.failed', { runId: run.id, error: message });
     await prisma.analysisRun.update({
       where: { id: run.id },
       data: { status: 'failed', errorMessage: message.slice(0, 2000), completedAt: new Date() },
@@ -144,7 +188,7 @@ export async function runDailyAnalysis(options: {
       try {
         await redis.del(lockKey);
       } catch (err) {
-        console.warn('Analysis lock release failed', err);
+        logger.warn('analysis.lock.releaseFailed', { runId: run.id, error: err instanceof Error ? err.message : String(err) });
       }
     }
   }

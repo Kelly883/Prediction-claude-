@@ -1,6 +1,7 @@
 import type { MarketScore } from '@/types/analysis';
 import { confidenceFromDirection, confidenceFromPropensity, evidenceScore } from '../utils/confidence';
 import { h2hDrawScore } from '../utils/normalization';
+import { buildScorelineModel } from '../utils/poisson';
 import { injuriesImpact, matchResultDirection, oddsOrDefault, threeWaySelection, valueOr } from './shared';
 import type { MarketContext } from './shared';
 
@@ -27,11 +28,19 @@ export function scoreMatchResult(context: MarketContext): MarketScore {
       ? enrichment.odds?.matchResult?.away
       : enrichment.odds?.matchResult?.draw;
 
+  const model = buildScorelineModel(enrichment);
+  const modelProbability = selection === fixture.homeTeam
+    ? model.homeWin
+    : selection === fixture.awayTeam
+      ? model.awayWin
+      : model.draw;
+
   return {
     market: 'MATCH_RESULT',
     selection,
     odds: oddsOrDefault(odds),
     confidence,
+    modelProbability,
     factors,
   };
 }
