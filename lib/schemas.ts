@@ -104,5 +104,5 @@ export const PasswordResetConfirmSchema = z.object({
 
 /** Turns a ZodError into the same { error } shape every route already returns. */
 export function formatZodError(err: z.ZodError): string {
-  return err.errors.map((e) => `${e.path.join('.')}: ${e.message}`).join('; ');
+  return err.issues.map((e) => `${e.path.join('.')}: ${e.message}`).join('; ');
 }
