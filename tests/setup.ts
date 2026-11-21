@@ -17,6 +17,14 @@ process.env.RESEND_API_KEY = 'test-resend-key';
 process.env.RESEND_FROM_EMAIL = 'test@example.com';
 process.env.API_FOOTBALL_KEY = 'test-api-football-key';
 process.env.FOOTBALL_DATA_API_KEY = 'test-football-data-key';
+// Tests must never construct a real Upstash client. If UPSTASH_REDIS_REST_* are
+// present in the ambient environment (the CI build job exports dummy values for
+// `next build`), lib/redis.ts would build a live client: it shares the stubbed
+// global `fetch`, so it corrupts provider fetch mocks and attempts real DNS
+// lookups. Clearing them here keeps the suite on the in-memory store — the
+// behaviour the tests are written against — independent of the caller's env.
+delete process.env.UPSTASH_REDIS_REST_URL;
+delete process.env.UPSTASH_REDIS_REST_TOKEN;
 // Keep provider retries off by default in tests so failures are deterministic
 // and fast; retry behaviour is exercised explicitly in retry unit tests.
 process.env.PROVIDER_MAX_RETRIES = '0';
