@@ -150,7 +150,7 @@ export function errorResponse(err: unknown): NextResponse {
     return NextResponse.json({ error: err.message }, { status: err.status });
   }
   if (err instanceof ZodError) {
-    const message = err.errors.map((e) => `${e.path.join('.')}: ${e.message}`).join('; ');
+    const message = err.issues.map((e) => `${e.path.join('.')}: ${e.message}`).join('; ');
     return NextResponse.json({ error: message }, { status: 400 });
   }
   console.error(err);

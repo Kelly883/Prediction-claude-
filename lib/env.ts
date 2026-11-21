@@ -47,7 +47,7 @@ function parseCore(): z.infer<typeof CoreEnvSchema> {
   if (cachedCore && process.env.NODE_ENV !== 'test') return cachedCore;
   const result = CoreEnvSchema.safeParse(process.env);
   if (!result.success) {
-    const missing = result.error.errors.map((e) => `${e.path.join('.')}: ${e.message}`).join('\n');
+    const missing = result.error.issues.map((e) => `${e.path.join('.')}: ${e.message}`).join('\n');
     throw new Error(`Core environment validation failed:\n${missing}`);
   }
   cachedCore = result.data;
