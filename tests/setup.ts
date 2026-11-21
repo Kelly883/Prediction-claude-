@@ -17,3 +17,10 @@ process.env.RESEND_API_KEY = 'test-resend-key';
 process.env.RESEND_FROM_EMAIL = 'test@example.com';
 process.env.API_FOOTBALL_KEY = 'test-api-football-key';
 process.env.FOOTBALL_DATA_API_KEY = 'test-football-data-key';
+// Keep provider retries off by default in tests so failures are deterministic
+// and fast; retry behaviour is exercised explicitly in retry unit tests.
+process.env.PROVIDER_MAX_RETRIES = '0';
+process.env.PROVIDER_RETRY_BASE_MS = '0';
+// Keep the provider circuit breaker from tripping during ordinary adapter tests;
+// the breaker's own suite overrides this threshold per test.
+process.env.PROVIDER_CIRCUIT_THRESHOLD = '100';

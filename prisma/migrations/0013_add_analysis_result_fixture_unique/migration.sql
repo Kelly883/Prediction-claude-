@@ -1,0 +1,12 @@
+-- Idempotency guard: a fixture may only be recorded once per analysis run.
+-- This makes result persistence retry-safe (`createMany({ skipDuplicates: true })`)
+-- and prevents duplicate fixture rows if a run is re-executed.
+--
+-- Preflight (run manually before applying on a populated database):
+--   SELECT "runId", "fixtureId", COUNT(*)
+--   FROM "AnalysisResult"
+--   GROUP BY "runId", "fixtureId"
+--   HAVING COUNT(*) > 1;
+-- If rows are returned, resolve the duplicates first. Otherwise this statement
+-- fails and the surrounding transaction rolls back cleanly (no data modified).
+CREATE UNIQUE INDEX "AnalysisResult_runId_fixtureId_key" ON "AnalysisResult"("runId", "fixtureId");

@@ -32,11 +32,19 @@ async function handle(req: NextRequest): Promise<NextResponse> {
 
     const result = await runDailyAnalysis({ force });
     await writeAudit({
+      // Scheduled runs have no human actor; attribute them explicitly to the
+      // system cron trigger so audit consumers can distinguish automated
+      // ingestion from superadmin-initiated runs (§5 cron audit attribution).
       actorId: null,
       action: 'analysis.run',
       targetType: 'analysis_run',
       targetId: result.runId,
       metadata: {
+        actorType: 'system',
+        actor: 'system:cron',
+        trigger: 'cron',
+        source: 'cron',
+        force,
         status: result.status,
         fixturesAnalyzed: result.fixturesAnalyzed,
         picksGenerated: result.picksGenerated,

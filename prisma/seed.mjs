@@ -7,7 +7,9 @@ const defaults = require('../lib/analysis/defaults.json');
 const prisma = new PrismaClient();
 
 const CONFIG_DESCRIPTIONS = {
-  confidence_threshold: 'Minimum confidence percentage for a pick to be generated',
+  // "model score", not "confidence percentage": the threshold gates the heuristic
+  // model score, which is not a calibrated win probability (audit §E).
+  confidence_threshold: 'Minimum model score (0-100) for a pick to be generated',
   market_weights: 'Default factor weights for the ten analysis markets',
   data_source_priorities: 'Preferred order of football data providers',
 };

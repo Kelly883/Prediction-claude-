@@ -1,5 +1,15 @@
 import type { FactorScore } from '@/types/analysis';
 
+/**
+ * Model-score utilities.
+ *
+ * The values produced here are HEURISTIC MODEL SCORES (0–100), not calibrated
+ * win probabilities. `confidenceFromDirection` in particular is a heuristic
+ * scaled by data availability: a value of 75 does NOT mean a 75% chance of
+ * winning. The `confidence` field name is preserved for database/API
+ * compatibility, but user-facing surfaces label it "Model score".
+ * See docs/PHASE_1_PRODUCTION_READINESS_AUDIT.md §E.
+ */
 export function clamp(value: number, min = 0, max = 100): number {
   if (!Number.isFinite(value)) return min;
   return Math.min(max, Math.max(min, value));

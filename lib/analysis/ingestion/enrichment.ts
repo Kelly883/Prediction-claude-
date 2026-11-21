@@ -1,6 +1,7 @@
 import type { AnalysisSettings, Fixture, FixtureEnrichment } from '@/types/analysis';
 import { fetchApiFootballEnrichment } from '@/lib/api/football-api';
 import { fetchFootballDataEnrichment } from '@/lib/api/football-data';
+import { ProviderAuthError, ProviderQuotaExhaustedError } from '@/lib/api/retry';
 import { fetchWeather } from './weather';
 
 const MAX_CONCURRENCY = 10;
@@ -34,6 +35,9 @@ export async function enrichFixtures(
         enrichment = await loadEnrichment(provider, fixture);
         break;
       } catch (err) {
+        // Entitlement exhaustion must abort the run loudly; degrading silently
+        // would present a partially-enriched analysis as a complete one.
+        if (err instanceof ProviderQuotaExhaustedError || err instanceof ProviderAuthError) throw err;
         errors.push(`${provider}: ${err instanceof Error ? err.message : String(err)}`);
       }
     }

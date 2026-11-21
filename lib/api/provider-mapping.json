@@ -1,0 +1,22 @@
+[
+  { "code": "PL", "name": "English Premier League", "apiFootballId": 39, "footballDataCode": "PL" },
+  { "code": "PD", "name": "Spanish La Liga", "apiFootballId": 140, "footballDataCode": "PD" },
+  { "code": "BL1", "name": "German Bundesliga", "apiFootballId": 78, "footballDataCode": "BL1" },
+  { "code": "SA", "name": "Italian Serie A", "apiFootballId": 135, "footballDataCode": "SA" },
+  { "code": "FL1", "name": "French Ligue 1", "apiFootballId": 61, "footballDataCode": "FL1" },
+  { "code": "PPL", "name": "Portuguese Primeira Liga", "apiFootballId": 94, "footballDataCode": "PPL" },
+  { "code": "ERE", "name": "Dutch Eredivisie", "apiFootballId": 88, "footballDataCode": "DED" },
+  { "code": "CL", "name": "UEFA Champions League", "apiFootballId": 2, "footballDataCode": "CL" },
+  { "code": "EL", "name": "UEFA Europa League", "apiFootballId": 3 },
+  { "code": "ECL", "name": "UEFA Europa Conference League", "apiFootballId": 848 },
+  { "code": "BL2", "name": "German 2. Bundesliga", "apiFootballId": 79 },
+  { "code": "PD2", "name": "Spanish Segunda Division", "apiFootballId": 141 },
+  { "code": "SA2", "name": "Italian Serie B", "apiFootballId": 136 },
+  { "code": "FL2", "name": "French Ligue 2", "apiFootballId": 62 },
+  { "code": "ELC", "name": "English Championship", "apiFootballId": 40, "footballDataCode": "ELC" },
+  { "code": "MLS", "name": "Major League Soccer", "apiFootballId": 253 },
+  { "code": "LIB", "name": "Liga MX", "apiFootballId": 262 },
+  { "code": "J1", "name": "Japan J1 League", "apiFootballId": 98 },
+  { "code": "ARG", "name": "Argentina Primera Division", "apiFootballId": 128 },
+  { "code": "BRA", "name": "Brazil Serie A", "apiFootballId": 71, "footballDataCode": "BSA" }
+]
