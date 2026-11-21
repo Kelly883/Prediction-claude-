@@ -13,15 +13,6 @@ const CONFIG_DESCRIPTIONS = {
 };
 
 async function main() {
-  const superadmin = await prisma.user.findFirst({
-    where: { role: 'superadmin' },
-    orderBy: { createdAt: 'asc' },
-    select: { id: true },
-  });
-  if (!superadmin) {
-    throw new Error('A superadmin user must exist before seeding analysis configuration');
-  }
-
   for (const league of defaults.leagues) {
     await prisma.leagueConfig.upsert({
       where: { leagueCode: league.leagueCode },
@@ -39,30 +30,42 @@ async function main() {
     });
   }
 
+  const superadmin = await prisma.user.findFirst({
+    where: { role: 'superadmin' },
+    orderBy: { createdAt: 'asc' },
+    select: { id: true },
+  });
+
   const configValues = {
     confidence_threshold: defaults.threshold,
     market_weights: defaults.marketWeights,
     data_source_priorities: defaults.dataSourcePriorities,
   };
 
-  for (const [key, value] of Object.entries(configValues)) {
-    await prisma.analysisConfig.upsert({
-      where: { key },
-      create: {
-        key,
-        value,
-        description: CONFIG_DESCRIPTIONS[key],
-        updatedById: superadmin.id,
-      },
-      update: {
-        value,
-        description: CONFIG_DESCRIPTIONS[key],
-        updatedById: superadmin.id,
-      },
-    });
+  if (superadmin) {
+    for (const [key, value] of Object.entries(configValues)) {
+      await prisma.analysisConfig.upsert({
+        where: { key },
+        create: {
+          key,
+          value,
+          description: CONFIG_DESCRIPTIONS[key],
+          updatedById: superadmin.id,
+        },
+        update: {
+          value,
+          description: CONFIG_DESCRIPTIONS[key],
+          updatedById: superadmin.id,
+        },
+      });
+    }
+    console.log(`Seeded ${defaults.leagues.length} leagues and ${Object.keys(configValues).length} analysis configs`);
+  } else {
+    console.warn(
+      'No superadmin user found — skipping analysis config seed. Create a superadmin (e.g. via /api/superadmin/setup) then re-run `prisma db seed` to populate configs.',
+    );
+    console.log(`Seeded ${defaults.leagues.length} leagues (configs skipped)`);
   }
-
-  console.log(`Seeded ${defaults.leagues.length} leagues and ${Object.keys(configValues).length} analysis configs`);
 }
 
 main()
