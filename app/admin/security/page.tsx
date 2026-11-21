@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Image from 'next/image';
 import { apiJson, apiFetch } from '@/lib/api-client';
 
 type SetupResult = { secret: string; otpauthUri: string };
@@ -165,10 +166,13 @@ export default function AdminSecurityPage() {
               {setupSecret}
             </div>
             {qrSrc && (
-              <img
+              <Image
                 src={qrSrc}
                 alt="2FA QR code"
-                style={{ width: 200, height: 200, marginBottom: 20, borderRadius: 8, border: '1px solid rgba(243,245,236,0.1)' }}
+                width={200}
+                height={200}
+                unoptimized
+                style={{ marginBottom: 20, borderRadius: 8, border: '1px solid rgba(243,245,236,0.1)' }}
               />
             )}
             <div className="field">

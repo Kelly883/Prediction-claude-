@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { apiJson } from '@/lib/api-client';
 import { Shield, Lock, CheckCircle2 } from 'lucide-react';
@@ -163,9 +164,12 @@ export default function SuperAdminSetupPage() {
 
             {otpauthUri && (
               <div style={{ textAlign: 'center' }}>
-                <img
+                <Image
                   src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(otpauthUri)}`}
                   alt="2FA QR Code"
+                  width={180}
+                  height={180}
+                  unoptimized
                   style={{ borderRadius: 10, border: '1px solid rgba(243,245,236,0.1)' }}
                 />
                 <div style={{ fontSize: 12, color: 'var(--chalk-muted)', marginTop: 8 }}>

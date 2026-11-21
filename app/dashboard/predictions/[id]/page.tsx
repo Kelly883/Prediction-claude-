@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Image from 'next/image';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { apiJson } from '@/lib/api-client';
@@ -93,7 +94,14 @@ export default function PredictionDetailPage() {
 
               {post.media?.map((asset) =>
                 imageUrls[asset.id] ? (
-                  <img key={asset.id} src={imageUrls[asset.id]} alt="" style={{ width: '100%', borderRadius: 4, marginTop: 12 }} />
+                  <Image
+                    key={asset.id}
+                    src={imageUrls[asset.id]}
+                    alt=""
+                    fill
+                    sizes="(max-width: 768px) 100vw, 50vw"
+                    style={{ width: '100%', borderRadius: 4, marginTop: 12, objectFit: 'cover' }}
+                  />
                 ) : null,
               )}
             </div>
