@@ -41,7 +41,7 @@ export async function POST(req: NextRequest, context: Context) {
           bodyNotes: dto.bodyNotes,
           visibility: dto.visibility,
           planIds: dto.planIds,
-          status: 'draft',
+          status: 'published',
           createdById: admin.sub,
           items: {
             create: {

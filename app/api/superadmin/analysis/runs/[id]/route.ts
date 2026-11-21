@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { ApiError, errorResponse } from '@/lib/rbac';
 import { writeAudit } from '@/lib/audit';
 import { requireAnalysisAdmin } from '@/lib/analysis/api-auth';
+import { runDailyAnalysis } from '@/lib/analysis/run';
 
 export const runtime = 'nodejs';
 
@@ -20,6 +21,34 @@ export async function GET(req: NextRequest, context: Context) {
     });
     if (!run) throw new ApiError(404, 'Analysis run not found');
     return NextResponse.json(run);
+  } catch (err) {
+    return errorResponse(err);
+  }
+}
+
+export async function POST(req: NextRequest, context: Context) {
+  try {
+    const admin = await requireAnalysisAdmin(req, true);
+    const { id } = await context.params;
+    const run = await prisma.analysisRun.findUnique({ where: { id } });
+    if (!run) throw new ApiError(404, 'Analysis run not found');
+
+    const result = await runDailyAnalysis({ force: true });
+
+    await writeAudit({
+      actorId: admin.sub,
+      action: 'analysis.run.rerun',
+      targetType: 'analysis_run',
+      targetId: run.id,
+      metadata: {
+        previousStatus: run.status,
+        newStatus: result.status,
+        fixturesAnalyzed: result.fixturesAnalyzed,
+        picksGenerated: result.picksGenerated,
+      },
+    });
+
+    return NextResponse.json(result);
   } catch (err) {
     return errorResponse(err);
   }
