@@ -10,8 +10,13 @@
     "postinstall": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",
+    "prisma:seed": "prisma db seed",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:unit": "vitest run tests/analysis-engine.test.ts tests/analysis-adapters.test.ts",
+    "test:integration": "vitest run tests/analysis-api.test.ts",
+    "test:auth": "vitest run tests/analysis-authz.test.ts",
     "make-admin": "node scripts/promote-admin.mjs",
     "check-routes": "node scripts/check-route-conflicts.mjs",
     "test:e2e": "playwright test",
@@ -51,6 +56,9 @@
     "tailwindcss": "^3.4.19",
     "typescript": "^5.6.0",
     "vitest": "^4.1.10"
+  },
+  "prisma": {
+    "seed": "node prisma/seed.mjs"
   },
   "overrides": {
     "sharp": "^0.35.3",

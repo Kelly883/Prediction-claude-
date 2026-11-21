@@ -15,3 +15,5 @@ process.env.ENCRYPTION_KEY = 'c'.repeat(64);
 process.env.ADMIN_BOOTSTRAP_SECRET = 'test-admin-bootstrap-secret-32-chars';
 process.env.RESEND_API_KEY = 'test-resend-key';
 process.env.RESEND_FROM_EMAIL = 'test@example.com';
+process.env.API_FOOTBALL_KEY = 'test-api-football-key';
+process.env.FOOTBALL_DATA_API_KEY = 'test-football-data-key';

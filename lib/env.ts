@@ -33,6 +33,10 @@ const OptionalEnvSchema = z.object({
   S3_SECRET_ACCESS_KEY: z.string().optional(),
   UPSTASH_REDIS_REST_TOKEN: z.string().optional(),
   UPSTASH_REDIS_REST_URL: z.string().optional(),
+  API_FOOTBALL_KEY: z.string().optional(),
+  FOOTBALL_DATA_API_KEY: z.string().optional(),
+  FOOTBALL_API_TIMEOUT_MS: z.coerce.number().int().positive().optional(),
+  FOOTBALL_CACHE_TTL_SECONDS: z.coerce.number().int().positive().optional(),
 });
 
 export type Env = z.infer<typeof CoreEnvSchema> & z.infer<typeof OptionalEnvSchema>;

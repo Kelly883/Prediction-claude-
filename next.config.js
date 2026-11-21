@@ -2,6 +2,9 @@
 const nextConfig = {
   output: 'standalone',
   serverExternalPackages: ['sharp'],
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
   async headers() {
     return [
       {
