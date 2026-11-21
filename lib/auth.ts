@@ -48,13 +48,27 @@ export async function issueAccessToken(payload: AccessTokenPayload): Promise<str
 }
 
 export async function issueRefreshToken(userId: string, tokenVersion: number = 0): Promise<string> {
-  const { randomUUID } = await import('crypto');
-  const jti = randomUUID();
+  const jti = generateJti();
   return new SignJWT({ sub: userId, type: 'refresh', tv: tokenVersion, jti })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setExpirationTime(getEnv().JWT_REFRESH_TTL)
     .sign(getRefreshSecret());
+}
+
+function generateJti(): string {
+  // Edge-safe: uses Web Crypto instead of Node's `crypto` module, which is
+  // unavailable in the Edge Runtime where middleware.ts imports this file.
+  const buf = new Uint8Array(16);
+  if (typeof globalThis.crypto !== 'undefined' && globalThis.crypto.getRandomValues) {
+    globalThis.crypto.getRandomValues(buf);
+  } else {
+    for (let i = 0; i < 16; i++) buf[i] = Math.floor(Math.random() * 256);
+  }
+  buf[6] = (buf[6] & 0x0f) | 0x40; // version 4
+  buf[8] = (buf[8] & 0x3f) | 0x80; // variant 10xx
+  const hex = Array.from(buf, (b) => b.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
 }
 
 export async function verifyAccessToken(token: string): Promise<AccessTokenPayload | null> {
