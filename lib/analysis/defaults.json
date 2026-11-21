@@ -1,0 +1,96 @@
+{
+  "threshold": 75,
+  "dataSourcePriorities": ["api-football", "football-data"],
+  "leagues": [
+    { "leagueCode": "PL", "leagueName": "English Premier League" },
+    { "leagueCode": "PD", "leagueName": "Spanish La Liga" },
+    { "leagueCode": "BL1", "leagueName": "German Bundesliga" },
+    { "leagueCode": "SA", "leagueName": "Italian Serie A" },
+    { "leagueCode": "FL1", "leagueName": "French Ligue 1" },
+    { "leagueCode": "PPL", "leagueName": "Portuguese Primeira Liga" },
+    { "leagueCode": "ERE", "leagueName": "Dutch Eredivisie" },
+    { "leagueCode": "CL", "leagueName": "UEFA Champions League" },
+    { "leagueCode": "EL", "leagueName": "UEFA Europa League" },
+    { "leagueCode": "ECL", "leagueName": "UEFA Europa Conference League" },
+    { "leagueCode": "BL2", "leagueName": "German 2. Bundesliga" },
+    { "leagueCode": "PD2", "leagueName": "Spanish Segunda Division" },
+    { "leagueCode": "SA2", "leagueName": "Italian Serie B" },
+    { "leagueCode": "FL2", "leagueName": "French Ligue 2" },
+    { "leagueCode": "ELC", "leagueName": "English Championship" },
+    { "leagueCode": "MLS", "leagueName": "Major League Soccer" },
+    { "leagueCode": "LIB", "leagueName": "Argentina Liga Profesional" },
+    { "leagueCode": "J1", "leagueName": "Japan J1 League" },
+    { "leagueCode": "ARG", "leagueName": "Argentina Primera Division" },
+    { "leagueCode": "BRA", "leagueName": "Brazil Serie A" }
+  ],
+  "marketWeights": {
+    "MATCH_RESULT": {
+      "homeXgVsAwayXg": 0.25,
+      "h2h": 0.2,
+      "form": 0.2,
+      "homeAdvantage": 0.15,
+      "injuries": 0.1,
+      "motivation": 0.1
+    },
+    "BTTS": {
+      "bothScored": 0.3,
+      "bothConceded": 0.25,
+      "h2hBtts": 0.2,
+      "defense": 0.15,
+      "weather": 0.1
+    },
+    "OVER_UNDER_2_5": {
+      "leagueAvgGoals": 0.25,
+      "teamXg": 0.3,
+      "recentTotals": 0.2,
+      "pace": 0.15,
+      "weather": 0.1
+    },
+    "ASIAN_HANDICAP": {
+      "strengthDiff": 0.3,
+      "motivation": 0.2,
+      "schedule": 0.15,
+      "h2h": 0.15,
+      "injuries": 0.1,
+      "referee": 0.1
+    },
+    "DOUBLE_CHANCE": {
+      "matchResultProbability": 0.7,
+      "h2h": 0.2,
+      "injuries": 0.1
+    },
+    "CORRECT_SCORE": {
+      "poisson": 0.4,
+      "defense": 0.25,
+      "h2hScores": 0.2,
+      "weather": 0.15
+    },
+    "FIRST_HALF_RESULT": {
+      "earlyPatterns": 0.35,
+      "firstHalfXg": 0.25,
+      "h2hFirstHalf": 0.2,
+      "motivation": 0.2
+    },
+    "TOTAL_CORNERS": {
+      "wingPlay": 0.3,
+      "setPieces": 0.25,
+      "leagueAvg": 0.2,
+      "styleMatchup": 0.15,
+      "weather": 0.1
+    },
+    "TOTAL_CARDS": {
+      "referee": 0.35,
+      "rivalry": 0.25,
+      "discipline": 0.2,
+      "leagueAvg": 0.15,
+      "stakes": 0.05
+    },
+    "PLAYER_SCORER": {
+      "form": 0.3,
+      "position": 0.2,
+      "penalties": 0.15,
+      "opponentDefense": 0.2,
+      "minutes": 0.15
+    }
+  }
+}

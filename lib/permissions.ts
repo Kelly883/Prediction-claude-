@@ -9,6 +9,7 @@ export const PERMISSIONS = {
     auditLogs: 'pages.auditLogs',
     cms: 'pages.cms',
     security: 'pages.security',
+    analysis: 'pages.analysis',
   },
   admin: {
     createAdmins: 'admin.createAdmins',
@@ -27,6 +28,7 @@ export type Permission =
   | typeof PERMISSIONS.pages.auditLogs
   | typeof PERMISSIONS.pages.cms
   | typeof PERMISSIONS.pages.security
+  | typeof PERMISSIONS.pages.analysis
   | typeof PERMISSIONS.admin.createAdmins
   | typeof PERMISSIONS.admin.grantPermissions
   | typeof PERMISSIONS.admin.changeEmail;
@@ -41,6 +43,7 @@ export const ALL_PERMISSIONS: Permission[] = [
   PERMISSIONS.pages.auditLogs,
   PERMISSIONS.pages.cms,
   PERMISSIONS.pages.security,
+  PERMISSIONS.pages.analysis,
   PERMISSIONS.admin.createAdmins,
   PERMISSIONS.admin.grantPermissions,
   PERMISSIONS.admin.changeEmail,
@@ -58,6 +61,7 @@ export const NAV_PERMISSIONS: Record<string, Permission> = {
   '/admin/audit-logs': PERMISSIONS.pages.auditLogs,
   '/admin/cms': PERMISSIONS.pages.cms,
   '/admin/security': PERMISSIONS.pages.security,
+  '/admin/analysis': PERMISSIONS.pages.analysis,
   '/admin/permissions': PERMISSIONS.admin.grantPermissions,
 };
 
@@ -71,6 +75,7 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   [PERMISSIONS.pages.auditLogs]: 'Audit Logs',
   [PERMISSIONS.pages.cms]: 'CMS',
   [PERMISSIONS.pages.security]: 'Security',
+  [PERMISSIONS.pages.analysis]: 'Analysis',
   [PERMISSIONS.admin.createAdmins]: 'Create Admins',
   [PERMISSIONS.admin.grantPermissions]: 'Grant Permissions',
   [PERMISSIONS.admin.changeEmail]: 'Change Email After Verification',
@@ -89,6 +94,7 @@ export const PERMISSION_GROUPS = [
       PERMISSIONS.pages.auditLogs,
       PERMISSIONS.pages.cms,
       PERMISSIONS.pages.security,
+      PERMISSIONS.pages.analysis,
     ],
   },
   {

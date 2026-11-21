@@ -16,6 +16,7 @@ export const ADMIN_NAV_LINKS = [
   { href: '/admin/audit-logs', label: 'Audit Logs' },
   { href: '/admin/cms', label: 'CMS' },
   { href: '/admin/security', label: 'Security' },
+  { href: '/admin/analysis', label: 'Analysis' },
   { href: '/admin/permissions', label: 'Permissions' },
   { href: '/admin/profile', label: 'Profile' },
 ];

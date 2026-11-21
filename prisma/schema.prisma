@@ -113,6 +113,8 @@ model User {
   passwordResetTokens PasswordResetToken[]
   emailVerifications  EmailVerificationToken[]
   recoveryCodes       TwoFactorRecoveryCode[]
+  reviewedAnalysisResults AnalysisResult[] @relation("ReviewedAnalysisResults")
+  updatedAnalysisConfigs  AnalysisConfig[] @relation("UpdatedAnalysisConfigs")
 
   @@index([role])
   @@index([email])
@@ -218,6 +220,7 @@ model PredictionPost {
   items                PredictionItem[]
   media                MediaAsset[]
   complimentaryAccess  ComplimentaryAccess[]
+  analysisResult         AnalysisResult?
 
   @@index([status, scheduledAt])
   @@index([status, visibility])
@@ -342,4 +345,100 @@ model TwoFactorRecoveryCode {
   createdAt DateTime  @default(now())
 
   @@index([userId])
+}
+
+enum AnalysisRunStatus {
+  pending
+  running
+  completed
+  failed
+}
+
+enum MarketType {
+  MATCH_RESULT
+  BTTS
+  OVER_UNDER_2_5
+  ASIAN_HANDICAP
+  DOUBLE_CHANCE
+  CORRECT_SCORE
+  FIRST_HALF_RESULT
+  TOTAL_CORNERS
+  TOTAL_CARDS
+  PLAYER_SCORER
+}
+
+enum ResultStatus {
+  pending
+  approved
+  dismissed
+  published
+}
+
+model AnalysisRun {
+  id               String   @id @default(uuid())
+  runDate          DateTime @db.Date
+  status           AnalysisRunStatus @default(pending)
+  fixturesAnalyzed Int      @default(0)
+  picksGenerated   Int      @default(0)
+  startedAt        DateTime?
+  completedAt      DateTime?
+  errorMessage     String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  results          AnalysisResult[]
+
+  @@index([runDate, status])
+}
+
+model AnalysisResult {
+  id                String   @id @default(uuid())
+  runId             String
+  run               AnalysisRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  fixtureId         String
+  homeTeam          String
+  awayTeam          String
+  league            String
+  kickoff           DateTime
+  bestMarket        MarketType
+  bestSelection     String
+  bestOdds          Decimal  @db.Decimal(6, 2)
+  confidence        Decimal  @db.Decimal(5, 2)
+  marketScores      Json
+  topFactors        Json
+  status            ResultStatus @default(pending)
+  reviewedById      String?
+  reviewedBy        User?    @relation("ReviewedAnalysisResults", fields: [reviewedById], references: [id])
+  reviewedAt        DateTime?
+  dismissalReason   String?
+  predictionPostId  String?  @unique
+  predictionPost    PredictionPost? @relation(fields: [predictionPostId], references: [id])
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([runId])
+  @@index([confidence])
+  @@index([status])
+}
+
+model AnalysisConfig {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  value       Json
+  description String?
+  updatedById String
+  updatedBy   User     @relation("UpdatedAnalysisConfigs", fields: [updatedById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model LeagueConfig {
+  id           String   @id @default(uuid())
+  leagueName   String   @unique
+  leagueCode   String   @unique
+  isEnabled    Boolean  @default(true)
+  priority     Int      @default(1)
+  marketWeights Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
