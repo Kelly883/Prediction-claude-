@@ -11,6 +11,8 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",
     "prisma:seed": "prisma db seed",
+    "bootstrap": "prisma generate && prisma migrate deploy && prisma db seed",
+    "migration:replay": "prisma migrate reset --force",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
