@@ -1,0 +1,5 @@
+{
+  "bootstrap": ["npm", "run", "bootstrap"],
+  "migration_replay": ["npm", "run", "migration:replay"],
+  "auth_smoke": ["npm", "run", "test:auth"]
+}
