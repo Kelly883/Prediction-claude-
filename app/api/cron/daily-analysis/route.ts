@@ -49,6 +49,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
         fixturesAnalyzed: result.fixturesAnalyzed,
         picksGenerated: result.picksGenerated,
         alreadyRunning: result.alreadyRunning,
+        blockedReason: result.blockedReason,
         errorCount: result.errors?.length ?? 0,
       },
     });
@@ -59,6 +60,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
       fixturesAnalyzed: result.fixturesAnalyzed,
       picksGenerated: result.picksGenerated,
       alreadyRunning: result.alreadyRunning ?? false,
+      blockedReason: result.blockedReason,
       requestId: getRequestId(req),
     }));
   } catch (err) {

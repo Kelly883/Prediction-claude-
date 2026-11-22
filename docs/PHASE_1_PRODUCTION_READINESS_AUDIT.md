@@ -8,6 +8,8 @@
 
 **Revision 2 (post-remediation):** 2026-11-22. The Phase 1 remediation brief was executed against Revision 1 as its baseline. Every reported finding was re-verified in the working tree before code was changed; corrections were made in six small, separately-tested stages; **nothing was committed and nothing was pushed**. Sections §1–§18 below are preserved as the original (pre-remediation) audit for traceability. The remediation evidence is in the addendum immediately below.
 
+**Revision 3 (provider-protection hardening):** 2026-11-22. Follow-up hardening of the provider-protection layer (separate Football-Data.org limiter, sliding-window API-Football limiter, corrected quota-header semantics, Retry-After, execution-time budget with resumable batches, single-flight outage policy, expanded metrics/observability). No production-configuration change, deployment, commit or push was performed. Evidence — including per-finding statuses and a verdict — is in [PREDICTPRO_PHASE_1_PROVIDER_PROTECTION_HARDENING.md](file:///workspace/docs/PREDICTPRO_PHASE_1_PROVIDER_PROTECTION_HARDENING.md). Design/operations reference: [PREDICTPRO_PROVIDER_PROTECTION.md](file:///workspace/docs/PREDICTPRO_PROVIDER_PROTECTION.md).
+
 > Cross-reference: the fuller product PRD (`PRD_Superadmin_Daily_Match_Analysis.md`) describes a 4‑phase
 > program. Phase 1 explicitly defers the dashboard UI, backtest, notifications and settings panel
 > (`PRD_Phase1_Foundation.md` §3 "OUT"). Those items are therefore assessed as **deferred by design**, not as

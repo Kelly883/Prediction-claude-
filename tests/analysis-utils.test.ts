@@ -26,7 +26,7 @@ import {
   buildFactors,
   goalRateScore as sharedGoalRateScore,
   injuriesImpact,
-  oddsOrDefault,
+  oddsOrNull,
   scoreOf,
   threeWaySelection,
   valueOr,
@@ -172,9 +172,11 @@ describe('market shared helpers', () => {
   });
 
   it('applies neutral defaults for optional inputs', () => {
-    expect(oddsOrDefault(undefined)).toBe(1.91);
-    expect(oddsOrDefault(1)).toBe(1.91);
-    expect(oddsOrDefault(2.5)).toBe(2.5);
+    // No fabricated odds: unavailable / invalid prices stay `null`.
+    expect(oddsOrNull(undefined)).toBeNull();
+    expect(oddsOrNull(1)).toBeNull();
+    expect(oddsOrNull(Number.NaN)).toBeNull();
+    expect(oddsOrNull(2.5)).toBe(2.5);
     expect(valueOr(undefined, 5)).toBe(5);
     expect(valueOr(Number.NaN, 5)).toBe(5);
     expect(valueOr(3, 5)).toBe(3);
@@ -214,7 +216,8 @@ describe('match result evidence scoring', () => {
 describe('engine thresholds and best market', () => {
   it('applies the pick threshold inclusively at the boundary', () => {
     const outcome = scoreFixture(fixture, strongEnrichment);
-    const exact = outcome.best.confidence;
+    expect(outcome.best).toBeDefined();
+    const exact = outcome.best?.confidence ?? 0;
     expect(filterPicks([outcome], exact)).toHaveLength(1);
     expect(filterPicks([outcome], exact + 0.01)).toHaveLength(0);
     expect(filterPicks([outcome], exact - 0.01)).toHaveLength(1);
@@ -223,7 +226,7 @@ describe('engine thresholds and best market', () => {
   it('returns the top market and handles an empty outcome list', () => {
     const outcome = scoreFixture(fixture, strongEnrichment);
     expect(bestMarketOf([])).toBeUndefined();
-    expect(bestMarketOf([outcome])).toBe(outcome.best.market);
+    expect(bestMarketOf([outcome])).toBe(outcome.best?.market);
   });
 });
 

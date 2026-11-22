@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { ApiError, errorResponse } from '@/lib/rbac';
 import { writeAudit } from '@/lib/audit';
 import { requireAnalysisAdmin } from '@/lib/analysis/api-auth';
+import { marketRequiresOdds } from '@/lib/analysis/markets/eligibility';
 
 export const runtime = 'nodejs';
 
@@ -30,6 +31,11 @@ export async function POST(req: NextRequest, context: Context) {
     if (!result) throw new ApiError(404, 'Analysis result not found');
     if (result.predictionPostId || result.status === 'published') throw new ApiError(409, 'Pick already published');
     if (result.status !== 'approved') throw new ApiError(409, 'Only approved picks can be published');
+    // A market that requires a real bookmaker price cannot be published without
+    // one — never surface a model estimate as a bookmaker price (Stage 3).
+    if (marketRequiresOdds(result.bestMarket) && result.bestOdds === null) {
+      throw new ApiError(409, `Cannot publish ${result.bestMarket}: no captured bookmaker price available`);
+    }
 
     const scheduledAt = dto.scheduledAt ? new Date(dto.scheduledAt) : result.kickoff;
     const post = await prisma.$transaction(async (tx) => {

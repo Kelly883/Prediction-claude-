@@ -57,6 +57,20 @@ export async function GET(req: NextRequest) {
         // the same value under a non-probabilistic name; `confidence` is kept
         // for backwards compatibility with existing consumers and records.
         modelScore: Number(result.confidence),
+        // Stage 6: enrichment quality + provenance so superadmins can see when a
+        // pick was built on degraded/fallback data or with unavailable odds, and
+        // exactly which markets were skipped and why.
+        dataQuality: {
+          enrichment: result.enrichmentQuality,
+          provider: result.providerSource,
+          missing: result.missingDataFields,
+          oddsAvailable: result.bestOdds !== null,
+          oddsSource: result.oddsSource,
+          oddsCapturedAt: result.oddsCapturedAt,
+          fixtureStatus: result.fixtureStatus,
+          seasonId: result.seasonId,
+          exclusionReason: result.marketExclusionReason,
+        },
       })),
       total,
       page,

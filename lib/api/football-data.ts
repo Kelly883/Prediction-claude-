@@ -1,5 +1,6 @@
 import type { Fixture, FixtureEnrichment, PlayerRecord, TeamStats } from '@/types/analysis';
 import { cachedProviderFetch } from '@/lib/analysis/ingestion/cache';
+import { normalizeFootballDataStatus } from '@/lib/analysis/ingestion/status';
 import { parseForm, toNumber } from '@/lib/analysis/utils/normalization';
 import {
   ProviderAuthError,
@@ -15,6 +16,10 @@ import {
   recordProviderSuccess,
 } from '@/lib/api/circuit-breaker';
 import { footballDataCompetitionCode, partitionByProviderSupport } from '@/lib/api/provider-mapping';
+import { acquireFootballDataSlot } from '@/lib/api/rate-limiter';
+import { classifyProviderFailure } from '@/lib/api/failure-classification';
+import { incrProviderMetric } from '@/lib/api/provider-metrics';
+import { logger } from '@/lib/logger';
 
 const BASE_URL = 'https://api.football-data.org/v4';
 const TIMEOUT_MS = Number(process.env.FOOTBALL_API_TIMEOUT_MS ?? 10_000);
@@ -34,7 +39,17 @@ async function request<T>(path: string, params: Record<string, string | number> 
   await assertProviderAvailable('football-data');
 
   return withBoundedRetry('football-data', async () => {
+    const startedAt = Date.now();
     try {
+      // Every attempt (including retries) reserves a slot in the DEDICATED
+      // Football-Data.org distributed limiter first, so retries cannot bypass
+      // the provider's independent limit. This limiter is completely separate
+      // from the API-Football limiter.
+      await acquireFootballDataSlot();
+
+      // Count the actual outbound HTTP attempt (a logical fetch that was served
+      // from cache never reaches here, so cache hits are never counted).
+      void incrProviderMetric('fd:httpRequests');
       const response = await fetch(url.toString(), {
         headers: { Accept: 'application/json', 'X-Auth-Token': apiKey },
         signal: AbortSignal.timeout(TIMEOUT_MS),
@@ -56,8 +71,27 @@ async function request<T>(path: string, params: Record<string, string | number> 
       }
       const payload = await response.json() as T;
       await recordProviderSuccess('football-data');
+      void incrProviderMetric('fd:success');
+      logger.debug('provider.request', {
+        provider: 'football-data',
+        endpoint: path,
+        status: response.status,
+        durationMs: Date.now() - startedAt,
+      });
       return payload;
     } catch (err) {
+      const failure = classifyProviderFailure(err);
+      void incrProviderMetric('fd:failed');
+      if (failure.category === 'rate_limit') void incrProviderMetric('fd:429');
+      else if (failure.category === 'auth' || failure.category === 'invalid_key') void incrProviderMetric('fd:authFailures');
+      else if (failure.category === 'quota') void incrProviderMetric('fd:quotaFailures');
+      logger.warn('provider.request.failed', {
+        provider: 'football-data',
+        endpoint: path,
+        category: failure.category,
+        status: failure.status,
+        durationMs: Date.now() - startedAt,
+      });
       if (!(err instanceof ProviderError) || err.recoverable) {
         await recordProviderFailure('football-data');
       }
@@ -88,15 +122,22 @@ export async function fetchFootballDataFixtures(leagueCodes: string[], from: str
     if (!competition) continue;
     try {
       const payload = await cachedProviderFetch(`football-data:fixtures:${code}:${from}:${to}`, async () => {
-        const result = await request<{ matches?: unknown[] }>(`/competitions/${competition}/matches`, {
-          dateFrom: `${from}T00:00:00Z`,
-          dateTo: `${to}T23:59:59Z`,
-        });
-        return result.matches ?? [];
+        const result = await request<{ matches?: unknown[]; competition?: { name?: string } }>(
+          `/competitions/${competition}/matches`,
+          {
+            dateFrom: `${from}T00:00:00Z`,
+            dateTo: `${to}T23:59:59Z`,
+          },
+        );
+        // The v4 `/competitions/{code}/matches` envelope carries the competition
+        // at the top level, NOT on each match. Keep it so the normaliser can use
+        // it as the league display name.
+        return { matches: result.matches ?? [], competitionName: result.competition?.name };
       });
-      const entries = Array.isArray(payload) ? payload : [];
+      const entries = Array.isArray(payload?.matches) ? payload.matches : [];
+      const competitionName = typeof payload?.competitionName === 'string' ? payload.competitionName : undefined;
       for (const entry of entries) {
-        const fixture = normalizeFixture(entry, code);
+        const fixture = normalizeFixture(entry, code, competitionName);
         if (fixture) fixtures.push(fixture);
       }
     } catch (err) {
@@ -111,21 +152,41 @@ export async function fetchFootballDataFixtures(leagueCodes: string[], from: str
   return fixtures;
 }
 
-function normalizeFixture(entry: any, leagueCode: string): Fixture | null {
+export function normalizeFixture(entry: any, leagueCode: string, competitionName?: string): Fixture | null {
   const kickoff = new Date(entry?.utcDate ?? '');
   if (Number.isNaN(kickoff.getTime())) return null;
+
+  const fixtureId = entry?.id;
   const homeName = entry?.homeTeam?.name;
   const awayName = entry?.awayTeam?.name;
+  const homeId = entry?.homeTeam?.id;
+  const awayId = entry?.awayTeam?.id;
+  // The competition is identified by the already-mapped `leagueCode`. The v4
+  // `/competitions/{code}/matches` response does not repeat the competition on
+  // each match, so the display name is taken from the match, then the response
+  // envelope, then the (verified) code. A fixture is still rejected outright if
+  // its teams, id or kickoff are missing.
+  const leagueName = entry?.competition?.name ?? competitionName ?? leagueCode;
+
+  // Identity, teams and kickoff must all be present.
+  if (fixtureId === undefined || fixtureId === null || String(fixtureId).trim() === '') return null;
   if (!homeName || !awayName) return null;
+  if (homeId === undefined || homeId === null || awayId === undefined || awayId === null) return null;
+  if (!leagueName) return null;
+
+  const { status, label } = normalizeFootballDataStatus(entry?.status);
+
   return {
-    id: String(entry.id),
+    id: String(fixtureId),
     leagueCode,
-    leagueName: String(entry?.competition?.name ?? leagueCode),
+    leagueName: String(leagueName),
     kickoff,
     homeTeam: String(homeName),
     awayTeam: String(awayName),
-    homeTeamId: entry?.homeTeam?.id ? String(entry.homeTeam.id) : undefined,
-    awayTeamId: entry?.awayTeam?.id ? String(entry.awayTeam.id) : undefined,
+    homeTeamId: String(homeId),
+    awayTeamId: String(awayId),
+    status,
+    statusLabel: label,
     source: 'football-data',
   };
 }

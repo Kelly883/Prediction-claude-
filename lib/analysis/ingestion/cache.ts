@@ -1,34 +1,75 @@
+/**
+ * Provider response cache (Phase 1 — Stage 5/6).
+ *
+ * Wraps distributed single-flight protection around the previous naive
+ * `get -> loader -> set` behaviour so concurrent cache misses never issue
+ * duplicate provider calls, and applies endpoint-specific TTLs so fast-moving
+ * data (odds, fixtures) does not live for a full 24h while slow-moving data
+ * (team statistics) does.
+ *
+ * Failure handling:
+ *   - Read/write failures are logged and counted; a read failure degrades to a
+ *     cache miss (never a fabricated hit).
+ *   - Provider entitlement failures (auth/quota) propagate and are NEVER cached,
+ *     so an exhausted provider can never look healthy.
+ *   - `null`/`undefined` results are never cached.
+ *   - Automated ingestion is FAIL-CLOSED when Redis cannot provide single-flight
+ *     locking (see `outagePolicy` below): a Redis outage aborts the fetch rather
+ *     than fanning out duplicate provider calls. The global provider limiter is
+ *     likewise mandatory and fails closed.
+ */
 import { redis } from '@/lib/redis';
-import { logger } from '@/lib/logger';
-import { ProviderAuthError, ProviderQuotaExhaustedError } from '@/lib/api/retry';
+import { getProviderConfig, type ProviderConfig } from '@/lib/api/provider-config';
+import { incrProviderMetric } from '@/lib/api/provider-metrics';
+import { runSingleFlight } from './single-flight';
 
-const CACHE_TTL_SECONDS = Number(process.env.FOOTBALL_CACHE_TTL_SECONDS ?? 24 * 60 * 60);
+export interface CachedFetchOptions {
+  /**
+   * Redis-outage behaviour. Defaults to `fail-closed` because every caller is
+   * an automated-ingestion provider fetch. `degrade` is retained for callers
+   * that explicitly opt into best-effort caching under Redis outage.
+   */
+  outagePolicy?: 'fail-closed' | 'degrade';
+}
 
-export async function cachedProviderFetch<T>(key: string, loader: () => Promise<T>): Promise<T> {
-  let cached: T | null = null;
-  try {
-    cached = await redis.get<T>(key);
-    if (cached !== null && cached !== undefined) return cached;
-  } catch (err) {
-    logger.warn('football.cache.readFailed', { key, error: err instanceof Error ? err.message : String(err) });
-  }
+/**
+ * Choose a TTL for a cache key. Each rule is documented in
+ * docs/PREDICTPRO_PROVIDER_PROTECTION.md ("Cache TTL decisions").
+ */
+export function resolveCacheTtlSeconds(key: string, cfg: ProviderConfig = getProviderConfig()): number {
+  if (key.startsWith('weather:')) return cfg.cacheTtlWeatherSeconds;
+  if (key.includes(':odds')) return cfg.cacheTtlOddsSeconds;
+  if (key.includes(':injuries')) return cfg.cacheTtlInjuriesSeconds;
+  if (key.includes(':h2h')) return cfg.cacheTtlH2hSeconds;
+  if (key.includes(':team-stats') || key.includes(':standings')) return cfg.cacheTtlTeamStatsSeconds;
+  if (key.includes(':scorers')) return cfg.cacheTtlScorersSeconds;
+  if (key.includes(':fixtures')) return cfg.cacheTtlFixturesSeconds;
+  return cfg.cacheTtlDefaultSeconds;
+}
 
-  try {
-    const fresh = await loader();
-    try {
-      await redis.set(key, fresh, { ex: CACHE_TTL_SECONDS });
-    } catch (err) {
-      logger.warn('football.cache.writeFailed', { key, error: err instanceof Error ? err.message : String(err) });
-    }
-    return fresh;
-  } catch (err) {
-    // Entitlement exhaustion must not be masked by stale cache: doing so would
-    // make an exhausted provider look healthy and hide the failure from the run.
-    if (err instanceof ProviderQuotaExhaustedError || err instanceof ProviderAuthError) throw err;
-    if (cached !== null && cached !== undefined) {
-      logger.warn('football.cache.staleFallback', { key, error: err instanceof Error ? err.message : String(err) });
-      return cached;
-    }
-    throw err;
-  }
+export async function cachedProviderFetch<T>(
+  key: string,
+  loader: () => Promise<T>,
+  options: CachedFetchOptions = {},
+): Promise<T> {
+  const cfg = getProviderConfig();
+  return runSingleFlight<T>({
+    client: redis,
+    key,
+    loader,
+    ttlSeconds: resolveCacheTtlSeconds(key, cfg),
+    lockTtlSeconds: Math.max(1, Math.ceil(cfg.singleFlightLockTtlMs / 1000)),
+    waitMs: cfg.singleFlightWaitMs,
+    pollMs: cfg.singleFlightPollMs,
+    outagePolicy: options.outagePolicy ?? 'fail-closed',
+    onHit: () => void incrProviderMetric('cache:hit'),
+    onMiss: () => void incrProviderMetric('cache:miss'),
+    onReadFailure: () => void incrProviderMetric('cache:readFailure'),
+    onWriteFailure: () => void incrProviderMetric('cache:writeFailure'),
+    onLockAcquired: () => void incrProviderMetric('singleFlight:lockAcquired'),
+    onContention: () => void incrProviderMetric('singleFlight:contended'),
+    onLockUnavailable: () => void incrProviderMetric('singleFlight:lockUnavailable'),
+    onWaiterTimeout: () => void incrProviderMetric('singleFlight:waiterTimeout'),
+    onFailure: () => void incrProviderMetric('singleFlight:failed'),
+  });
 }

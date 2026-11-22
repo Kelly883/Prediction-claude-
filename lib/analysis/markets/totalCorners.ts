@@ -1,7 +1,7 @@
 import type { MarketScore } from '@/types/analysis';
 import { confidenceFromPropensity, evidenceScore, weightedScore } from '../utils/confidence';
 import { goalRateScore, weatherSupportsGoals } from '../utils/normalization';
-import { buildFactors, oddsOrDefault, valueOr } from './shared';
+import { buildFactors, oddsOrNull, valueOr } from './shared';
 import type { MarketContext } from './shared';
 
 export function scoreTotalCorners(context: MarketContext): MarketScore {
@@ -33,10 +33,12 @@ export function scoreTotalCorners(context: MarketContext): MarketScore {
     enrichment.weather?.precipitation,
   ]);
   const selection = propensity >= 55 ? 'Over 9.5 corners' : 'Under 9.5 corners';
+  const odds = oddsOrNull(selection.startsWith('Over') ? enrichment.odds?.totalCorners?.over : enrichment.odds?.totalCorners?.under);
   return {
     market: 'TOTAL_CORNERS',
     selection,
-    odds: oddsOrDefault(selection.startsWith('Over') ? enrichment.odds?.totalCorners?.over : enrichment.odds?.totalCorners?.under),
+    odds,
+    oddsAvailable: odds !== null,
     confidence: confidenceFromPropensity(propensity, evidence),
     factors,
   };

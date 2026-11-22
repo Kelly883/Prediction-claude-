@@ -351,6 +351,7 @@ enum AnalysisRunStatus {
   pending
   running
   completed
+  deferred
   failed
 }
 
@@ -402,10 +403,23 @@ model AnalysisResult {
   kickoff           DateTime
   bestMarket        MarketType
   bestSelection     String
-  bestOdds          Decimal  @db.Decimal(6, 2)
+  // Nullable: a market may be eligible without a captured bookmaker price. A
+  // fabricated default is NEVER stored (Stage 3).
+  bestOdds          Decimal? @db.Decimal(6, 2)
   confidence        Decimal  @db.Decimal(5, 2)
   marketScores      Json
   topFactors        Json
+  // --- Data-completeness / provenance (Stages 3, 6, 8). All nullable so the
+  // migration is non-destructive and existing result records remain valid. ---
+  enrichmentQuality     String?
+  providerSource        String?
+  missingDataFields     Json?
+  marketEligibility     Json?
+  marketExclusionReason String?
+  fixtureStatus         String?
+  seasonId              String?
+  oddsSource            String?
+  oddsCapturedAt        DateTime?
   status            ResultStatus @default(pending)
   reviewedById      String?
   reviewedBy        User?    @relation("ReviewedAnalysisResults", fields: [reviewedById], references: [id])
@@ -420,6 +434,8 @@ model AnalysisResult {
   @@index([runId])
   @@index([confidence])
   @@index([status])
+  @@index([enrichmentQuality])
+  @@index([seasonId])
 }
 
 model AnalysisConfig {

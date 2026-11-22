@@ -31,8 +31,15 @@ export function threeWaySelection(direction: number, homeTeam: string, awayTeam:
   return 'Draw';
 }
 
-export function oddsOrDefault(value: number | undefined): number {
-  return typeof value === 'number' && value > 1 ? round2(value) : 1.91;
+/**
+ * Return a real, provider-sourced decimal price, or `null` when none is
+ * available. There is deliberately NO fabricated fallback price: a made-up
+ * default (e.g. 1.91) must never be stored, ranked or displayed as bookmaker
+ * odds. Missing odds stay missing.
+ */
+export function oddsOrNull(value: number | undefined | null): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 1) return null;
+  return round2(value);
 }
 
 export function valueOr(value: number | undefined, fallback: number): number {

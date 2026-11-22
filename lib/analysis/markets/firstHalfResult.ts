@@ -1,7 +1,7 @@
 import type { MarketScore } from '@/types/analysis';
 import { confidenceFromDirection, evidenceScore, strengthDiffScore, weightedScore } from '../utils/confidence';
 import { formScore, h2hHomeScore, motivationDiffScore } from '../utils/normalization';
-import { buildFactors, matchResultDirection, oddsOrDefault, scoreOf } from './shared';
+import { buildFactors, matchResultDirection, oddsOrNull, scoreOf } from './shared';
 import type { MarketContext } from './shared';
 
 export function scoreFirstHalfResult(context: MarketContext): MarketScore {
@@ -34,15 +34,17 @@ export function scoreFirstHalfResult(context: MarketContext): MarketScore {
     enrichment.motivation?.away,
   ]);
   const selection = direction >= 56 ? fixture.homeTeam : direction <= 44 ? fixture.awayTeam : 'Draw';
-  const odds = selection === fixture.homeTeam
+  const oddsValue = selection === fixture.homeTeam
     ? enrichment.odds?.firstHalfResult?.home
     : selection === fixture.awayTeam
       ? enrichment.odds?.firstHalfResult?.away
       : enrichment.odds?.firstHalfResult?.draw;
+  const odds = oddsOrNull(oddsValue);
   return {
     market: 'FIRST_HALF_RESULT',
     selection,
-    odds: oddsOrDefault(odds),
+    odds,
+    oddsAvailable: odds !== null,
     confidence: selection === 'Draw' ? Math.min(70, confidenceFromDirection(direction, evidence)) : confidenceFromDirection(direction, evidence),
     factors,
   };

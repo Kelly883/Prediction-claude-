@@ -1,0 +1,14 @@
+-- Resumable / budget-bounded daily analysis (Phase 1 provider-protection hardening, §6).
+--
+-- The daily analysis invocation is now wall-clock budgeted. When the budget is
+-- exhausted mid-run it checkpoints durable progress (fixturesAnalyzed /
+-- picksGenerated are incremented per ingestion batch) and marks the run
+-- `deferred` instead of being killed mid-flight or publishing a partial run as
+-- a completed one. A later invocation for the same day resumes the `deferred`
+-- run and skips fixtures already persisted (the (runId, fixtureId) unique index
+-- makes per-batch writes idempotent).
+--
+-- This is a NON-DESTRUCTIVE enum extension: existing rows are unaffected and the
+-- partial unique index `AnalysisRun_running_runDate_key` (status='running')
+-- still enforces at most one running run per day.
+ALTER TYPE "AnalysisRunStatus" ADD VALUE IF NOT EXISTS 'deferred';

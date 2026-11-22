@@ -2,7 +2,7 @@ import type { MarketScore } from '@/types/analysis';
 import { confidenceFromDirection, confidenceFromPropensity, evidenceScore } from '../utils/confidence';
 import { h2hDrawScore } from '../utils/normalization';
 import { buildScorelineModel } from '../utils/poisson';
-import { injuriesImpact, matchResultDirection, oddsOrDefault, threeWaySelection, valueOr } from './shared';
+import { injuriesImpact, matchResultDirection, oddsOrNull, threeWaySelection, valueOr } from './shared';
 import type { MarketContext } from './shared';
 
 export function scoreMatchResult(context: MarketContext): MarketScore {
@@ -22,11 +22,12 @@ export function scoreMatchResult(context: MarketContext): MarketScore {
   const selection = threeWaySelection(direction, fixture.homeTeam, fixture.awayTeam);
   const drawConfidence = Math.min(70, confidenceFromPropensity(h2hDrawScore(enrichment.h2h), evidence));
   const confidence = selection === 'Draw' ? drawConfidence : confidenceFromDirection(direction, evidence);
-  const odds = selection === fixture.homeTeam
+  const oddsValue = selection === fixture.homeTeam
     ? enrichment.odds?.matchResult?.home
     : selection === fixture.awayTeam
       ? enrichment.odds?.matchResult?.away
       : enrichment.odds?.matchResult?.draw;
+  const odds = oddsOrNull(oddsValue);
 
   const model = buildScorelineModel(enrichment);
   const modelProbability = selection === fixture.homeTeam
@@ -38,7 +39,8 @@ export function scoreMatchResult(context: MarketContext): MarketScore {
   return {
     market: 'MATCH_RESULT',
     selection,
-    odds: oddsOrDefault(odds),
+    odds,
+    oddsAvailable: odds !== null,
     confidence,
     modelProbability,
     factors,

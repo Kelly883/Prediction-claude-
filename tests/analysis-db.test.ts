@@ -106,4 +106,34 @@ describeDb('AnalysisResult persistence (live Postgres)', () => {
     const stored = await prisma.analysisResult.count({ where: { runId, fixtureId: commitFixture } });
     expect(stored).toBe(1);
   });
+
+  it('persists data-quality and provenance fields, including null odds', async () => {
+    const qualityFixture = `${fixtureId}-quality`;
+    await prisma.analysisResult.create({
+      data: {
+        ...row('e'),
+        fixtureId: qualityFixture,
+        // No captured bookmaker price: stored as NULL, never a fabricated 1.91.
+        bestOdds: null,
+        enrichmentQuality: 'FALLBACK_PARTIAL',
+        providerSource: 'football-data',
+        missingDataFields: ['odds', 'injuries'],
+        marketEligibility: [{ market: 'MATCH_RESULT', allowedToProceed: true }],
+        marketExclusionReason: 'TOTAL_CARDS: disabled by policy',
+        fixtureStatus: 'scheduled',
+        seasonId: '2026',
+        oddsSource: null,
+        oddsCapturedAt: null,
+      },
+    });
+
+    const stored = await prisma.analysisResult.findFirst({ where: { runId, fixtureId: qualityFixture } });
+    expect(stored?.bestOdds).toBeNull();
+    expect(stored?.enrichmentQuality).toBe('FALLBACK_PARTIAL');
+    expect(stored?.providerSource).toBe('football-data');
+    expect(stored?.marketExclusionReason).toBe('TOTAL_CARDS: disabled by policy');
+    expect(stored?.missingDataFields).toEqual(['odds', 'injuries']);
+    expect(stored?.fixtureStatus).toBe('scheduled');
+    expect(stored?.seasonId).toBe('2026');
+  });
 });

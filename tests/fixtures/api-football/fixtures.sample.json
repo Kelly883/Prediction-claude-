@@ -1,0 +1,114 @@
+{
+  "_note": "Sanitized sample of an API-Football v3 /fixtures response envelope. Provider metadata (logos, referee, venue ids) has been stripped or anonymised. Contains several entries covering valid, postponed and completed statuses, plus one malformed entry (missing away team id) that the adapter must reject.",
+  "get": "fixtures",
+  "parameters": {
+    "league": "39",
+    "from": "2026-11-21",
+    "to": "2026-11-23"
+  },
+  "errors": [],
+  "results": 4,
+  "paging": {
+    "current": 1,
+    "total": 1
+  },
+  "response": [
+    {
+      "fixture": {
+        "id": 500001,
+        "timezone": "UTC",
+        "date": "2026-11-22T15:00:00+00:00",
+        "timestamp": 1795446000,
+        "venue": { "name": "Sample Park", "city": "Sampleville" },
+        "status": { "long": "Not Started", "short": "NS", "elapsed": null }
+      },
+      "league": {
+        "id": 39,
+        "name": "Premier League",
+        "country": "England",
+        "season": 2026,
+        "round": "Regular Season - 12"
+      },
+      "teams": {
+        "home": { "id": 1001, "name": "Sample United", "winner": null },
+        "away": { "id": 1002, "name": "Sample City", "winner": null }
+      },
+      "goals": { "home": null, "away": null },
+      "score": {
+        "halftime": { "home": null, "away": null },
+        "fulltime": { "home": null, "away": null }
+      }
+    },
+    {
+      "fixture": {
+        "id": 500002,
+        "timezone": "UTC",
+        "date": "2026-11-22T17:30:00+00:00",
+        "timestamp": 1795455000,
+        "venue": { "name": "Reschedule Arena", "city": "Sampleville" },
+        "status": { "long": "Postponed", "short": "PST", "elapsed": null }
+      },
+      "league": {
+        "id": 39,
+        "name": "Premier League",
+        "country": "England",
+        "season": 2026,
+        "round": "Regular Season - 12"
+      },
+      "teams": {
+        "home": { "id": 1003, "name": "Sample Rovers", "winner": null },
+        "away": { "id": 1004, "name": "Sample Town", "winner": null }
+      },
+      "goals": { "home": null, "away": null },
+      "score": {
+        "halftime": { "home": null, "away": null },
+        "fulltime": { "home": null, "away": null }
+      }
+    },
+    {
+      "fixture": {
+        "id": 500003,
+        "timezone": "UTC",
+        "date": "2026-11-21T12:00:00+00:00",
+        "timestamp": 1795358400,
+        "venue": { "name": "Finished Ground", "city": "Sampleville" },
+        "status": { "long": "Match Finished", "short": "FT", "elapsed": 90 }
+      },
+      "league": {
+        "id": 39,
+        "name": "Premier League",
+        "country": "England",
+        "season": 2026,
+        "round": "Regular Season - 11"
+      },
+      "teams": {
+        "home": { "id": 1005, "name": "Sample Athletic", "winner": true },
+        "away": { "id": 1006, "name": "Sample Wanderers", "winner": false }
+      },
+      "goals": { "home": 2, "away": 1 },
+      "score": {
+        "halftime": { "home": 1, "away": 0 },
+        "fulltime": { "home": 2, "away": 1 }
+      }
+    },
+    {
+      "fixture": {
+        "id": 500004,
+        "timezone": "UTC",
+        "date": "2026-11-22T20:00:00+00:00",
+        "timestamp": 1795464000
+      },
+      "league": {
+        "id": 39,
+        "name": "Premier League",
+        "country": "England",
+        "season": 2026
+      },
+      "teams": {
+        "home": { "id": 1007, "name": "Sample FC", "winner": null },
+        "away": { "name": "Missing Id FC", "winner": null }
+      },
+      "goals": { "home": null, "away": null }
+    }
+  ]
+}

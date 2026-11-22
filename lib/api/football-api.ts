@@ -1,5 +1,6 @@
 import type { Fixture, FixtureEnrichment, H2HRecord, OddsRecord, PlayerRecord, TeamStats } from '@/types/analysis';
 import { cachedProviderFetch } from '@/lib/analysis/ingestion/cache';
+import { normalizeApiFootballStatus } from '@/lib/analysis/ingestion/status';
 import { parseForm, toNumber } from '@/lib/analysis/utils/normalization';
 import {
   ProviderAuthError,
@@ -14,6 +15,12 @@ import {
   recordProviderSuccess,
 } from '@/lib/api/circuit-breaker';
 import { apiFootballLeagueId } from '@/lib/api/provider-mapping';
+import { deriveSeasonId } from '@/lib/api/season';
+import { acquireApiFootballSlot } from '@/lib/api/rate-limiter';
+import { captureRateLimitHeaders, storeRateLimitHeaders, API_FOOTBALL_RATE_LIMIT_HEADERS } from '@/lib/api/rate-limit-headers';
+import { classifyProviderFailure } from '@/lib/api/failure-classification';
+import { incrProviderMetric } from '@/lib/api/provider-metrics';
+import { logger } from '@/lib/logger';
 
 const BASE_URL = 'https://v3.football.api-sports.io';
 const TIMEOUT_MS = Number(process.env.FOOTBALL_API_TIMEOUT_MS ?? 10_000);
@@ -21,6 +28,11 @@ const TIMEOUT_MS = Number(process.env.FOOTBALL_API_TIMEOUT_MS ?? 10_000);
 interface ApiResponse<T = unknown> {
   response?: T;
   errors?: Record<string, string | string[]>;
+}
+
+interface RequestOptions {
+  /** Invoked with the raw Response so callers can capture response headers. */
+  onResponse?: (response: Response) => void;
 }
 
 function classifyApiFootballErrors(errors: Record<string, string | string[]>): ProviderError {
@@ -38,7 +50,11 @@ function classifyApiFootballErrors(errors: Record<string, string | string[]>): P
   return new ProviderError(`API-Football error: ${flat}`, { provider: 'api-football', recoverable: false });
 }
 
-async function request<T>(path: string, params: Record<string, string | number> = {}): Promise<ApiResponse<T>> {
+async function request<T>(
+  path: string,
+  params: Record<string, string | number> = {},
+  options: RequestOptions = {},
+): Promise<ApiResponse<T>> {
   const apiKey = process.env.API_FOOTBALL_KEY;
   if (!apiKey) throw new ProviderAuthError('api-football', 401, 'API_FOOTBALL_KEY is not configured');
 
@@ -50,11 +66,25 @@ async function request<T>(path: string, params: Record<string, string | number> 
   await assertProviderAvailable('api-football');
 
   return withBoundedRetry('api-football', async () => {
+    const startedAt = Date.now();
     try {
+      // Every attempt (including retries) reserves a slot in the shared
+      // distributed rate limiter first, so retries cannot bypass the limit.
+      await acquireApiFootballSlot();
+      // Count the actual outbound HTTP attempt. `provider:requests` is a
+      // deprecated alias retained for backward compatibility; `af:httpRequests`
+      // is the canonical, provider-namespaced counter (a cache hit never reaches
+      // this point, so cache hits are never counted as provider requests).
+      void incrProviderMetric('af:httpRequests');
+      void incrProviderMetric('provider:requests');
       const response = await fetch(url.toString(), {
         headers: { Accept: 'application/json', 'x-apisports-key': apiKey },
         signal: AbortSignal.timeout(TIMEOUT_MS),
       });
+      options.onResponse?.(response);
+      // Capture the documented rate-limit headers so quota monitoring can use
+      // them when available (never invented, never treated as zero).
+      void storeRateLimitHeaders(captureRateLimitHeaders(response));
 
       if (!response.ok) {
         let body = '';
@@ -72,10 +102,29 @@ async function request<T>(path: string, params: Record<string, string | number> 
         throw classifyApiFootballErrors(payload.errors);
       }
       await recordProviderSuccess('api-football');
+      void incrProviderMetric('af:success');
+      logger.debug('provider.request', {
+        provider: 'api-football',
+        endpoint: path,
+        status: response.status,
+        durationMs: Date.now() - startedAt,
+      });
       return payload;
     } catch (err) {
       // Only recoverable failures (network/5xx/429) count toward opening the
       // circuit; auth/quota errors are surfaced separately and must not be masked.
+      const failure = classifyProviderFailure(err);
+      void incrProviderMetric('af:failed');
+      if (failure.category === 'rate_limit') void incrProviderMetric('af:429');
+      else if (failure.category === 'auth' || failure.category === 'invalid_key') void incrProviderMetric('af:authFailures');
+      else if (failure.category === 'quota') void incrProviderMetric('af:quotaFailures');
+      logger.warn('provider.request.failed', {
+        provider: 'api-football',
+        endpoint: path,
+        category: failure.category,
+        status: failure.status,
+        durationMs: Date.now() - startedAt,
+      });
       if (!(err instanceof ProviderError) || err.recoverable) {
         await recordProviderFailure('api-football');
       }
@@ -120,29 +169,52 @@ export async function fetchApiFootballFixtures(leagueCodes: string[], from: stri
   return fixtures;
 }
 
-function normalizeFixture(entry: any, leagueCode: string): Fixture | null {
+export function normalizeFixture(entry: any, leagueCode: string): Fixture | null {
   const kickoff = new Date(entry?.fixture?.date ?? '');
   if (Number.isNaN(kickoff.getTime())) return null;
+
+  const fixtureId = entry?.fixture?.id;
   const homeName = entry?.teams?.home?.name;
   const awayName = entry?.teams?.away?.name;
+  const homeId = entry?.teams?.home?.id;
+  const awayId = entry?.teams?.away?.id;
+  const leagueName = entry?.league?.name;
+
+  // Identity, teams, competition and kickoff must all be present, otherwise the
+  // fixture cannot be safely attributed, deduplicated or enriched.
+  if (fixtureId === undefined || fixtureId === null || String(fixtureId).trim() === '') return null;
   if (!homeName || !awayName) return null;
+  if (homeId === undefined || homeId === null || awayId === undefined || awayId === null) return null;
+  if (!leagueName) return null;
+
+  const { status, label } = normalizeApiFootballStatus(entry?.fixture?.status?.short, entry?.fixture?.status?.long);
+  const providerSeason = entry?.league?.season;
+  const seasonId = providerSeason !== undefined && providerSeason !== null && String(providerSeason).trim() !== ''
+    ? String(providerSeason)
+    : deriveSeasonId(leagueCode, kickoff);
+
   return {
-    id: String(entry.fixture.id),
+    id: String(fixtureId),
     leagueCode,
-    leagueName: String(entry?.league?.name ?? leagueCode),
+    leagueName: String(leagueName),
     kickoff,
     homeTeam: String(homeName),
     awayTeam: String(awayName),
-    homeTeamId: entry?.teams?.home?.id ? String(entry.teams.home.id) : undefined,
-    awayTeamId: entry?.teams?.away?.id ? String(entry.teams.away.id) : undefined,
+    homeTeamId: String(homeId),
+    awayTeamId: String(awayId),
     venueLatitude: toNumber(entry?.fixture?.venue?.lat),
     venueLongitude: toNumber(entry?.fixture?.venue?.long),
+    status,
+    statusLabel: label,
+    seasonId,
     source: 'api-football',
   };
 }
 
 export async function fetchApiFootballEnrichment(fixture: Fixture): Promise<FixtureEnrichment> {
-  const season = fixture.kickoff.getUTCFullYear();
+  // Competition-aware season: European split seasons and calendar-year leagues
+  // do not share the fixture's UTC year (see lib/api/season.ts).
+  const season = Number(fixture.seasonId ?? deriveSeasonId(fixture.leagueCode, fixture.kickoff));
   const errors: string[] = [];
   const safe = async <T>(label: string, loader: () => Promise<T>): Promise<T | undefined> => {
     try {
@@ -187,36 +259,65 @@ async function fetchTeamStats(teamId: string | undefined, leagueCode: string, se
   return normalizeTeamStats(payload);
 }
 
-function normalizeTeamStats(payload: any): TeamStats | undefined {
-  if (!payload) return undefined;
-  const entries: Array<{ type?: string; value?: unknown }> = Array.isArray(payload.statistics) ? payload.statistics : [];
-  const find = (...needles: string[]): number | undefined => {
-    const entry = entries.find((item) => {
-      const type = (item.type ?? '').toLowerCase();
-      return needles.some((needle) => type.includes(needle));
-    });
-    return toNumber(entry?.value);
-  };
-  const formEntry = entries.find((item) => (item.type ?? '').toLowerCase().includes('form'));
-  const form = parseForm(formEntry?.value);
-  const stats: TeamStats = {
-    xgFor: find('expected goals', 'xg'),
-    goalsFor: find('goals:for', 'goals for', 'goals scored'),
-    goalsAgainst: find('goals:against', 'goals against', 'goals conceded'),
-    cornersFor: find('corners'),
-    cardsFor: find('cards'),
-    shotsFor: find('shots on target', 'shots'),
-    form,
-  };
-  return stats;
+/**
+ * Sum every yellow/red card bucket's `total` from the `/teams/statistics`
+ * `cards` object (buckets are keyed by minute range, e.g. "0-15").
+ */
+function sumCardBuckets(cards: any): number | undefined {
+  if (!cards || typeof cards !== 'object') return undefined;
+  let total = 0;
+  let found = false;
+  for (const colour of ['yellow', 'red'] as const) {
+    const buckets = cards[colour];
+    if (!buckets || typeof buckets !== 'object') continue;
+    for (const bucket of Object.values(buckets)) {
+      const value = toNumber((bucket as any)?.total);
+      if (value !== undefined) {
+        total += value;
+        found = true;
+      }
+    }
+  }
+  return found ? total : undefined;
 }
 
-async function fetchH2H(homeTeam: string, awayTeam: string, homeId?: string, awayId?: string): Promise<H2HRecord | undefined> {
-  if (!homeId || !awayId) {
-    void homeTeam;
-    void awayTeam;
-    return { matches: 0, homeWins: 0, draws: 0, awayWins: 0, bttsRate: 0.5, over25Rate: 0.5 };
-  }
+/**
+ * Normalise an API-Football v3 `/teams/statistics` response.
+ *
+ * IMPORTANT: this endpoint returns a *nested* object (`goals.for.total.total`,
+ * `form`, `cards.yellow`, `clean_sheet`, `failed_to_score`, …). It does NOT
+ * return an array of `{ type, value }` entries — that shape belongs to
+ * `/fixtures/statistics`. The previous implementation assumed the array shape
+ * and therefore mapped every field to `undefined`. See
+ * `tests/fixtures/api-football/team-statistics.sample.json`.
+ *
+ * The endpoint does not provide xG, corners or shots, so those stay `undefined`
+ * (missing) rather than being coerced to zero.
+ */
+export function normalizeTeamStats(payload: any): TeamStats | undefined {
+  if (!payload || typeof payload !== 'object') return undefined;
+
+  const goalsFor = toNumber(payload?.goals?.for?.total?.total);
+  const goalsAgainst = toNumber(payload?.goals?.against?.total?.total);
+  const form = parseForm(payload?.form);
+  const cardsFor = sumCardBuckets(payload?.cards);
+
+  const hasGoals = goalsFor !== undefined || goalsAgainst !== undefined;
+  if (!hasGoals && form === undefined && cardsFor === undefined) return undefined;
+
+  return {
+    goalsFor,
+    goalsAgainst,
+    cardsFor,
+    form,
+  };
+}
+
+async function fetchH2H(_homeTeam: string, _awayTeam: string, homeId?: string, awayId?: string): Promise<H2HRecord | undefined> {
+  // Without both provider team ids we cannot query head-to-head. Return missing
+  // rather than a fabricated stub — a stub would be counted as real evidence by
+  // the confidence calculation (Stage 7).
+  if (!homeId || !awayId) return undefined;
   const payload = await cachedProviderFetch(`api-football:h2h:${homeId}:${awayId}`, async () => {
     const result = await request<unknown[]>('/fixtures/headtohead', { h2h: `${homeId}-${awayId}`, last: 10 });
     return result.response ?? [];
@@ -262,7 +363,7 @@ function normalizeH2H(entries: unknown[], homeId: string): H2HRecord | undefined
   };
 }
 
-async function fetchInjuries(fixtureId: string, homeId?: string, awayId?: string): Promise<{ home: number; away: number; keyHome: number; keyAway: number } | undefined> {
+async function fetchInjuries(fixtureId: string, homeId?: string, awayId?: string): Promise<{ home: number; away: number } | undefined> {
   const payload = await cachedProviderFetch(`api-football:injuries:${fixtureId}`, async () => {
     const result = await request<unknown[]>('/injuries', { fixture: fixtureId });
     return result.response ?? [];
@@ -274,7 +375,10 @@ async function fetchInjuries(fixtureId: string, homeId?: string, awayId?: string
       .filter((entry: any) => String(entry?.team?.id) === teamId)
       .reduce((sum, entry: any) => sum + (Array.isArray(entry?.players) ? entry.players.length : 0), 0);
   };
-  return { home: countFor(homeId), away: countFor(awayId), keyHome: 0, keyAway: 0 };
+  // `keyHome`/`keyAway` are intentionally omitted: the provider response does
+  // not identify "key" players, so a hard-coded 0 would be a synthetic value
+  // masquerading as verified evidence (Stage 7).
+  return { home: countFor(homeId), away: countFor(awayId) };
 }
 
 interface Bet {
@@ -313,11 +417,17 @@ async function fetchOdds(fixtureId: string): Promise<OddsRecord | undefined> {
     return result.response ?? [];
   });
   const entries = Array.isArray(payload) ? payload : [];
-  const bets: Bet[] = (entries[0] as any)?.bookmakers?.[0]?.bets ?? [];
+  const bookmakers: any[] = (entries[0] as any)?.bookmakers ?? [];
+  const bookmaker = bookmakers[0];
+  const bets: Bet[] = bookmaker?.bets ?? [];
   if (bets.length === 0) return undefined;
   const asianHandicapBet = bets.find((item) => (item.name ?? '').toLowerCase().includes('asian handicap'));
   const asianHandicapLine = parseHandicapLine(asianHandicapBet, ['home', '-']);
+  const capturedAt = typeof (entries[0] as any)?.update === 'string' ? (entries[0] as any).update : undefined;
   return {
+    provider: 'api-football',
+    bookmaker: typeof bookmaker?.name === 'string' ? bookmaker.name : undefined,
+    capturedAt,
     matchResult: {
       home: findOdds(bets, ['match winner', 'match result'], ['home', '1']),
       draw: findOdds(bets, ['match winner', 'match result'], ['draw', 'x']),
@@ -378,4 +488,51 @@ async function fetchScorers(leagueCode: string, season: number): Promise<PlayerR
     penalties: toNumber(entry?.statistics?.[0]?.goals?.penalty),
     position: entry?.player?.position ? String(entry.player.position) : undefined,
   }));
+}
+
+/**
+ * Documented API-Football `/status` payload (v3). Only the fields we use are
+ * typed. Account identity (name/email) is deliberately never read or stored.
+ *
+ * Per the official docs the `/status` call does NOT count against the daily
+ * quota. Field names are taken verbatim from the documentation:
+ *   response.subscription.{plan,end,active}
+ *   response.requests.{current,limit_day}
+ */
+export interface ApiFootballProviderStatus {
+  plan?: string;
+  subscriptionEnd?: string;
+  active?: boolean;
+  /** `response.requests.current` — requests already consumed today. */
+  requestsCurrent?: number;
+  /** `response.requests.limit_day` — the daily allocation. */
+  requestsLimitDay?: number;
+  /** Captured rate-limit response headers (lower-cased names). */
+  headers: Record<string, string>;
+}
+
+/** Fetch the provider `/status` endpoint (through the global limiter). */
+export async function fetchApiFootballStatus(): Promise<ApiFootballProviderStatus> {
+  const headers: Record<string, string> = {};
+  const payload = await request<{
+    subscription?: { plan?: unknown; end?: unknown; active?: unknown };
+    requests?: { current?: unknown; limit_day?: unknown };
+  }>('/status', {}, {
+    onResponse: (response) => {
+      for (const name of API_FOOTBALL_RATE_LIMIT_HEADERS) {
+        const value = typeof response.headers?.get === 'function' ? response.headers.get(name) : null;
+        if (value !== null && value !== undefined && value !== '') headers[name.toLowerCase()] = value;
+      }
+    },
+  });
+
+  const response = payload.response ?? {};
+  return {
+    plan: typeof response.subscription?.plan === 'string' ? response.subscription.plan : undefined,
+    subscriptionEnd: typeof response.subscription?.end === 'string' ? response.subscription.end : undefined,
+    active: typeof response.subscription?.active === 'boolean' ? response.subscription.active : undefined,
+    requestsCurrent: toNumber(response.requests?.current),
+    requestsLimitDay: toNumber(response.requests?.limit_day),
+    headers,
+  };
 }

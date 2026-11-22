@@ -1,7 +1,7 @@
 import type { MarketScore, PlayerRecord } from '@/types/analysis';
 import { clamp, confidenceFromPropensity, evidenceScore, normalize, weightedScore } from '../utils/confidence';
 import { goalRateScore, playerPositionScore } from '../utils/normalization';
-import { buildFactors, oddsOrDefault, valueOr } from './shared';
+import { buildFactors, oddsOrNull, valueOr } from './shared';
 import type { MarketContext } from './shared';
 
 function playerFactors(player: PlayerRecord, context: MarketContext) {
@@ -25,10 +25,13 @@ export function scorePlayerScorer(context: MarketContext): MarketScore {
   const { enrichment, weights } = context;
   const players = enrichment.players ?? [];
   if (players.length === 0) {
+    // No verified fixture participants: return an explicitly unavailable market
+    // with NO odds. Never substitute a fabricated price (Stage 3).
     return {
       market: 'PLAYER_SCORER',
       selection: 'Unavailable',
-      odds: 1.91,
+      odds: null,
+      oddsAvailable: false,
       confidence: 50,
       factors: buildFactors(weights, {}),
     };
@@ -52,10 +55,12 @@ export function scorePlayerScorer(context: MarketContext): MarketScore {
     bestPlayer.position ? 1 : undefined,
     enrichment.awayStats?.goalsAgainst,
   ]);
+  const odds = oddsOrNull(enrichment.odds?.playerScorer?.[bestPlayer.name]);
   return {
     market: 'PLAYER_SCORER',
     selection: bestPlayer.name,
-    odds: oddsOrDefault(enrichment.odds?.playerScorer?.[bestPlayer.name]),
+    odds,
+    oddsAvailable: odds !== null,
     confidence: confidenceFromPropensity(bestScore, evidence),
     factors: bestFactors,
   };
