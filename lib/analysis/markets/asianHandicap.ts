@@ -2,7 +2,7 @@ import type { MarketScore } from '@/types/analysis';
 import { clamp, evidenceScore, normalize } from '../utils/confidence';
 import { h2hHomeScore, motivationDiffScore, scheduleScore } from '../utils/normalization';
 import { buildScorelineModel, coverageSafety, fairHandicapLine, handicapCoverage } from '../utils/poisson';
-import { buildFactors, injuriesImpact, oddsOrDefault, valueOr } from './shared';
+import { buildFactors, injuriesImpact, oddsOrNull, valueOr } from './shared';
 import type { MarketContext } from './shared';
 
 /**
@@ -61,11 +61,12 @@ export function scoreAsianHandicap(context: MarketContext): MarketScore {
     enrichment.referee?.cardsPerGame,
   ]);
 
-  const odds = pickHome ? enrichment.odds?.asianHandicap?.home : enrichment.odds?.asianHandicap?.away;
+  const odds = oddsOrNull(pickHome ? enrichment.odds?.asianHandicap?.home : enrichment.odds?.asianHandicap?.away);
   return {
     market: 'ASIAN_HANDICAP',
     selection,
-    odds: oddsOrDefault(odds),
+    odds,
+    oddsAvailable: odds !== null,
     confidence: hasEdge ? normalize(clamp(50 + chosen.edge * 55 * evidence, 0, 100)) : 50,
     modelProbability: hasEdge ? coverageSafety(chosen) : undefined,
     factors,

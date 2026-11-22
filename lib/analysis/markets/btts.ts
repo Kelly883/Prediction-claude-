@@ -1,7 +1,7 @@
 import type { MarketScore } from '@/types/analysis';
 import { confidenceFromPropensity, evidenceScore, weightedScore } from '../utils/confidence';
 import { goalRateScore, h2hRateScore, weatherSupportsGoals } from '../utils/normalization';
-import { buildFactors, oddsOrDefault } from './shared';
+import { buildFactors, oddsOrNull } from './shared';
 import type { MarketContext } from './shared';
 
 export function scoreBtts(context: MarketContext): MarketScore {
@@ -27,10 +27,12 @@ export function scoreBtts(context: MarketContext): MarketScore {
     enrichment.weather?.precipitation,
   ]);
   const selection = propensity >= 55 ? 'Yes' : 'No';
+  const odds = oddsOrNull(selection === 'Yes' ? enrichment.odds?.btts?.yes : enrichment.odds?.btts?.no);
   return {
     market: 'BTTS',
     selection,
-    odds: oddsOrDefault(selection === 'Yes' ? enrichment.odds?.btts?.yes : enrichment.odds?.btts?.no),
+    odds,
+    oddsAvailable: odds !== null,
     confidence: confidenceFromPropensity(propensity, evidence),
     factors,
   };

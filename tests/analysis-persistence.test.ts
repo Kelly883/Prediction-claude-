@@ -14,13 +14,15 @@ const FIXTURE: Fixture = {
 
 function outcome(overrides: {
   confidence?: number;
-  odds?: number;
+  odds?: number | null;
   scores?: AnalysisOutcome['scores'];
 } = {}): AnalysisOutcome {
+  const odds = overrides.odds === undefined ? 1.91 : overrides.odds;
   const best = {
     market: 'MATCH_RESULT' as MarketType,
     selection: 'Home FC',
-    odds: overrides.odds ?? 1.91,
+    odds,
+    oddsAvailable: odds !== null,
     confidence: overrides.confidence ?? 82,
     factors: [{ name: 'homeXgVsAwayXg', score: 80, weight: 0.3 }],
   };
@@ -29,6 +31,7 @@ function outcome(overrides: {
     scores: overrides.scores ?? [best],
     best,
     topFactors: [{ name: 'homeXgVsAwayXg', score: 80, weight: 0.3 }],
+    eligibility: [],
   };
 }
 
@@ -47,6 +50,12 @@ describe('toPersistableResult', () => {
     });
     expect(row.marketScores).toHaveLength(1);
     expect(row.topFactors).toHaveLength(1);
+  });
+
+  it('persists unavailable odds as null, never a fabricated price', () => {
+    const row = toPersistableResult('run-1', outcome({ odds: null }));
+    expect(row.bestOdds).toBeNull();
+    expect(row.oddsSource).toBeNull();
   });
 
   it('rejects a non-finite confidence', () => {

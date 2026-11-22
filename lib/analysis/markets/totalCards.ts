@@ -1,7 +1,7 @@
 import type { MarketScore } from '@/types/analysis';
 import { confidenceFromPropensity, evidenceScore, weightedScore } from '../utils/confidence';
 import { goalRateScore } from '../utils/normalization';
-import { buildFactors, oddsOrDefault } from './shared';
+import { buildFactors, oddsOrNull } from './shared';
 import type { MarketContext } from './shared';
 
 export function scoreTotalCards(context: MarketContext): MarketScore {
@@ -34,10 +34,12 @@ export function scoreTotalCards(context: MarketContext): MarketScore {
     stakes,
   ]);
   const selection = propensity >= 55 ? 'Over 4.5 cards' : 'Under 4.5 cards';
+  const odds = oddsOrNull(selection.startsWith('Over') ? enrichment.odds?.totalCards?.over : enrichment.odds?.totalCards?.under);
   return {
     market: 'TOTAL_CARDS',
     selection,
-    odds: oddsOrDefault(selection.startsWith('Over') ? enrichment.odds?.totalCards?.over : enrichment.odds?.totalCards?.under),
+    odds,
+    oddsAvailable: odds !== null,
     confidence: confidenceFromPropensity(propensity, evidence),
     factors,
   };

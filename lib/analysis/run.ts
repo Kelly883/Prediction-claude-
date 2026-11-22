@@ -7,6 +7,7 @@ import { filterPicks, scoreFixture } from './engine';
 import { toPersistableResult } from './persistence';
 import { enrichFixtures } from './ingestion/enrichment';
 import { dateOnly, fetchFixtures, getEnabledLeagues } from './ingestion/fixtures';
+import { assessAllLeagueReadiness, summarizeReadiness } from './ingestion/readiness';
 import type { AnalysisSettings, Fixture, FixtureEnrichment } from '@/types/analysis';
 
 export interface DailyRunResult {
@@ -128,9 +129,34 @@ export async function runDailyAnalysis(options: {
   try {
     const settings = await loadAnalysisSettings();
     const leagues = await getEnabledLeagues();
+
+    // Stage 2: record league readiness. Entitlement that cannot be verified live
+    // is labelled NOT_VERIFIED (never assumed); ineligible leagues report a clear
+    // reason. A single failing league does not disable the others.
+    const readiness = summarizeReadiness(assessAllLeagueReadiness(leagues, now));
+    if (readiness.entitlementNotVerified.length > 0) {
+      logger.warn('analysis.readiness.entitlementNotVerified', {
+        count: readiness.entitlementNotVerified.length,
+        leagues: readiness.entitlementNotVerified,
+      });
+    }
+    const readinessErrors = readiness.ineligibleReasons.map(
+      (entry) => `readiness: ${entry.leagueCode} not eligible — ${entry.reason}`,
+    );
+
     const fixtureResult = await loadFixtures(leagues, settings, now);
     const enriched = await enrich(fixtureResult.fixtures, settings);
-    const outcomes = enriched.map(({ fixture, enrichment }) => score(fixture, enrichment, settings));
+    const outcomes = enriched.map(({ fixture, enrichment }) => {
+      const outcome = score(fixture, enrichment, settings);
+      return {
+        ...outcome,
+        enrichmentQuality: enrichment.quality,
+        providerSource: enrichment.dataSource,
+        missingFields: enrichment.missingFields,
+        oddsSource: oddsSourceOf(enrichment),
+        oddsCapturedAt: enrichment.odds?.capturedAt ? new Date(enrichment.odds.capturedAt) : undefined,
+      };
+    });
     const picks = filterPicks(outcomes, settings.threshold);
 
     // Validate + map before touching the database so a malformed payload fails
@@ -173,7 +199,7 @@ export async function runDailyAnalysis(options: {
       status: 'completed',
       fixturesAnalyzed: completed.fixturesAnalyzed,
       picksGenerated: completed.picksGenerated,
-      errors: [...fixtureResult.errors, ...enriched.flatMap((item) => item.enrichment.errors ?? [])],
+      errors: [...readinessErrors, ...fixtureResult.errors, ...enriched.flatMap((item) => item.enrichment.errors ?? [])],
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -197,4 +223,12 @@ export async function runDailyAnalysis(options: {
 export interface FixtureScoreInput {
   fixture: Fixture;
   enrichment: FixtureEnrichment;
+}
+
+/** `${provider}:${bookmaker}` provenance for captured odds, or undefined. */
+function oddsSourceOf(enrichment: FixtureEnrichment): string | undefined {
+  const odds = enrichment.odds;
+  if (!odds) return undefined;
+  const parts = [odds.provider, odds.bookmaker].filter(Boolean);
+  return parts.length > 0 ? parts.join(':') : undefined;
 }

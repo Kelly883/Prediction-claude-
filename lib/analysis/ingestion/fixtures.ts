@@ -4,6 +4,7 @@ import { fetchApiFootballFixtures } from '@/lib/api/football-api';
 import { fetchFootballDataFixtures } from '@/lib/api/football-data';
 import { partitionByProviderSupport } from '@/lib/api/provider-mapping';
 import { ProviderAuthError, ProviderQuotaExhaustedError } from '@/lib/api/retry';
+import { exclusionReason, isPredictableStatus } from './status';
 
 export const FIXTURE_WINDOW_HOURS = 48;
 
@@ -47,7 +48,11 @@ export async function fetchFixtures(
     }
     try {
       const fixtures = await loadFromProvider(provider, supported, from, to);
-      return { fixtures: dedupeFixtures(fixtures), errors };
+      const { predictable, excluded } = partitionByStatus(fixtures);
+      if (excluded.length > 0) {
+        errors.push(`${provider}: excluded ${excluded.length} non-predictable fixture(s): ${excluded.join('; ')}`);
+      }
+      return { fixtures: dedupeFixtures(predictable), errors };
     } catch (err) {
       // Entitlement exhaustion is a hard operational failure: surface it instead
       // of silently falling through to a provider that cannot serve the request.
@@ -72,4 +77,19 @@ function dedupeFixtures(fixtures: Fixture[]): Fixture[] {
     seen.add(key);
     return true;
   });
+}
+
+/**
+ * Split loaded fixtures into those that are predictable (not yet started) and
+ * those that must be excluded (postponed/cancelled/abandoned/suspended/in-play/
+ * finished/unknown). Exclusion reasons are surfaced for monitoring.
+ */
+export function partitionByStatus(fixtures: Fixture[]): { predictable: Fixture[]; excluded: string[] } {
+  const predictable: Fixture[] = [];
+  const excluded: string[] = [];
+  for (const fixture of fixtures) {
+    if (isPredictableStatus(fixture.status)) predictable.push(fixture);
+    else excluded.push(exclusionReason(fixture));
+  }
+  return { predictable, excluded };
 }

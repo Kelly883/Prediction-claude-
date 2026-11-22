@@ -111,26 +111,34 @@ describe('confidence utilities', () => {
 });
 
 describe('analysis engine', () => {
-  it('scores exactly ten markets deterministically', () => {
+  it('scores only the eligible markets and records eligibility for all ten', () => {
     const first = scoreFixture(fixture, strongEnrichment);
     const second = scoreFixture(fixture, strongEnrichment);
 
-    expect(first.scores).toHaveLength(10);
-    expect(new Set(first.scores.map((score) => score.market)).size).toBe(10);
+    // Eligibility is always recorded for every configured market, but only
+    // eligible markets are scored (Stage 4 gate).
+    expect(first.eligibility).toHaveLength(10);
+    const eligible = first.eligibility.filter((decision) => decision.allowedToProceed).map((decision) => decision.market);
+    expect(first.scores.map((score) => score.market)).toEqual(eligible);
+    expect(new Set(first.scores.map((score) => score.market)).size).toBe(first.scores.length);
+    // A market with no verified corner data stays restricted and is not scored.
+    expect(eligible).not.toContain('TOTAL_CARDS');
     expect(first).toEqual(second);
     expect(first.topFactors).toHaveLength(3);
   });
 
   it('generates a high-confidence pick from strong evidence', () => {
     const outcome = scoreFixture(fixture, strongEnrichment);
-    expect(outcome.best.confidence).toBeGreaterThanOrEqual(75);
+    expect(outcome.best).toBeDefined();
+    expect(outcome.best?.confidence).toBeGreaterThanOrEqual(75);
     expect(filterPicks([outcome], 75)).toHaveLength(1);
     expect(filterPicks([outcome], 99)).toHaveLength(0);
   });
 
   it('does not generate a pick without enrichment data', () => {
     const outcome = scoreFixture(fixture, {});
-    expect(outcome.best.confidence).toBeLessThan(75);
+    // No eligible market => no best pick, never persisted.
+    expect(outcome.best).toBeUndefined();
     expect(filterPicks([outcome], 75)).toHaveLength(0);
   });
 

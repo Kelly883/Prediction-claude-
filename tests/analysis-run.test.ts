@@ -57,6 +57,7 @@ function validOutcome(fixture: Fixture = FIXTURE): AnalysisOutcome {
     market: 'MATCH_RESULT' as MarketType,
     selection: `${fixture.homeTeam}`,
     odds: 1.91,
+    oddsAvailable: true,
     confidence: 82,
     modelProbability: 0.55,
     factors: [{ name: 'homeXgVsAwayXg', score: 80, weight: 0.3 }],
@@ -66,6 +67,7 @@ function validOutcome(fixture: Fixture = FIXTURE): AnalysisOutcome {
     scores: [best],
     best,
     topFactors: [{ name: 'homeXgVsAwayXg', score: 80, weight: 0.3 }],
+    eligibility: [],
   };
 }
 

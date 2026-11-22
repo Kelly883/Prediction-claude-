@@ -3,6 +3,7 @@ import { scoreAsianHandicap } from './markets/asianHandicap';
 import { scoreBtts } from './markets/btts';
 import { scoreCorrectScore } from './markets/correctScore';
 import { scoreDoubleChance } from './markets/doubleChance';
+import { DEFAULT_ELIGIBILITY_POLICY, evaluateAllEligibility, type EligibilityPolicy } from './markets/eligibility';
 import { scoreFirstHalfResult } from './markets/firstHalfResult';
 import { scoreMatchResult } from './markets/matchResult';
 import { scoreOverUnder } from './markets/overUnder';
@@ -13,13 +14,26 @@ import type { MarketContext } from './markets/shared';
 import { topFactors } from './utils/confidence';
 import type { AnalysisOutcome, AnalysisSettings, Fixture, FixtureEnrichment, MarketScore, MarketType } from '@/types/analysis';
 
+/**
+ * Score a fixture.
+ *
+ * The market eligibility gate runs FIRST: a market whose required evidence is
+ * unavailable is not scored at all and can never be ranked, selected or
+ * persisted. `outcome.eligibility` records the decision for every market
+ * (eligible or not) so administrators can see exactly why a market was skipped.
+ */
 export function scoreFixture(
   fixture: Fixture,
   enrichment: FixtureEnrichment,
   settings: AnalysisSettings = DEFAULT_ANALYSIS_SETTINGS,
+  policy: EligibilityPolicy = DEFAULT_ELIGIBILITY_POLICY,
 ): AnalysisOutcome {
+  const eligibility = evaluateAllEligibility(MARKET_ORDER, enrichment, policy);
+  const allowed = new Set(eligibility.filter((decision) => decision.allowedToProceed).map((decision) => decision.market));
+
   const scores: MarketScore[] = [];
   const add = (market: MarketType, score: (context: MarketContext) => MarketScore) => {
+    if (!allowed.has(market)) return;
     const weights = settings.marketWeights[market] ?? DEFAULT_ANALYSIS_SETTINGS.marketWeights[market] ?? {};
     scores.push(score({ fixture, enrichment, weights }));
   };
@@ -44,14 +58,19 @@ export function scoreFixture(
     fixture,
     scores,
     best,
-    topFactors: topFactors(best.factors, 3),
+    topFactors: best ? topFactors(best.factors, 3) : [],
+    eligibility,
   };
 }
 
+/**
+ * Keep only outcomes whose best (eligible) market meets the threshold. Outcomes
+ * with no eligible market are always dropped, regardless of threshold.
+ */
 export function filterPicks(outcomes: AnalysisOutcome[], threshold: number = DEFAULT_ANALYSIS_SETTINGS.threshold): AnalysisOutcome[] {
-  return outcomes.filter((outcome) => outcome.best.confidence >= threshold);
+  return outcomes.filter((outcome) => outcome.best !== undefined && outcome.best.confidence >= threshold);
 }
 
 export function bestMarketOf(outcomes: AnalysisOutcome[]): MarketType | undefined {
-  return outcomes[0]?.best.market;
+  return outcomes.find((outcome) => outcome.best !== undefined)?.best?.market;
 }

@@ -155,7 +155,13 @@ describe('market branch coverage', () => {
       { homeStats: { xgFor: 2 }, awayStats: { xgFor: 0.5 } },
       settings,
     );
-    expect(outcome.scores).toHaveLength(10);
+    // Only markets that pass the eligibility gate are scored; each still gets a
+    // non-empty default weight map even though the supplied map is empty.
+    const eligible = outcome.eligibility.filter((decision) => decision.allowedToProceed).map((decision) => decision.market);
+    expect(outcome.scores.map((score) => score.market)).toEqual(eligible);
+    expect(outcome.scores.length).toBeGreaterThan(0);
+    expect(outcome.scores.every((score) => score.factors.length > 0)).toBe(true);
+    expect(outcome.best).toBeDefined();
   });
 });
 

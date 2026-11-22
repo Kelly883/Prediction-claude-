@@ -1,0 +1,33 @@
+{
+  "_note": "Sanitized sample of a Football-Data.org v4 /competitions/{code}/matches response envelope. Provider metadata (crests, referees, ids) has been stripped or anonymised. Contains a scheduled and a postponed match, plus one malformed entry (missing home team id) that the adapter must reject.",
+  "competition": { "id": 2014, "code": "PD", "name": "Primera Division" },
+  "matches": [
+    {
+      "id": 700001,
+      "utcDate": "2026-11-22T19:00:00Z",
+      "status": "TIMED",
+      "matchday": 12,
+      "homeTeam": { "id": 2001, "name": "Sample CF" },
+      "awayTeam": { "id": 2002, "name": "Sample Real" },
+      "score": { "fullTime": { "home": null, "away": null } }
+    },
+    {
+      "id": 700002,
+      "utcDate": "2026-11-22T21:00:00Z",
+      "status": "POSTPONED",
+      "matchday": 12,
+      "homeTeam": { "id": 2003, "name": "Sample Deportivo" },
+      "awayTeam": { "id": 2004, "name": "Sample Union" },
+      "score": { "fullTime": { "home": null, "away": null } }
+    },
+    {
+      "id": 700003,
+      "utcDate": "2026-11-22T18:00:00Z",
+      "status": "SCHEDULED",
+      "matchday": 12,
+      "homeTeam": { "name": "Missing Id FC" },
+      "awayTeam": { "id": 2006, "name": "Sample Sporting" },
+      "score": { "fullTime": { "home": null, "away": null } }
+    }
+  ]
+}

@@ -2,7 +2,7 @@ import type { MarketScore } from '@/types/analysis';
 import { clamp, evidenceScore, normalize } from '../utils/confidence';
 import { goalRateScore, h2hRateScore, weatherSupportsGoals } from '../utils/normalization';
 import { buildScorelineModel, mostLikelyScoreline } from '../utils/poisson';
-import { buildFactors, oddsOrDefault, valueOr } from './shared';
+import { buildFactors, oddsOrNull, valueOr } from './shared';
 import type { MarketContext } from './shared';
 
 /**
@@ -41,10 +41,12 @@ export function scoreCorrectScore(context: MarketContext): MarketScore {
   ]);
   const evidenceWeight = model.expected.source === 'league' ? Math.min(evidence, 0.25) : evidence;
 
+  const odds = oddsOrNull(enrichment.odds?.correctScore?.[selection]);
   return {
     market: 'CORRECT_SCORE',
     selection,
-    odds: oddsOrDefault(enrichment.odds?.correctScore?.[selection]),
+    odds,
+    oddsAvailable: odds !== null,
     confidence: normalize(clamp(50 + (peak - CORRECT_SCORE_NEUTRAL_PEAK) * 200 * evidenceWeight, 0, 100)),
     modelProbability: peak,
     factors,

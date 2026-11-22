@@ -2,7 +2,7 @@ import type { MarketScore } from '@/types/analysis';
 import { clamp, evidenceScore, normalize } from '../utils/confidence';
 import { h2hHomeScore } from '../utils/normalization';
 import { buildScorelineModel } from '../utils/poisson';
-import { buildFactors, injuriesImpact, oddsOrDefault } from './shared';
+import { buildFactors, injuriesImpact, oddsOrNull } from './shared';
 import type { MarketContext } from './shared';
 
 /**
@@ -50,10 +50,12 @@ export function scoreDoubleChance(context: MarketContext): MarketScore {
     enrichment.injuries?.away,
   ]);
 
+  const odds = oddsOrNull(chosen.odds);
   return {
     market: 'DOUBLE_CHANCE',
     selection: chosen.selection,
-    odds: oddsOrDefault(chosen.odds),
+    odds,
+    oddsAvailable: odds !== null,
     confidence: normalize(clamp(50 + ((chosen.probability - DOUBLE_CHANCE_NEUTRAL) / (1 - DOUBLE_CHANCE_NEUTRAL)) * DOUBLE_CHANCE_RANGE * evidence, 0, 100)),
     modelProbability: chosen.probability,
     factors,
