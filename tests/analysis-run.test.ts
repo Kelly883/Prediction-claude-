@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => ({
   analysisResult: { createMany: vi.fn() },
   analysisConfig: { findMany: vi.fn() },
   transaction: vi.fn(),
-  redis: { set: vi.fn(), del: vi.fn() },
+  redis: { get: vi.fn(), set: vi.fn(), del: vi.fn() },
   tx: {
     analysisResult: { createMany: vi.fn() },
     analysisRun: { update: vi.fn() },
@@ -52,6 +52,21 @@ const FIXTURE: Fixture = {
   source: 'api-football',
 };
 
+// A healthy, fresh quota snapshot for the verified `/status` store, so the
+// Stage 9 ingestion gate is satisfied for the runs exercised below. `now` in
+// every test is 2026-11-22T06:00:00Z, well inside the 30-minute freshness window.
+const HEALTHY_QUOTA = {
+  provider: 'api-football' as const,
+  plan: 'test',
+  subscriptionEnd: null,
+  dailyLimit: 7500,
+  consumed: 100,
+  remaining: 7400,
+  lastCheckedAt: '2026-11-22T05:59:00.000Z',
+  status: 'OK' as const,
+  source: 'status-endpoint' as const,
+};
+
 function validOutcome(fixture: Fixture = FIXTURE): AnalysisOutcome {
   const best = {
     market: 'MATCH_RESULT' as MarketType,
@@ -76,6 +91,10 @@ describe('runDailyAnalysis persistence', () => {
     vi.clearAllMocks();
     mocks.redis.set.mockResolvedValue('OK');
     mocks.redis.del.mockResolvedValue(1);
+    // Default: Redis reachable, quota key healthy, circuit closed (null).
+    mocks.redis.get.mockImplementation(async (key: string) =>
+      key === 'provider:quota:api-football' ? HEALTHY_QUOTA : null,
+    );
     mocks.analysisConfig.findMany.mockResolvedValue([]);
     mocks.getEnabledLeagues.mockResolvedValue([
       { leagueName: 'English Premier League', leagueCode: 'PL', isEnabled: true, priority: 1 },
@@ -178,5 +197,58 @@ describe('runDailyAnalysis persistence', () => {
     expect(mocks.analysisRun.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ status: 'failed' }) }),
     );
+  });
+
+  // --- Stage 9: provider-protection ingestion gating ---
+
+  it('blocks the run (no rows, not successful) when Redis is unavailable', async () => {
+    mocks.redis.get.mockRejectedValue(new Error('redis down'));
+
+    const result = await runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z'), force: true });
+
+    expect(result.status).toBe('blocked');
+    expect(result.runId).toBeNull();
+    expect(result.blockedReason).toMatch(/redis unavailable/i);
+    expect(mocks.analysisRun.create).not.toHaveBeenCalled();
+    expect(mocks.transaction).not.toHaveBeenCalled();
+    expect(mocks.fetchFixtures).not.toHaveBeenCalled();
+  });
+
+  it('blocks the run when quota information is unknown (conservative policy)', async () => {
+    mocks.redis.get.mockImplementation(async () => null); // no snapshot, circuit closed
+
+    const result = await runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z'), force: true });
+
+    expect(result.status).toBe('blocked');
+    expect(result.runId).toBeNull();
+    expect(mocks.analysisRun.create).not.toHaveBeenCalled();
+  });
+
+  it('blocks the run when daily quota consumption reaches the stop threshold', async () => {
+    mocks.redis.get.mockImplementation(async (key: string) =>
+      key === 'provider:quota:api-football'
+        ? { ...HEALTHY_QUOTA, consumed: 7400, dailyLimit: 7500, remaining: 100 }
+        : null,
+    );
+
+    const result = await runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z'), force: true });
+
+    expect(result.status).toBe('blocked');
+    expect(result.blockedReason).toMatch(/quota/i);
+    expect(mocks.analysisRun.create).not.toHaveBeenCalled();
+  });
+
+  it('blocks the run when the provider circuit is open (cooldown)', async () => {
+    mocks.redis.get.mockImplementation(async (key: string) => {
+      if (key === 'provider:quota:api-football') return HEALTHY_QUOTA;
+      if (key === 'provider:circuit:open:api-football') return '1';
+      return null;
+    });
+
+    const result = await runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z'), force: true });
+
+    expect(result.status).toBe('blocked');
+    expect(result.blockedReason).toMatch(/cooldown/i);
+    expect(mocks.analysisRun.create).not.toHaveBeenCalled();
   });
 });

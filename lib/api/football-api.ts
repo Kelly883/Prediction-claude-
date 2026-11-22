@@ -16,6 +16,10 @@ import {
 } from '@/lib/api/circuit-breaker';
 import { apiFootballLeagueId } from '@/lib/api/provider-mapping';
 import { deriveSeasonId } from '@/lib/api/season';
+import { acquireApiFootballSlot } from '@/lib/api/rate-limiter';
+import { captureRateLimitHeaders, storeRateLimitHeaders, API_FOOTBALL_RATE_LIMIT_HEADERS } from '@/lib/api/rate-limit-headers';
+import { classifyProviderFailure } from '@/lib/api/failure-classification';
+import { logger } from '@/lib/logger';
 
 const BASE_URL = 'https://v3.football.api-sports.io';
 const TIMEOUT_MS = Number(process.env.FOOTBALL_API_TIMEOUT_MS ?? 10_000);
@@ -23,6 +27,11 @@ const TIMEOUT_MS = Number(process.env.FOOTBALL_API_TIMEOUT_MS ?? 10_000);
 interface ApiResponse<T = unknown> {
   response?: T;
   errors?: Record<string, string | string[]>;
+}
+
+interface RequestOptions {
+  /** Invoked with the raw Response so callers can capture response headers. */
+  onResponse?: (response: Response) => void;
 }
 
 function classifyApiFootballErrors(errors: Record<string, string | string[]>): ProviderError {
@@ -40,7 +49,11 @@ function classifyApiFootballErrors(errors: Record<string, string | string[]>): P
   return new ProviderError(`API-Football error: ${flat}`, { provider: 'api-football', recoverable: false });
 }
 
-async function request<T>(path: string, params: Record<string, string | number> = {}): Promise<ApiResponse<T>> {
+async function request<T>(
+  path: string,
+  params: Record<string, string | number> = {},
+  options: RequestOptions = {},
+): Promise<ApiResponse<T>> {
   const apiKey = process.env.API_FOOTBALL_KEY;
   if (!apiKey) throw new ProviderAuthError('api-football', 401, 'API_FOOTBALL_KEY is not configured');
 
@@ -52,11 +65,19 @@ async function request<T>(path: string, params: Record<string, string | number> 
   await assertProviderAvailable('api-football');
 
   return withBoundedRetry('api-football', async () => {
+    const startedAt = Date.now();
     try {
+      // Every attempt (including retries) reserves a slot in the shared
+      // distributed rate limiter first, so retries cannot bypass the limit.
+      await acquireApiFootballSlot();
       const response = await fetch(url.toString(), {
         headers: { Accept: 'application/json', 'x-apisports-key': apiKey },
         signal: AbortSignal.timeout(TIMEOUT_MS),
       });
+      options.onResponse?.(response);
+      // Capture the documented rate-limit headers so quota monitoring can use
+      // them when available (never invented, never treated as zero).
+      void storeRateLimitHeaders(captureRateLimitHeaders(response));
 
       if (!response.ok) {
         let body = '';
@@ -74,10 +95,24 @@ async function request<T>(path: string, params: Record<string, string | number> 
         throw classifyApiFootballErrors(payload.errors);
       }
       await recordProviderSuccess('api-football');
+      logger.debug('provider.request', {
+        provider: 'api-football',
+        endpoint: path,
+        status: response.status,
+        durationMs: Date.now() - startedAt,
+      });
       return payload;
     } catch (err) {
       // Only recoverable failures (network/5xx/429) count toward opening the
       // circuit; auth/quota errors are surfaced separately and must not be masked.
+      const failure = classifyProviderFailure(err);
+      logger.warn('provider.request.failed', {
+        provider: 'api-football',
+        endpoint: path,
+        category: failure.category,
+        status: failure.status,
+        durationMs: Date.now() - startedAt,
+      });
       if (!(err instanceof ProviderError) || err.recoverable) {
         await recordProviderFailure('api-football');
       }
@@ -441,4 +476,51 @@ async function fetchScorers(leagueCode: string, season: number): Promise<PlayerR
     penalties: toNumber(entry?.statistics?.[0]?.goals?.penalty),
     position: entry?.player?.position ? String(entry.player.position) : undefined,
   }));
+}
+
+/**
+ * Documented API-Football `/status` payload (v3). Only the fields we use are
+ * typed. Account identity (name/email) is deliberately never read or stored.
+ *
+ * Per the official docs the `/status` call does NOT count against the daily
+ * quota. Field names are taken verbatim from the documentation:
+ *   response.subscription.{plan,end,active}
+ *   response.requests.{current,limit_day}
+ */
+export interface ApiFootballProviderStatus {
+  plan?: string;
+  subscriptionEnd?: string;
+  active?: boolean;
+  /** `response.requests.current` — requests already consumed today. */
+  requestsCurrent?: number;
+  /** `response.requests.limit_day` — the daily allocation. */
+  requestsLimitDay?: number;
+  /** Captured rate-limit response headers (lower-cased names). */
+  headers: Record<string, string>;
+}
+
+/** Fetch the provider `/status` endpoint (through the global limiter). */
+export async function fetchApiFootballStatus(): Promise<ApiFootballProviderStatus> {
+  const headers: Record<string, string> = {};
+  const payload = await request<{
+    subscription?: { plan?: unknown; end?: unknown; active?: unknown };
+    requests?: { current?: unknown; limit_day?: unknown };
+  }>('/status', {}, {
+    onResponse: (response) => {
+      for (const name of API_FOOTBALL_RATE_LIMIT_HEADERS) {
+        const value = typeof response.headers?.get === 'function' ? response.headers.get(name) : null;
+        if (value !== null && value !== undefined && value !== '') headers[name.toLowerCase()] = value;
+      }
+    },
+  });
+
+  const response = payload.response ?? {};
+  return {
+    plan: typeof response.subscription?.plan === 'string' ? response.subscription.plan : undefined,
+    subscriptionEnd: typeof response.subscription?.end === 'string' ? response.subscription.end : undefined,
+    active: typeof response.subscription?.active === 'boolean' ? response.subscription.active : undefined,
+    requestsCurrent: toNumber(response.requests?.current),
+    requestsLimitDay: toNumber(response.requests?.limit_day),
+    headers,
+  };
 }

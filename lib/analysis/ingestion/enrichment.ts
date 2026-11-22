@@ -2,10 +2,11 @@ import type { AnalysisSettings, DataSource, Fixture, FixtureEnrichment } from '@
 import { fetchApiFootballEnrichment } from '@/lib/api/football-api';
 import { fetchFootballDataEnrichment } from '@/lib/api/football-data';
 import { ProviderAuthError, ProviderQuotaExhaustedError } from '@/lib/api/retry';
+import { classifyProviderFailure } from '@/lib/api/failure-classification';
+import { getProviderConfig } from '@/lib/api/provider-config';
+import { logger } from '@/lib/logger';
 import { classifyEnrichment } from './quality';
 import { fetchWeather } from './weather';
-
-const MAX_CONCURRENCY = 10;
 
 export async function mapWithConcurrency<T, R>(items: T[], limit: number, worker: (item: T, index: number) => Promise<R>): Promise<R[]> {
   const results = new Array<R>(items.length);
@@ -27,10 +28,16 @@ export async function enrichFixtures(
   fixtures: Fixture[],
   settings: AnalysisSettings,
 ): Promise<Array<{ fixture: Fixture; enrichment: FixtureEnrichment }>> {
-  return mapWithConcurrency(fixtures, MAX_CONCURRENCY, async (fixture) => {
+  // Fixture-level concurrency is configurable (default 10). It is NOT a
+  // substitute for the global rate limiter: every provider request still
+  // reserves a slot in the shared distributed limiter, which remains the final
+  // authority regardless of this setting.
+  const concurrency = Math.max(1, getProviderConfig().enrichmentConcurrency);
+  return mapWithConcurrency(fixtures, concurrency, async (fixture) => {
     const errors: string[] = [];
     let enrichment: FixtureEnrichment = {};
     let usedProvider: DataSource | undefined;
+    let degradedFrom: DataSource | undefined;
 
     for (const provider of settings.dataSourcePriorities) {
       try {
@@ -41,7 +48,18 @@ export async function enrichFixtures(
         // Entitlement exhaustion must abort the run loudly; degrading silently
         // would present a partially-enriched analysis as a complete one.
         if (err instanceof ProviderQuotaExhaustedError || err instanceof ProviderAuthError) throw err;
-        errors.push(`${provider}: ${err instanceof Error ? err.message : String(err)}`);
+        const failure = classifyProviderFailure(err);
+        errors.push(`${provider}: ${failure.category}: ${failure.message}`);
+        // Record that primary enrichment failed and a fallback is being tried.
+        // The fallback result is classified as degraded below — never as
+        // equivalent to primary-provider data.
+        degradedFrom = provider;
+        logger.warn('provider.fallback.activated', {
+          fixtureId: fixture.id,
+          leagueId: fixture.leagueCode,
+          fromProvider: provider,
+          failureCategory: failure.category,
+        });
       }
     }
 
@@ -58,6 +76,12 @@ export async function enrichFixtures(
     const classification = usedProvider
       ? classifyEnrichment(usedProvider, enrichment)
       : { quality: 'INSUFFICIENT_DATA' as const, missingFields: [] };
+
+    // A fallback was used: record it explicitly so the degraded enrichment is
+    // never mistaken for complete primary-provider data.
+    if (degradedFrom) {
+      errors.push(`enrichment degraded: primary provider ${degradedFrom} failed; used ${usedProvider ?? 'none'}`);
+    }
 
     return {
       fixture,

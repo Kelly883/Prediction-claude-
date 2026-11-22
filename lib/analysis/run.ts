@@ -7,16 +7,20 @@ import { filterPicks, scoreFixture } from './engine';
 import { toPersistableResult } from './persistence';
 import { enrichFixtures } from './ingestion/enrichment';
 import { dateOnly, fetchFixtures, getEnabledLeagues } from './ingestion/fixtures';
+import { evaluateIngestionGate } from './ingestion/gating';
 import { assessAllLeagueReadiness, summarizeReadiness } from './ingestion/readiness';
 import type { AnalysisSettings, Fixture, FixtureEnrichment } from '@/types/analysis';
 
 export interface DailyRunResult {
-  runId: string;
-  status: 'completed' | 'failed' | 'running';
+  /** Null when the run was blocked before a row was created (Stage 9 gating). */
+  runId: string | null;
+  status: 'completed' | 'failed' | 'running' | 'blocked';
   fixturesAnalyzed: number;
   picksGenerated: number;
   alreadyRunning?: boolean;
   errors?: string[];
+  /** Populated when `status === 'blocked'`: why automated ingestion was refused. */
+  blockedReason?: string;
 }
 
 export interface AnalysisDependencies {
@@ -66,6 +70,22 @@ export async function runDailyAnalysis(options: {
         alreadyRunning: existing.status === 'running',
       };
     }
+  }
+
+  // Stage 9: provider-protection pre-flight. Before starting a run we confirm
+  // that Redis (shared limiter/lock/quota store) is reachable, the daily quota
+  // is known and sufficient, and the provider is not in a cooldown. A blocked
+  // gate creates no run, preserves existing data and never completes as success.
+  const gate = await evaluateIngestionGate({ now });
+  if (!gate.ok) {
+    logger.warn('analysis.run.blocked', { day, reasons: gate.reasons, quotaLevel: gate.quotaLevel });
+    return {
+      runId: null,
+      status: 'blocked',
+      fixturesAnalyzed: 0,
+      picksGenerated: 0,
+      blockedReason: gate.reasons.join('; '),
+    };
   }
 
   const lockKey = `analysis:daily:${day}`;

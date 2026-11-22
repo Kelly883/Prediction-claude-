@@ -37,6 +37,22 @@ const OptionalEnvSchema = z.object({
   FOOTBALL_DATA_API_KEY: z.string().optional(),
   FOOTBALL_API_TIMEOUT_MS: z.coerce.number().int().positive().optional(),
   FOOTBALL_CACHE_TTL_SECONDS: z.coerce.number().int().positive().optional(),
+  // Provider-protection (Phase 1). Optional; validated + defaulted by
+  // lib/api/provider-config.ts. Listed here for documentation/typing only.
+  PROVIDER_RPS: z.coerce.number().int().positive().optional(),
+  PROVIDER_RPM: z.coerce.number().int().positive().optional(),
+  PROVIDER_MAX_WAIT_MS: z.coerce.number().int().positive().optional(),
+  PROVIDER_MAX_SLEEP_MS: z.coerce.number().int().positive().optional(),
+  PROVIDER_QUOTA_WARNING_THRESHOLD: z.coerce.number().gt(0).lte(1).optional(),
+  PROVIDER_QUOTA_CRITICAL_THRESHOLD: z.coerce.number().gt(0).lte(1).optional(),
+  PROVIDER_QUOTA_STOP_THRESHOLD: z.coerce.number().gt(0).lte(1).optional(),
+  PROVIDER_QUOTA_FRESHNESS_SECONDS: z.coerce.number().int().positive().optional(),
+  PROVIDER_QUOTA_SNAPSHOT_TTL_SECONDS: z.coerce.number().int().positive().optional(),
+  PROVIDER_QUOTA_UNKNOWN_POLICY: z.enum(['block', 'warn']).optional(),
+  PROVIDER_ENRICHMENT_CONCURRENCY: z.coerce.number().int().positive().optional(),
+  PROVIDER_SINGLE_FLIGHT_LOCK_TTL_MS: z.coerce.number().int().positive().optional(),
+  PROVIDER_SINGLE_FLIGHT_WAIT_MS: z.coerce.number().int().positive().optional(),
+  PROVIDER_SINGLE_FLIGHT_POLL_MS: z.coerce.number().int().positive().optional(),
 });
 
 export type Env = z.infer<typeof CoreEnvSchema> & z.infer<typeof OptionalEnvSchema>;
