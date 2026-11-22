@@ -69,6 +69,13 @@ function createInMemoryRedis() {
 }
 
 function createRedisClient(): unknown {
+  // Tests must stay deterministic and offline even when CI supplies dummy
+  // Upstash credentials. Anything that captures global `fetch` in a test
+  // (provider mocks, for example) would otherwise corrupt the Redis client too.
+  if (process.env.NODE_ENV === 'test') {
+    return createInMemoryRedis();
+  }
+
   if (isDistributedRedisConfigured()) {
     try {
       return new Redis({
