@@ -99,6 +99,70 @@ export interface ProviderQuotaSnapshot {
 
 export const QUOTA_KEY = 'provider:quota:api-football';
 
+/** Redis key for tracking our own daily quota consumption per provider. */
+function quotaConsumedKey(provider: 'api-football' | 'football-data'): string {
+  return `provider:quota:consumed:${provider}`;
+}
+
+/**
+ * Reserve one unit of daily quota for an actual outbound provider HTTP attempt.
+ *
+ * Increments our own consumption counter in Redis and checks it against the
+ * configured daily limit. If the limit would be exceeded, throws
+ * {@link ProviderQuotaExhaustedError} so the caller knows the attempt cannot
+ * proceed. Each call consumes exactly one unit; retries re-reserve.
+ *
+ * Fails closed: if Redis is unavailable we cannot verify quota, so we refuse
+ * the attempt rather than risk over-consumption.
+ *
+ * Returns the new consumed count after reservation.
+ */
+export async function reserveProviderQuota(
+  provider: 'api-football' | 'football-data',
+): Promise<number> {
+  const cfg = getProviderConfig();
+  const dailyLimit =
+    provider === 'api-football' ? cfg.apiFootballDailyLimit : cfg.footballDataDailyLimit;
+
+  // The daily limit is an internal safety cap derived from the configured
+  // sustained rate. If no meaningful limit can be derived, allow the attempt
+  // (the gate layer handles broader quota policy).
+  if (!dailyLimit || dailyLimit <= 0) {
+    try {
+      await redis.incr(quotaConsumedKey(provider));
+    } catch {
+      // Redis unavailable — cannot track consumption; fail closed.
+      throw new ProviderQuotaExhaustedError(
+        provider,
+        `Quota store unavailable for ${provider}`,
+      );
+    }
+    return 1;
+  }
+
+  let consumed: number;
+  try {
+    consumed = await redis.incr(quotaConsumedKey(provider));
+  } catch (err) {
+    throw new ProviderQuotaExhaustedError(
+      provider,
+      `Quota store unavailable for ${provider}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  if (consumed > dailyLimit) {
+    void incrProviderMetric(
+      provider === 'api-football' ? 'af:quotaFailures' : 'fd:quotaFailures',
+    );
+    throw new ProviderQuotaExhaustedError(
+      provider,
+      `Daily quota exhausted for ${provider}: ${consumed}/${dailyLimit}`,
+    );
+  }
+
+  return consumed;
+}
+
 function toFiniteNumber(value: unknown): number | null {
   const n = Number(value);
   return Number.isFinite(n) ? n : null;

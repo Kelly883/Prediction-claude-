@@ -62,7 +62,8 @@ export type ProviderMetricName =
   | 'quota:refreshSkipped'
   | 'ingestion:completed'
   | 'ingestion:deferred'
-  | 'ingestion:blocked';
+  | 'ingestion:blocked'
+  | 'ingestion:staleRecovered';
 
 function dayPart(now: Date): string {
   return now.toISOString().slice(0, 10);

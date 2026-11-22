@@ -56,8 +56,9 @@ const ProviderConfigSchema = z.object({
   /** Wall-clock ceiling for a single analysis invocation before it checkpoints
    *  and defers the remainder to the next invocation (see lib/analysis/ingestion/budget.ts). */
   analysisMaxRuntimeMs: intField(240_000),
-  /** Fixtures processed per durable, idempotent ingestion batch. */
-  analysisBatchSize: intField(25),
+  /** Fixtures processed per durable, idempotent ingestion batch. Bounded above
+   *  to prevent an environment misconfiguration from creating an unbounded batch. */
+  analysisBatchSize: z.coerce.number().int().min(1).max(500).default(25).catch(25),
 
   // --- Daily quota monitoring thresholds ---
   quotaWarningThreshold: ratioField(0.7),
@@ -69,6 +70,16 @@ const ProviderConfigSchema = z.object({
   quotaSnapshotTtlSeconds: intField(86_400),
   /** Behaviour when quota cannot be determined (missing/stale): 'block' | 'warn'. */
   quotaUnknownPolicy: z.enum(['block', 'warn']).default('block').catch('block'),
+
+  // --- Daily quota limits (internal safety caps) ---
+  /** Internal daily quota cap for API-Football (requests per day). Operator must configure per subscription. */
+  apiFootballDailyLimit: intField(1_000),
+  /** Internal daily quota cap for Football-Data.org (requests per day). Operator must configure per subscription. */
+  footballDataDailyLimit: intField(100),
+
+  // --- Per-fixture retry policy ---
+  /** Maximum number of analysis attempts per fixture before it is excluded. */
+  analysisMaxAttempts: intField(3),
 
   // --- Enrichment concurrency ---
   enrichmentConcurrency: z.coerce.number().int().min(1).max(20).default(10).catch(10),
@@ -129,6 +140,13 @@ export function providerConfigSource(env: NodeJS.ProcessEnv = process.env): Reco
     quotaUnknownPolicy: env.PROVIDER_QUOTA_UNKNOWN_POLICY,
 
     enrichmentConcurrency: env.PROVIDER_ENRICHMENT_CONCURRENCY,
+
+    // --- Daily quota limits ---
+    apiFootballDailyLimit: env.FOOTBALL_API_DAILY_LIMIT,
+    footballDataDailyLimit: env.FOOTBALL_DATA_DAILY_LIMIT,
+
+    // --- Per-fixture retry policy ---
+    analysisMaxAttempts: env.ANALYSIS_MAX_ATTEMPTS,
 
     singleFlightLockTtlMs: env.PROVIDER_SINGLE_FLIGHT_LOCK_TTL_MS,
     singleFlightWaitMs: env.PROVIDER_SINGLE_FLIGHT_WAIT_MS,

@@ -19,6 +19,7 @@ import { footballDataCompetitionCode, partitionByProviderSupport } from '@/lib/a
 import { acquireFootballDataSlot } from '@/lib/api/rate-limiter';
 import { classifyProviderFailure } from '@/lib/api/failure-classification';
 import { incrProviderMetric } from '@/lib/api/provider-metrics';
+import { reserveProviderQuota } from '@/lib/api/quota';
 import { logger } from '@/lib/logger';
 
 const BASE_URL = 'https://api.football-data.org/v4';
@@ -46,6 +47,8 @@ async function request<T>(path: string, params: Record<string, string | number> 
       // the provider's independent limit. This limiter is completely separate
       // from the API-Football limiter.
       await acquireFootballDataSlot();
+      // Reserve daily quota for this actual outbound attempt. Retries re-reserve.
+      await reserveProviderQuota('football-data');
 
       // Count the actual outbound HTTP attempt (a logical fetch that was served
       // from cache never reaches here, so cache hits are never counted).

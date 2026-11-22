@@ -20,6 +20,7 @@ import { acquireApiFootballSlot } from '@/lib/api/rate-limiter';
 import { captureRateLimitHeaders, storeRateLimitHeaders, API_FOOTBALL_RATE_LIMIT_HEADERS } from '@/lib/api/rate-limit-headers';
 import { classifyProviderFailure } from '@/lib/api/failure-classification';
 import { incrProviderMetric } from '@/lib/api/provider-metrics';
+import { reserveProviderQuota } from '@/lib/api/quota';
 import { logger } from '@/lib/logger';
 
 const BASE_URL = 'https://v3.football.api-sports.io';
@@ -71,6 +72,8 @@ async function request<T>(
       // Every attempt (including retries) reserves a slot in the shared
       // distributed rate limiter first, so retries cannot bypass the limit.
       await acquireApiFootballSlot();
+      // Reserve daily quota for this actual outbound attempt. Retries re-reserve.
+      await reserveProviderQuota('api-football');
       // Count the actual outbound HTTP attempt. `provider:requests` is a
       // deprecated alias retained for backward compatibility; `af:httpRequests`
       // is the canonical, provider-namespaced counter (a cache hit never reaches
