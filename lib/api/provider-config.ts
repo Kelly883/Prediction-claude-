@@ -38,6 +38,27 @@ const ProviderConfigSchema = z.object({
   /** Maximum single sleep between re-checks while waiting for a slot. */
   apiFootballMaxSleepMs: intField(1_000),
 
+  // --- Independent Football-Data.org limiter (internal safety limits).
+  // Defaults are pinned to the DOCUMENTED FREE-PLAN CEILING (10 requests/min)
+  // because the account's paid entitlement is NOT verified. Never raise these on
+  // an assumption about plan capacity — only via validated env after an
+  // authorized live probe confirms the entitlement.
+  /** Requests permitted per second across ALL workers (internal safety limit). */
+  footballDataRps: intField(1),
+  /** Requests permitted per minute across ALL workers (documented free-tier ceiling). */
+  footballDataRpm: intField(10),
+  /** Maximum time a caller will wait for a rate-limit slot before failing closed. */
+  footballDataMaxWaitMs: intField(10_000),
+  /** Maximum single sleep between re-checks while waiting for a slot. */
+  footballDataMaxSleepMs: intField(1_000),
+
+  // --- Execution-time budget guard for the daily analysis run ---
+  /** Wall-clock ceiling for a single analysis invocation before it checkpoints
+   *  and defers the remainder to the next invocation (see lib/analysis/ingestion/budget.ts). */
+  analysisMaxRuntimeMs: intField(240_000),
+  /** Fixtures processed per durable, idempotent ingestion batch. */
+  analysisBatchSize: intField(25),
+
   // --- Daily quota monitoring thresholds ---
   quotaWarningThreshold: ratioField(0.7),
   quotaCriticalThreshold: ratioField(0.85),
@@ -91,6 +112,14 @@ export function providerConfigSource(env: NodeJS.ProcessEnv = process.env): Reco
     apiFootballRpm: env.PROVIDER_RPM,
     apiFootballMaxWaitMs: env.PROVIDER_MAX_WAIT_MS,
     apiFootballMaxSleepMs: env.PROVIDER_MAX_SLEEP_MS,
+
+    footballDataRps: env.FOOTBALL_DATA_RPS,
+    footballDataRpm: env.FOOTBALL_DATA_RPM,
+    footballDataMaxWaitMs: env.FOOTBALL_DATA_MAX_WAIT_MS,
+    footballDataMaxSleepMs: env.FOOTBALL_DATA_MAX_SLEEP_MS,
+
+    analysisMaxRuntimeMs: env.PROVIDER_ANALYSIS_MAX_RUNTIME_MS,
+    analysisBatchSize: env.PROVIDER_ANALYSIS_BATCH_SIZE,
 
     quotaWarningThreshold: env.PROVIDER_QUOTA_WARNING_THRESHOLD,
     quotaCriticalThreshold: env.PROVIDER_QUOTA_CRITICAL_THRESHOLD,

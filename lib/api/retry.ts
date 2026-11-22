@@ -67,10 +67,22 @@ export interface RetryOptions {
   retries?: number;
   /** Base backoff in ms. Clamped to [0, 60_000]. */
   baseDelayMs?: number;
-  /** Hard cap on any single backoff in ms. */
+  /** Hard cap on any single backoff in ms (applies to exponential backoff ONLY,
+   *  never to a provider-requested Retry-After delay). */
   maxDelayMs?: number;
+  /**
+   * Total retry budget (ms) for this call. When the provider-requested
+   * `Retry-After` (or the exponential backoff) would run past the budget, the
+   * retry is abandoned and the last error is rethrown — we NEVER shorten the
+   * provider's requested delay to retry early. The caller fails or defers.
+   */
+  budgetMs?: number;
+  /** Absolute deadline (epoch ms). Takes precedence over `budgetMs`. */
+  deadline?: number;
   /** Injectable sleep, used by tests to avoid real timers. */
   sleep?: (ms: number) => Promise<void>;
+  /** Injectable clock, used by tests. */
+  now?: () => number;
 }
 
 const DEFAULT_RETRIES = 2;
@@ -91,12 +103,27 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-/** Parse a `Retry-After` header (seconds or HTTP-date) into seconds. */
+/**
+ * Parse a `Retry-After` header (delta-seconds OR HTTP-date) into seconds.
+ *
+ * Supported formats (RFC 7231 §7.1.3):
+ *   - a non-negative integer number of seconds, e.g. `120`
+ *   - an HTTP-date, e.g. `Wed, 21 Oct 2026 07:28:00 GMT`
+ *
+ * A malformed, negative or otherwise unparseable value is rejected (returns
+ * `undefined`) so the caller falls back to its own backoff rather than acting
+ * on a bogus delay. A valid HTTP-date in the past yields 0 (retry is permitted
+ * immediately — the provider requested no further delay).
+ */
 export function parseRetryAfter(value: string | null | undefined, now = Date.now()): number | undefined {
   if (!value) return undefined;
   const trimmed = value.trim();
   if (trimmed === '') return undefined;
 
+  // Reject an explicit negative value outright rather than coercing it to 0.
+  if (trimmed.startsWith('-')) return undefined;
+
+  // Delta-seconds (integer, possibly with a fractional part).
   if (/^\d+(\.\d+)?$/.test(trimmed)) {
     return Math.max(0, Number(trimmed));
   }
@@ -118,6 +145,9 @@ export async function withBoundedRetry<T>(
   const baseDelayMs = clamp(options.baseDelayMs ?? envInt('PROVIDER_RETRY_BASE_MS', DEFAULT_BASE_DELAY_MS), 0, ABSOLUTE_MAX_DELAY_MS);
   const maxDelayMs = clamp(options.maxDelayMs ?? envInt('PROVIDER_RETRY_MAX_MS', DEFAULT_MAX_DELAY_MS), baseDelayMs, ABSOLUTE_MAX_DELAY_MS);
   const sleep = options.sleep ?? defaultSleep;
+  const now = options.now ?? Date.now;
+  const startedAt = now();
+  const deadline = options.deadline ?? (options.budgetMs !== undefined ? startedAt + options.budgetMs : undefined);
 
   let lastError: unknown;
   for (let attemptIndex = 0; attemptIndex <= retries; attemptIndex += 1) {
@@ -129,10 +159,18 @@ export async function withBoundedRetry<T>(
       if (!recoverable || attemptIndex === retries) break;
 
       const retryAfterSeconds = err instanceof ProviderRateLimitError ? err.retryAfterSeconds : undefined;
-      const exponential = baseDelayMs * 2 ** attemptIndex;
+      // A provider-requested Retry-After is HONOURED IN FULL — it is never
+      // clamped down to `maxDelayMs` (that would retry earlier than the
+      // provider allowed). Only our own exponential backoff is capped.
       const delayMs = retryAfterSeconds !== undefined
-        ? clamp(retryAfterSeconds * 1000, 0, maxDelayMs)
-        : clamp(exponential, 0, maxDelayMs);
+        ? Math.max(0, retryAfterSeconds * 1000)
+        : clamp(baseDelayMs * 2 ** attemptIndex, 0, maxDelayMs);
+
+      // If honouring the delay would run past the execution budget we abandon
+      // the retry (fail/defer safely) rather than shorten it and retry early.
+      if (deadline !== undefined && now() + delayMs > deadline) {
+        break;
+      }
 
       await sleep(delayMs);
     }

@@ -351,6 +351,7 @@ enum AnalysisRunStatus {
   pending
   running
   completed
+  deferred
   failed
 }
 

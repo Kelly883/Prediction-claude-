@@ -1,11 +1,21 @@
 /**
- * API-Football rate-limit response-header capture (Phase 1 — Stage 3).
+ * API-Football rate-limit response-header capture (Phase 1 — Stage 3, hardened).
  *
- * API-Football documents rate-limit information in response headers. We capture
- * exactly the documented names and store the latest observed values so quota
- * monitoring can use them when available. Only headers that actually carry a
- * verified numeric value are stored — we never invent a value or treat a missing
- * header as zero.
+ * API-Football documents TWO independent measurement windows in response
+ * headers (see docs for the documentation-verified names). They must NEVER be
+ * mixed:
+ *
+ *   DAILY window (daily quota consumption):
+ *     - `x-ratelimit-requests-limit`     → daily allocation
+ *     - `x-ratelimit-requests-remaining` → daily remaining
+ *
+ *   PER-MINUTE window (short-term rate throttle):
+ *     - `X-RateLimit-Limit`     → per-minute ceiling
+ *     - `X-RateLimit-Remaining` → per-minute remaining
+ *
+ * A per-minute header must never be used to compute daily consumption, and a
+ * missing header is never treated as zero. Only headers that actually carry a
+ * verified numeric value are stored.
  *
  * This is a leaf module (imports only redis + logger) to avoid a circular
  * dependency between the low-level request layer and the quota service.
@@ -24,12 +34,27 @@ export const API_FOOTBALL_RATE_LIMIT_HEADERS = [
   'X-RateLimit-Remaining',
 ] as const;
 
-const LIMIT_HEADER_NAMES = ['x-ratelimit-requests-limit', 'x-ratelimit-limit'] as const;
-const REMAINING_HEADER_NAMES = ['x-ratelimit-requests-remaining', 'x-ratelimit-remaining'] as const;
+/** DAILY quota window header names (lower-cased). */
+export const DAILY_LIMIT_HEADER = 'x-ratelimit-requests-limit';
+export const DAILY_REMAINING_HEADER = 'x-ratelimit-requests-remaining';
+/** PER-MINUTE rate window header names (lower-cased). */
+export const PER_MINUTE_LIMIT_HEADER = 'x-ratelimit-limit';
+export const PER_MINUTE_REMAINING_HEADER = 'x-ratelimit-remaining';
 
+/**
+ * Latest observed rate-limit headers, with the two windows kept strictly
+ * separate. `limit`/`remaining` are the DAILY pair (names retained for
+ * backward compatibility); `perMinute*` are the per-minute pair.
+ */
 export interface StoredRateLimitHeaders {
+  /** DAILY allocation (`x-ratelimit-requests-limit`). */
   limit: number | null;
+  /** DAILY remaining (`x-ratelimit-requests-remaining`). */
   remaining: number | null;
+  /** PER-MINUTE ceiling (`X-RateLimit-Limit`) — never used for daily quota. */
+  perMinuteLimit: number | null;
+  /** PER-MINUTE remaining (`X-RateLimit-Remaining`) — never used for daily quota. */
+  perMinuteRemaining: number | null;
   capturedAt: string;
 }
 
@@ -45,24 +70,65 @@ export function captureRateLimitHeaders(response: Response): Record<string, stri
   return out;
 }
 
-function pickNumber(headers: Record<string, string>, names: readonly string[]): number | null {
-  for (const name of names) {
-    const raw = headers[name];
-    if (raw === undefined || raw === '') continue;
-    const value = Number(raw);
-    if (Number.isFinite(value)) return value;
-  }
-  return null;
+function pickNumber(headers: Record<string, string>, name: string): number | null {
+  const raw = headers[name];
+  if (raw === undefined || raw === '') return null;
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : null;
 }
 
-/** Persist the latest observed rate-limit headers. Best-effort; never throws. */
+/**
+ * Persist the latest observed rate-limit headers, keeping the daily and
+ * per-minute windows as separate fields. Best-effort; never throws.
+ *
+ * Merge rules (never fabricate, never degrade a valid snapshot):
+ *  - Only fields with a verified numeric value are written.
+ *  - An incoming capture that is OLDER than the stored capture is ignored
+ *    entirely, so an out-of-order response cannot overwrite newer data.
+ *  - A window that is absent from the incoming capture keeps its stored value.
+ *  - If both windows are absent, nothing is written (no overwrite with nulls).
+ */
 export async function storeRateLimitHeaders(headers: Record<string, string>, now: Date = new Date()): Promise<void> {
-  const limit = pickNumber(headers, LIMIT_HEADER_NAMES);
-  const remaining = pickNumber(headers, REMAINING_HEADER_NAMES);
+  const incomingDailyLimit = pickNumber(headers, DAILY_LIMIT_HEADER);
+  const incomingDailyRemaining = pickNumber(headers, DAILY_REMAINING_HEADER);
+  const incomingPerMinuteLimit = pickNumber(headers, PER_MINUTE_LIMIT_HEADER);
+  const incomingPerMinuteRemaining = pickNumber(headers, PER_MINUTE_REMAINING_HEADER);
+
+  const hasIncoming =
+    incomingDailyLimit !== null ||
+    incomingDailyRemaining !== null ||
+    incomingPerMinuteLimit !== null ||
+    incomingPerMinuteRemaining !== null;
   // Nothing verified to store: do not overwrite a previous value with nulls.
-  if (limit === null && remaining === null) return;
+  if (!hasIncoming) return;
+
+  let existing: StoredRateLimitHeaders | null = null;
   try {
-    await redis.set(HEADERS_KEY, { limit, remaining, capturedAt: now.toISOString() }, { ex: HEADER_TTL_SECONDS });
+    existing = await redis.get<StoredRateLimitHeaders>(HEADERS_KEY);
+  } catch {
+    existing = null;
+  }
+
+  const incomingMs = now.getTime();
+  if (existing) {
+    const existingMs = Date.parse(existing.capturedAt);
+    // An older capture must never overwrite a newer one.
+    if (Number.isFinite(existingMs) && existingMs > incomingMs) {
+      logger.warn('provider.quota.headerStoreSkipped', { reason: 'stale-capture' });
+      return;
+    }
+  }
+
+  const merged: StoredRateLimitHeaders = {
+    limit: incomingDailyLimit ?? existing?.limit ?? null,
+    remaining: incomingDailyRemaining ?? existing?.remaining ?? null,
+    perMinuteLimit: incomingPerMinuteLimit ?? existing?.perMinuteLimit ?? null,
+    perMinuteRemaining: incomingPerMinuteRemaining ?? existing?.perMinuteRemaining ?? null,
+    capturedAt: now.toISOString(),
+  };
+
+  try {
+    await redis.set(HEADERS_KEY, merged, { ex: HEADER_TTL_SECONDS });
   } catch (err) {
     logger.warn('provider.quota.headerStoreFailed', { error: err instanceof Error ? err.message : String(err) });
   }

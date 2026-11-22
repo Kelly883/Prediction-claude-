@@ -23,7 +23,7 @@ These are **different things** and must never be conflated.
 | Kind | Meaning | Where set | Values |
 | --- | --- | --- | --- |
 | **Provider-documented** | What the provider's plan *entitles* you to. | Provider docs / your plan. Not stored in code. | API-Football free plan = **100 requests/day**; paid plans publish per-minute/per-second *examples* (see §3). Football-Data.org free = **10 requests/min**, 12 competitions. |
-| **Internal safety limits** | Self-imposed ceilings that bound **all** traffic regardless of plan, so a burst across concurrent serverless workers cannot exhaust the account. Intentionally more conservative than any paid tier. | `lib/api/provider-config.ts`, env vars `PROVIDER_*`. | `PROVIDER_RPS=4`, `PROVIDER_RPM=240`. |
+| **Internal safety limits** | Self-imposed ceilings that bound **all** traffic regardless of plan, so a burst across concurrent serverless workers cannot exhaust the account. Intentionally more conservative than any paid tier. | `lib/api/provider-config.ts`, env vars `PROVIDER_*` / `FOOTBALL_DATA_*`. | API-Football `PROVIDER_RPS=4`, `PROVIDER_RPM=240`; Football-Data.org `FOOTBALL_DATA_RPS=1`, `FOOTBALL_DATA_RPM=10`. |
 
 **Rule:** none of the internal limits are a claim about the provider's official
 entitlement, and the code never auto-raises them based on an assumption about plan
@@ -127,38 +127,59 @@ Vercel functions execute independently and can scale out. A per-process counter
 would let N workers each spend the full budget. The limiter state therefore lives
 in **shared Redis** so the limit holds across every concurrent worker.
 
-### 2.2 Mechanism — one atomic Lua reservation
+### 2.2 Mechanism — one atomic Lua reservation (sliding-window log)
+
+> **Hardened (Provider Protection Hardening).** The original implementation used
+> two **fixed** epoch-bucketed counters (`INCR` on `…:s:{epochSecond}` /
+> `…:m:{epochMinute}`). That permits a boundary burst (e.g. 4 at the end of second
+> *N* plus 4 at the start of second *N+1* within a 1-second span). It has been
+> **replaced** with a **sliding-window log** — not merely renamed.
 
 Every attempt calls `acquireApiFootballSlot()`
-([`lib/api/rate-limiter.ts`](file:///workspace/lib/api/rate-limiter.ts)). It calls
-a Redis `eval` of `RATE_LIMIT_LUA`, which atomically increments **both** fixed
-windows (per-second and per-minute) and returns `{allowed, waitMs}`:
+([`lib/api/rate-limiter.ts`](file:///workspace/lib/api/rate-limiter.ts)). It issues
+a single Redis `eval` of `SLIDING_WINDOW_LUA` over two sorted sets (per-second and
+per-minute). Each granted reservation is a member scored by its timestamp; the
+script first evicts members older than the window, then checks the observed count
+against the ceiling:
 
 ```lua
-local sec = redis.call('INCR', KEYS[1])
-if sec == 1 then redis.call('PEXPIRE', KEYS[1], ARGV[3]) end
-if sec > tonumber(ARGV[1]) then
-  local ttl = redis.call('PTTL', KEYS[1]); if ttl < 0 then ttl = 0 end
-  return {0, ttl}
-end
-local minute = redis.call('INCR', KEYS[2])
-if minute == 1 then redis.call('PEXPIRE', KEYS[2], ARGV[4]) end
-if minute > tonumber(ARGV[2]) then
-  local ttl = redis.call('PTTL', KEYS[2]); if ttl < 0 then ttl = 0 end
-  return {0, ttl}
-end
+redis.call('ZREMRANGEBYSCORE', KEYS[1], 0, now - secWin)
+redis.call('ZREMRANGEBYSCORE', KEYS[2], 0, now - minWin)
+if redis.call('ZCARD', KEYS[1]) >= rps then return {0, waitToOldestSecond} end
+if redis.call('ZCARD', KEYS[2]) >= rpm then return {0, waitToOldestMinute} end
+redis.call('ZADD', KEYS[1], now, member)
+redis.call('ZADD', KEYS[2], now, member)
+redis.call('PEXPIRE', KEYS[1], secWin + 1000)
+redis.call('PEXPIRE', KEYS[2], minWin + 1000)
 return {1, 0}
 ```
 
-Keys: `provider:rl:api-football:s:{epochSecond}` and
-`provider:rl:api-football:m:{epochMinute}`. Because the check-and-reserve is a
-single server-side script, **two workers can never both be granted the same final
-slot**, and state survives individual function termination.
+Keys: `provider:rl:api-football:s` and `provider:rl:api-football:m`. Because the
+check-and-reserve is a single server-side script, **two workers can never both be
+granted the same final slot**, and state survives individual function termination.
+`waitMs` on denial is the time until the oldest blocking member leaves its window.
+
+**Guarantees:** atomic Redis-side reservation; correct across serverless instances;
+no burst exceeding the configured sustained rate (any 1000 ms window ≤ `rps`, any
+60 000 ms window ≤ `rpm`); independent per-second and per-minute ceilings; bounded
+waiting; fail-closed on Redis errors or unexpected script replies; every retry
+re-reserves a fresh slot. See the hardening report §4 for the full algorithm
+discussion and boundary-burst tests.
+
+### 2.2a Independent Football-Data.org limiter
+
+Football-Data.org traffic has its **own** distributed limiter
+(`acquireFootballDataSlot()`, keys `provider:rl:football-data:s|m`, metrics
+`fd:*`) with **completely independent** limits and configuration
+(`FOOTBALL_DATA_RPS/RPM/MAX_WAIT_MS/MAX_SLEEP_MS`). The API-Football limiter is
+**not** treated as protection for Football-Data.org, and a change to one never
+affects the other. Defaults are pinned to the **documented Free-plan ceiling**
+(10 requests/minute) because the account's paid entitlement is **not verified**.
 
 ### 2.3 Required behaviour implemented
 
-1. Check the shared limiter (read the windows) — inside the Lua script.
-2. Reserve capacity atomically.
+1. Check the shared limiter (count the sliding window) — inside the Lua script.
+2. Reserve capacity atomically (single `eval`, no read-then-write race).
 3. If the permitted rate is reached, **wait** (`min(max(waitMs,50), maxSleepMs)`)
    and re-check, up to `PROVIDER_MAX_WAIT_MS`.
 4. If a slot still cannot be obtained within the bounded wait, **fail closed** by
@@ -168,10 +189,12 @@ slot**, and state survives individual function termination.
 
 ### 2.4 Redis failure behaviour
 
-`redisReserve` catches any Redis error and throws `ProviderProtectionError`
-("API-Football rate limiter unavailable"). There is **no** code path that bypasses
-the distributed limiter on a Redis outage, for automated *or* manual operations.
-An unknown/unexpected Lua result shape is also treated as *not allowed*.
+`reserveWithRedis` wraps the reservation: any Redis error, or an unexpected
+(not `[allowed, waitMs]`) script reply, throws `ProviderProtectionError`
+("rate limiter unavailable / unexpected response") — it is **not** treated as
+allowed. There is **no** code path that bypasses the distributed limiter on a Redis
+outage, for automated *or* manual operations. The **same** fail-closed policy
+applies to both the API-Football and Football-Data.org limiters.
 
 ### 2.5 Configuration (no code change required)
 
@@ -180,10 +203,14 @@ Limits are read from validated env through
 
 | Env var | Field | Default |
 | --- | --- | --- |
-| `PROVIDER_RPS` | requests / second | `4` |
-| `PROVIDER_RPM` | requests / minute | `240` |
+| `PROVIDER_RPS` | requests / second (API-Football) | `4` |
+| `PROVIDER_RPM` | requests / minute (API-Football) | `240` |
 | `PROVIDER_MAX_WAIT_MS` | max total wait for a slot | `10000` |
 | `PROVIDER_MAX_SLEEP_MS` | max single sleep between re-checks | `1000` |
+| `FOOTBALL_DATA_RPS` | requests / second (Football-Data.org) | `1` |
+| `FOOTBALL_DATA_RPM` | requests / minute (Football-Data.org) | `10` |
+| `FOOTBALL_DATA_MAX_WAIT_MS` | max total wait for a slot | `10000` |
+| `FOOTBALL_DATA_MAX_SLEEP_MS` | max single sleep between re-checks | `1000` |
 
 Each field parses independently and falls back to its conservative default if
 malformed, so a single bad value cannot crash the runtime or drop the other
@@ -191,20 +218,23 @@ settings.
 
 ---
 
-## 3. Configured request limits (Stage 2)
+## 3. Configured request limits (Stage 2, hardened)
 
 | Limit | Value | Nature |
 | --- | --- | --- |
-| Per second | **4** | Internal safety limit |
-| Per minute | **240** | Internal safety limit |
+| API-Football per second | **4** | Internal safety limit |
+| API-Football per minute | **240** | Internal safety limit |
+| Football-Data.org per second | **1** | Internal safety limit |
+| Football-Data.org per minute | **10** | Documented Free-plan ceiling (conservative default) |
 
-These bound **all** API-Football traffic including retries, across **all**
-serverless instances. They are intentionally conservative and are **not** derived
-from, nor a claim about, the provider's published plan capacity. For context only,
-API-Football's *documented plan examples* describe much higher per-minute/second
-ceilings on paid tiers (e.g. Pro ≈ 300/min or 5/s; Ultra ≈ 450/min or 7/s; Mega
-≈ 900/min or 15/s) and a free tier of ~100 requests/day — **we do not rely on
-those numbers** and never raise our limits on that basis.
+These bound **all** provider traffic including retries, across **all** serverless
+instances. They are intentionally conservative and are **not** derived from, nor a
+claim about, the provider's published plan capacity. For context only, API-Football's
+*documented plan examples* describe much higher per-minute/second ceilings on paid
+tiers (e.g. Pro ≈ 300/min or 5/s; Ultra ≈ 450/min or 7/s; Mega ≈ 900/min or 15/s)
+and a free tier of ~100 requests/day — **we do not rely on those numbers** and never
+raise our limits on that basis. Football-Data.org's Free tier is documented at
+**10 requests/minute**; our defaults match that ceiling.
 
 ---
 
@@ -216,7 +246,9 @@ those numbers** and never raise our limits on that basis.
   in-memory store. In dev/test it falls back to a process-local stub.
 * Atomic operations used: `eval`/`evalsha` (limiter reservation + single-flight
   lock release), `set … NX EX`, `incr`, `get`, `del`.
-* Rate-limit windows use `INCR` + `PEXPIRE` inside Lua.
+* Rate-limit reservations use a **sliding-window log** (`ZREMRANGEBYSCORE` /
+  `ZCARD` / `ZADD` / `PEXPIRE` over two sorted sets) inside one atomic Lua script
+  — one set per provider per window. No fixed-window `INCR` counters remain.
 * Single-flight locks use `SET key token NX EX <ttl>` and compare-and-delete
   release (§9).
 
@@ -227,16 +259,25 @@ those numbers** and never raise our limits on that basis.
 Implemented in [`lib/api/quota.ts`](file:///workspace/lib/api/quota.ts) and
 [`lib/api/rate-limit-headers.ts`](file:///workspace/lib/api/rate-limit-headers.ts).
 
-**Verified sources only** (no invented field names):
+**Verified sources only** (no invented field names). API-Football exposes **two
+independent measurement windows** and they are kept strictly separate:
 
 1. **`/status` endpoint** (documented not to count against the daily quota):
    * `response.requests.current` → requests consumed today.
    * `response.requests.limit_day` → daily allocation.
    * `response.subscription.{plan,end,active}` → plan metadata (no account
      identity is ever read or stored).
-2. **Response headers** (documented names): `x-ratelimit-requests-limit`,
-   `x-ratelimit-requests-remaining`, `X-RateLimit-Limit`, `X-RateLimit-Remaining`.
-   These are captured for observability and as a fallback limit/remaining source.
+2. **Response headers** — two **separate** documented windows:
+   * **DAILY:** `x-ratelimit-requests-limit`, `x-ratelimit-requests-remaining`.
+   * **PER-MINUTE:** `X-RateLimit-Limit`, `X-RateLimit-Remaining`.
+
+**Hardened (Provider Protection Hardening):** the earlier snapshot **mixed** the
+`/status` body daily fields with the daily header pair (e.g. `limit` from `/status`,
+`remaining` from a header), producing an internally inconsistent snapshot
+(`remaining` that contradicted `limit − consumed`). `buildQuotaSnapshot` now picks
+**exactly one daily source** — `/status` takes precedence, else the DAILY header
+pair, else `unknown` — and derives `remaining`/`consumed` consistently within that
+single source. **A per-minute header is never used to compute daily consumption.**
 
 **Snapshot** (`provider:quota:api-football`, TTL `PROVIDER_QUOTA_SNAPSHOT_TTL_SECONDS`):
 
@@ -244,27 +285,36 @@ Implemented in [`lib/api/quota.ts`](file:///workspace/lib/api/quota.ts) and
 | --- | --- |
 | `provider` | `api-football` |
 | `plan`, `subscriptionEnd` | from `/status` subscription (optional) |
-| `dailyLimit` | `requests.limit_day`, else header limit, else `null` |
-| `consumed` | `requests.current`, else derived from a matched header (limit − remaining), else `null` |
-| `remaining` | header remaining, else `limit − consumed`, else `null` |
+| `dailyLimit` | daily window only: `requests.limit_day`, else the DAILY header limit, else `null` |
+| `consumed` | daily window only: `requests.current`, else `dailyLimit − dailyRemaining`, else `null` |
+| `remaining` | daily window only: `dailyLimit − consumed`, or the DAILY header remaining, else `null` |
+| `perMinuteLimit` | per-minute window only: `X-RateLimit-Limit`, else `null` |
+| `perMinuteRemaining` | per-minute window only: `X-RateLimit-Remaining`, else `null` |
+| `perMinuteSource` | `headers` / `unknown` |
 | `lastCheckedAt` | ISO time of the check |
 | `status` | `OK` / `STALE` / `UNKNOWN` |
-| `source` | `status-endpoint` / `headers` / `unknown` |
+| `source` | daily source: `status-endpoint` / `headers` / `unknown` |
 
-**Never assume an unavailable value is zero.** Missing values are `null` and the
-snapshot is labelled `UNKNOWN`. Old snapshots are re-labelled `STALE` by
-`getProviderQuota` when older than `PROVIDER_QUOTA_FRESHNESS_SECONDS`.
+**Never assume an unavailable value is zero.** Missing values are `null`; if the
+daily window cannot be established (`limit` or `consumed` unknown) `status` stays
+`UNKNOWN`. Old snapshots are re-labelled `STALE` by `getProviderQuota` when older
+than `PROVIDER_QUOTA_FRESHNESS_SECONDS`. A **newer valid snapshot is never
+overwritten** by an older or incomplete refresh (refuse-to-downgrade guard), and
+an out-of-order header capture is ignored entirely.
 
 Refresh is performed by a **dedicated** route
 ([`app/api/cron/provider-quota/route.ts`](file:///workspace/app/api/cron/provider-quota/route.ts))
-so the daily analysis run never performs a live quota refresh inline. The
-superadmin monitoring endpoint can also refresh on demand (`?refresh=1`). Both
+so the daily analysis run never performs a live quota refresh inline. A best-effort
+Redis **lease** (`provider:quota:refresh:lease`, `SET NX EX`) de-duplicates
+overlapping refreshes. The superadmin monitoring endpoint can also refresh on
+demand (`?refresh=1`). Every refresh and its success/failure is recorded
+(`quota:refreshSuccess` / `quota:refreshFailure` / `quota:refreshSkipped`). Both
 paths go through the global limiter.
 
-> **Note (verified vs. unverified):** the `/status` field names above are taken
-> from the provider's documentation. **No authorized live `/status` response was
-> obtained in this change**, so the field names are documentation-verified, not
-> capture-verified.
+> **Note (verified vs. unverified):** the `/status` field names and header names
+> above are taken from the provider's documentation. **No authorized live `/status`
+> response was obtained in this change**, so the field names are
+> documentation-verified, not capture-verified.
 
 ---
 
@@ -324,13 +374,20 @@ Retries live in [`lib/api/retry.ts`](file:///workspace/lib/api/retry.ts)
 ### 8.2 Rules
 
 * **Auth / invalid key / quota:** never retried repeatedly — `withBoundedRetry`
-  rethrows non-recoverable errors immediately.
+  rethrows non-recoverable errors immediately (no retry, no retry storm). A single
+  retry is never scheduled twice for the same attempt.
 * **Recoverable:** exponential backoff with a hard cap (`PROVIDER_MAX_RETRIES`
-  default 2, `PROVIDER_RETRY_BASE_MS`, `PROVIDER_RETRY_MAX_MS`); a 429's
-  `Retry-After` is parsed (`parseRetryAfter`) and respected, with a sane cap.
-* **Every retry passes through the global limiter** — `acquireApiFootballSlot()`
-  is called inside the retry attempt function, so a retry cannot bypass the rate
-  control or the concurrency controls.
+  default 2, `PROVIDER_RETRY_BASE_MS`, `PROVIDER_RETRY_MAX_MS`).
+* **`Retry-After` (hardened):** `parseRetryAfter` accepts **both** documented
+  formats — an integer (or fractional) number of seconds **and** an HTTP date —
+  and safely rejects malformed, empty or negative values (falls back to backoff).
+  When present, the provider's delay is honoured **in full**: it is **never
+  shortened to retry early**. If the requested delay would exceed the remaining
+  execution budget (`budgetMs`/`deadline`), the attempt is **abandoned** rather than
+  retried early; the caller fails or defers safely.
+* **Every retry passes through the correct provider-specific limiter** — the retry
+  attempt function calls the relevant `acquire…Slot()`, so a retry cannot bypass
+  rate control or concurrency controls and always reserves a **fresh** slot.
 * The circuit breaker counts only *recoverable* failures; auth/quota are surfaced
   and never masked.
 
@@ -354,6 +411,26 @@ Algorithm for key `k`:
    (`PROVIDER_SINGLE_FLIGHT_POLL_MS` interval). If the owner fails, the waiter
    times out with `SingleFlightError` — it is **never** handed fabricated data.
 
+#### 9.1 Redis-outage policy (hardened)
+
+Single-flight locking needs Redis. When Redis is unavailable for the lock
+operation, two policies exist (`outagePolicy`):
+
+* **`fail-closed` (the default for automated ingestion via
+  `cachedProviderFetch`):** the fetch is **refused** with `SingleFlightError`
+  instead of running the loader unguarded. Rationale: without a shared lock an
+  uncontrolled number of concurrent workers could each issue the *same* provider
+  request (a thundering herd), and on a cold cache that both wastes quota and can
+  trip provider limits. Failing closed keeps the provider protection intact.
+* **`degrade` (explicit, observable):** the loader runs directly. This is
+  **observable** (`singleFlight:lockUnavailable` + a `provider.…lockUnavailable`
+  log) and is **never** a silent path. The **global distributed limiter remains
+  mandatory and is never weakened** to make single-flight "work": every outbound
+  request still reserves a provider slot, so degraded mode is bounded by the
+  provider rate limit even though duplicate in-flight requests are not collapsed.
+
+There is **no** path that fabricates a cache result.
+
 Safety properties:
 
 * **Unique ownership token** (`randomUUID`) per acquisition.
@@ -363,11 +440,8 @@ Safety properties:
   15000, wait 18000) sized to exceed normal provider latency.
 * **No permanent locks**: the owner releases in a `finally`, even if the loader
   throws.
-* **Redis unavailable for locking**: single-flight is skipped and the loader runs
-  directly — **the global rate limiter still bounds traffic**, so this is not a
-  protection bypass.
 * **Loader failure** propagates to the owner; waiters get a clear
-  failure/timeout, not an invented success.
+  failure/timeout, not an invented success (`singleFlight:failed` metric).
 
 ---
 
@@ -419,8 +493,15 @@ Key-completeness and safety:
 * A single fixture failure does not abort unrelated fixtures: `safe(...)` in
   `fetchApiFootballEnrichment` swallows *recoverable* per-endpoint failures and
   records them; only entitlement errors (auth/quota) abort the whole run.
-* The daily run stays within Vercel execution limits by bounding concurrency and
-  the per-attempt wait (`PROVIDER_MAX_WAIT_MS`).
+* The daily run is bounded by an explicit **execution-time budget**
+  (`PROVIDER_ANALYSIS_MAX_RUNTIME_MS`, default 240 000 ms — below the route's
+  `maxDuration` of 300 s) rather than relying on individual waits being bounded.
+  Ingestion is **batched** (`PROVIDER_ANALYSIS_BATCH_SIZE`, default 25 fixtures
+  per durable transaction). When the budget is reached mid-run the remainder is
+  **deferred idempotently** to the next invocation — the fixture list is never
+  silently truncated, no partial run is marked `completed`, and already-persisted
+  fixtures are skipped on resume. See document hardening §8 for the runtime
+  calculation and the resumable-run design.
 
 ---
 
@@ -450,24 +531,44 @@ Key-completeness and safety:
 duration, error category; plus `provider.rateLimit.wait/acquired/waitExceeded`,
 `provider.quota.refreshed/storeFailed/readFailed`, `provider.fallback.activated`,
 `football.cache.readFailed/writeFailed/lockUnavailable/lockReleaseFailed`,
-`provider.ingestionGate`, and `analysis.run.{started,completed,failed,blocked}`.
+`provider.ingestionGate`, and
+`analysis.run.{started,resumed,completed,failed,blocked,deferred,budget}`.
 
 ### 13.2 Day-scoped metrics (`lib/api/provider-metrics.ts`)
 
-Counters in Redis (`provider:metrics:{day}:{name}`, 7-day TTL):
-`cache:hit`, `cache:miss`, `cache:readFailure`, `cache:writeFailure`,
-`singleFlight:lockAcquired`, `singleFlight:contended`, `provider:requests`,
-`provider:rateLimitWait`. These expose cache effectiveness, single-flight
-contention, provider-request volume and duplicate-request prevention.
+Counters in Redis (`provider:metrics:{day}:{name}`, 7-day TTL). Providers are
+tracked **separately** (`af:*` = API-Football, `fd:*` = Football-Data.org):
+
+* **Per provider:** `httpRequests` (actual outbound HTTP attempts — **not** logical
+  fetches, **not** cache hits), `success`, `failed`, `429`, `authFailures`,
+  `quotaFailures`, `rateLimitWait`, `rateLimitDenied`, `fallbackActivated`.
+* **Cache (provider-agnostic):** `cache:hit`, `cache:miss`, `cache:readFailure`,
+  `cache:writeFailure`.
+* **Single-flight:** `singleFlight:lockAcquired`, `singleFlight:contended`,
+  `singleFlight:lockUnavailable`, `singleFlight:waiterTimeout`,
+  `singleFlight:failed`.
+* **Operational:** `quota:refreshSuccess`, `quota:refreshFailure`,
+  `quota:refreshSkipped`, `ingestion:completed`, `ingestion:deferred`,
+  `ingestion:blocked`.
+* **Legacy aliases** (retained, see below): `provider:requests`,
+  `provider:rateLimitWait`.
+
+**A cache hit is never counted as a provider request** — only the HTTP choke-point
+increments `af:httpRequests` / `fd:httpRequests`. Missing counters read as `0`
+(never fabricated non-zero). No counter key or field is derived from a secret.
 
 ### 13.3 Admin visibility
 
 `GET /api/superadmin/analysis/provider-status`
 ([route](file:///workspace/app/api/superadmin/analysis/provider-status/route.ts))
 guarded by the **existing** `requireAnalysisAdmin` authorization; never exposed to
-ordinary users. Returns: quota (level, ratio, reason), internal rate-limit config,
-thresholds, circuit states, metrics, and the last ingestion run. `?refresh=1`
-re-polls `/status` (through the limiter); that is the only provider request here.
+ordinary users. Returns: API-Football daily quota + per-minute rate information,
+quota freshness, internal rate-limit config, **Football-Data.org limiter status**,
+provider-scoped counters (`metrics.apiFootball` / `metrics.footballData`),
+rate-limit waits/denials, cache effectiveness, single-flight contention, circuit
+states, threshold config, and the last ingestion run (including its
+`blockedReason`). `?refresh=1` re-polls `/status` (through the limiter); that is the
+only provider request here. No secret is ever included in the payload.
 
 > **Remaining UI work:** this change exposes the **backend monitoring endpoint**.
 > Wiring a dashboard screen to it in the superadmin UI is out of the safe scope of
@@ -491,6 +592,10 @@ PROVIDER_RPS=4
 PROVIDER_RPM=240
 PROVIDER_MAX_WAIT_MS=10000
 PROVIDER_MAX_SLEEP_MS=1000
+FOOTBALL_DATA_RPS=1
+FOOTBALL_DATA_RPM=10
+FOOTBALL_DATA_MAX_WAIT_MS=10000
+FOOTBALL_DATA_MAX_SLEEP_MS=1000
 PROVIDER_QUOTA_WARNING_THRESHOLD=0.7
 PROVIDER_QUOTA_CRITICAL_THRESHOLD=0.85
 PROVIDER_QUOTA_STOP_THRESHOLD=0.95
@@ -498,6 +603,8 @@ PROVIDER_QUOTA_FRESHNESS_SECONDS=1800
 PROVIDER_QUOTA_SNAPSHOT_TTL_SECONDS=86400
 PROVIDER_QUOTA_UNKNOWN_POLICY=block
 PROVIDER_ENRICHMENT_CONCURRENCY=10
+PROVIDER_ANALYSIS_MAX_RUNTIME_MS=240000
+PROVIDER_ANALYSIS_BATCH_SIZE=25
 PROVIDER_SINGLE_FLIGHT_LOCK_TTL_MS=15000
 PROVIDER_SINGLE_FLIGHT_WAIT_MS=18000
 PROVIDER_SINGLE_FLIGHT_POLL_MS=150
@@ -534,36 +641,50 @@ Related (pre-existing): `API_FOOTBALL_KEY`, `FOOTBALL_DATA_API_KEY`,
 
 ---
 
-## 16. Tests performed (Stage 10)
+## 16. Tests performed (Stage 10 + hardening)
 
-New suite [`tests/provider-protection.test.ts`](file:///workspace/tests/provider-protection.test.ts)
-(36 tests) covers:
+Two suites now cover the provider-protection layer:
 
-* **Rate limiter:** grant, wait-and-retry, fail-closed on wait exhaustion,
-  retry-passes-through-limiter, atomic-result parsing, conservative defaults,
-  Redis-unavailable fail-closed.
-* **Quota monitoring:** `/status` snapshot, UNKNOWN-never-zero, header fallback,
-  70/85/95% thresholds, unknown level, stale snapshot + conservative block,
-  stop-threshold block and post-reset allow, unknown-policy control.
-* **Failure classification:** fatal auth/invalid-key/quota; recoverable
-  rate-limit/server/network/timeout.
-* **Single-flight:** hit, miss, concurrent-miss dedup, compare-and-delete release,
-  loader-failure-leaves-no-lock, waiter-timeout-no-fabrication, Redis-down runs
-  loader directly, non-cacheable results not cached.
-* **Cache TTL policy:** per-endpoint TTL selection and ordering.
-* **Rate-limit header capture:** documented-only capture, store/read-back,
-  no-overwrite-with-empty.
-* **Provider metrics:** day-scoped increment/read.
-* **Ingestion gate:** ready, Redis-down, stop-threshold, cooldown.
-* **Config:** conservative defaults, per-field fallback, documented-env mapping.
+* [`tests/provider-protection.test.ts`](file:///workspace/tests/provider-protection.test.ts)
+  — the original 40 tests (rate limiter grant/wait/fail-closed/atomic parsing;
+  quota snapshot / UNKNOWN-never-zero / thresholds / stale; failure classification;
+  single-flight; cache TTL policy; header capture; metrics; ingestion gate; config).
+* [`tests/provider-hardening.test.ts`](file:///workspace/tests/provider-hardening.test.ts)
+  — the hardening regressions:
+  * **§3 sliding window:** Lua shape (sorted-set log, no `INCR`); **second-boundary
+    burst** and **minute-boundary burst** suppressed; **simultaneous reservations**
+    (never over-grants the final slot); sequential pacing; atomic-result parsing;
+    fail-closed on Redis error and on an unexpected reply.
+  * **§2 Football-Data.org:** independent key prefix, separate limits, env
+    independence, retry-reservation, 429/auth/quota classification.
+  * **§4 quota:** daily+per-minute from `/status`+headers without mixing; DAILY
+    header fallback; **per-minute never feeds daily**; partial pair ⇒ `UNKNOWN`;
+    70/85/95% thresholds; `STALE`; out-of-order header ignored; capture.
+  * **§4/§8 refresh guards:** refresh+store; refuse newer-overwrite; refuse
+    valid→UNKNOWN overwrite; lease de-dup; failed refresh throws.
+  * **§5 Retry-After:** integer/fractional/HTTP-date/malformed/negative/empty;
+    delay honoured in full (short and long); budget-exceeded abandons; no
+    auth/quota retry; no retry storm.
+  * **§6 execution estimator:** 48-fixture worst case (288 logical / 80 000 ms),
+    retry-heavy (864 / 221 000 ms), rpm-bound; 400 fixtures exceed budget;
+    `createRunBudget`.
+  * **§7 single-flight:** read-failure ⇒ miss; fail-closed; concurrent misses;
+    safe release; waiter takeover after lock expiry; waiter timeout.
+  * **§9 metrics:** af/fd separation; a cache hit is not a provider request;
+    missing ⇒ 0; no secret leakage.
+  * **§8/§10 security:** provider-quota cron 401/200 + non-secret payload;
+    daily-analysis cron 401; provider-status 403 non-superadmin, 200 superadmin
+    payload with quota/footballDataLimiter/cache/singleFlight/circuits/metrics and
+    no secrets.
 
-Existing suite updated: [`tests/analysis-run.test.ts`](file:///workspace/tests/analysis-run.test.ts)
-now supplies the gate's Redis read + a healthy quota snapshot and adds 4 gating
-tests (Redis unavailable, unknown quota, stop threshold, circuit cooldown).
+  Plus [`tests/analysis-run.test.ts`](file:///workspace/tests/analysis-run.test.ts)
+  gained the §6 **defer** and **resume/skip-already-persisted** tests (no partial
+  success; no duplicate predictions).
 
-**Full suite result:** `479 passed / 5 skipped` (baseline `439 passed / 5
-skipped`; +40 provider-protection tests) and `tsc --noEmit` clean. No existing
-tests were weakened or assertions removed.
+**Full suite result:** `542 passed / 5 skipped` (up from `479 passed / 5 skipped`)
+and `tsc --noEmit` clean. No existing tests were weakened or assertions removed.
+All provider tests are **MOCK-VERIFIED / CALCULATED** — they do **not** prove live
+provider behaviour.
 
 ---
 
@@ -573,17 +694,29 @@ tests were weakened or assertions removed.
   response was obtained; `/status` field names and header names are
   documentation-verified, not capture-verified. Quota monitoring is exercised
   against mocked responses.
-* **Header semantics.** `x-ratelimit-requests-*` values are captured for
-  observability and used as a fallback limit/remaining source; if a deployment's
-  headers prove to be per-window rather than daily, the derived `consumed` would be
-  conservative (may over-warn) rather than permissive.
+* **Header semantics (hardened).** The DAILY
+  (`x-ratelimit-requests-*`) and PER-MINUTE (`X-RateLimit-*`) header pairs are now
+  stored as **separate** fields and never combined; daily consumption can never be
+  derived from a per-minute header. If a deployment's daily headers prove to carry
+  a different window than documented, the derived `consumed` stays conservative
+  (may over-warn) rather than permissive.
+* **Football-Data.org paid entitlement not verified.** Its limiter defaults to the
+  documented Free-plan ceiling (10 req/min). Raising it requires an authorized live
+  probe confirming the entitlement.
 * **Quota refresh is scheduled externally.** The quota cron route exists but
   scheduling it is a production-configuration step not performed here; until it
   runs, quota stays `UNKNOWN` and ingestion is blocked under the default policy.
+  The **required order** is: refresh quota → confirm fresh/valid → evaluate gate →
+  run analysis (see §18).
 * **Monitoring UI not wired.** Only the backend endpoint is delivered.
-* **Weather** (Open-Meteo) is not routed through the API-Football limiter.
+* **Weather** (Open-Meteo) is not routed through the API-Football limiter (no
+  change made — no existing safety issue was identified there).
 * **In-memory Redis in dev/test** does not enforce cross-process limits — this is a
   development convenience only; production requires distributed Redis.
+* **Multi-invocation resume.** A deferred run completes across **repeated
+  invocations** of the daily cron. A single invocation is **not** guaranteed to
+  process the entire 48-hour fixture set; the remainder is deferred and resumed
+  idempotently (never a partial-run "success").
 
 ---
 
@@ -591,21 +724,28 @@ tests were weakened or assertions removed.
 
 - [ ] Provision `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` (production
       REQUIRES distributed Redis; the app throws without it).
-- [ ] Set `CRON_SECRET` (≥32 chars).
-- [ ] Schedule the provider-quota route (`/api/cron/provider-quota`) to run before
-      the daily analysis run, so quota is known and fresh.
+- [ ] Set `CRON_SECRET` (≥32 chars). **Both** `/api/cron/provider-quota` and
+      `/api/cron/daily-analysis` enforce it.
+- [ ] **Schedule the required cron order:** run `/api/cron/provider-quota` **before**
+      `/api/cron/daily-analysis` (e.g. quota at `0 5 * * *`, analysis at `0 6 * * *`),
+      so quota is known, valid and fresh before the gate is evaluated.
 - [ ] Confirm `PROVIDER_RPS` / `PROVIDER_RPM` match the account's *safe* budget —
       keep them conservative; do **not** raise them on assumption.
+- [ ] Confirm `FOOTBALL_DATA_RPS` / `FOOTBALL_DATA_RPM` (default Free-plan ceiling
+      1/s, 10/min) — raise only after an authorized live probe of the entitlement.
 - [ ] Review `PROVIDER_QUOTA_*` thresholds and keep
       `PROVIDER_QUOTA_UNKNOWN_POLICY=block`.
 - [ ] Confirm `PROVIDER_QUOTA_FRESHNESS_SECONDS` ≤ the quota-cron interval.
+- [ ] Confirm `PROVIDER_ANALYSIS_MAX_RUNTIME_MS` sits comfortably **below** the
+      analysis route's `maxDuration` (300 s), leaving a safety margin.
 - [ ] Review endpoint TTLs against run cadence.
 - [ ] Verify the superadmin monitoring endpoint is reachable and admin-guarded.
 - [ ] Run one **manual, authorized** `/status` check to confirm header/field names
       in this environment (do not run a full live ingestion).
-- [ ] Confirm previous successful predictions are preserved on a blocked run.
+- [ ] Confirm previous successful predictions are preserved on a blocked/deferred run.
 
 ---
 
 *No deployment, commit, push, production cron trigger, full live ingestion, or
-production env change was performed as part of this change.*
+production env change was performed as part of this change. The hardening report
+is [`docs/PREDICTPRO_PHASE_1_PROVIDER_PROTECTION_HARDENING.md`](file:///workspace/docs/PREDICTPRO_PHASE_1_PROVIDER_PROTECTION_HARDENING.md).*

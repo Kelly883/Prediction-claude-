@@ -4,7 +4,7 @@ import { errorResponse } from '@/lib/rbac';
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/logger';
 import { getProviderQuota, assessQuota, refreshProviderQuota } from '@/lib/api/quota';
-import { getRateLimitConfig } from '@/lib/api/rate-limiter';
+import { getRateLimitConfig, getFootballDataRateLimitConfig } from '@/lib/api/rate-limiter';
 import { readProviderMetrics } from '@/lib/api/provider-metrics';
 import { isProviderCircuitOpen } from '@/lib/api/circuit-breaker';
 import { getProviderConfig } from '@/lib/api/provider-config';
@@ -51,16 +51,32 @@ export async function GET(req: NextRequest) {
 
     const assessment = assessQuota(quota);
     const rateLimit = getRateLimitConfig();
+    const footballDataLimiter = getFootballDataRateLimitConfig();
     const config = getProviderConfig();
+
+    // Quota freshness: how long ago the snapshot was verified. A STALE/UNKNOWN
+    // snapshot blocks automated ingestion under the default policy.
+    const checkedMs = Date.parse(quota.lastCheckedAt);
+    const quotaAgeSeconds = Number.isFinite(checkedMs) ? Math.max(0, Math.round((now.getTime() - checkedMs) / 1000)) : null;
+    const quotaFresh = quota.status === 'OK' && quotaAgeSeconds !== null && quotaAgeSeconds <= config.quotaFreshnessSeconds;
+
+    // Cache effectiveness (provider-agnostic) — a hit is never a provider request.
+    const cacheLookups = metrics.cacheHits + metrics.cacheMisses;
+    const cacheHitRate = cacheLookups > 0 ? metrics.cacheHits / cacheLookups : null;
 
     return NextResponse.json({
       quota: {
         provider: quota.provider,
         plan: quota.plan ?? null,
         subscriptionEnd: quota.subscriptionEnd ?? null,
+        // DAILY window (drives the ingestion gate).
         dailyLimit: quota.dailyLimit,
         consumed: quota.consumed,
         remaining: quota.remaining,
+        // PER-MINUTE window (observability only — never feeds daily quota).
+        perMinuteLimit: quota.perMinuteLimit,
+        perMinuteRemaining: quota.perMinuteRemaining,
+        perMinuteSource: quota.perMinuteSource,
         lastCheckedAt: quota.lastCheckedAt,
         status: quota.status,
         source: quota.source,
@@ -68,11 +84,24 @@ export async function GET(req: NextRequest) {
         consumedRatio: assessment.consumedRatio,
         reason: assessment.reason,
       },
+      quotaFreshness: {
+        lastRefreshedAt: quota.lastCheckedAt,
+        ageSeconds: quotaAgeSeconds,
+        freshnessWindowSeconds: config.quotaFreshnessSeconds,
+        fresh: quotaFresh,
+        status: quota.status,
+      },
       rateLimit: {
         // Internal safety limits (NOT the provider's published plan limits).
         requestsPerSecond: rateLimit.perSecond,
         requestsPerMinute: rateLimit.perMinute,
         maxWaitMs: rateLimit.maxWaitMs,
+      },
+      footballDataLimiter: {
+        // The Football-Data.org limiter is SEPARATE and independently configured.
+        requestsPerSecond: footballDataLimiter.perSecond,
+        requestsPerMinute: footballDataLimiter.perMinute,
+        maxWaitMs: footballDataLimiter.maxWaitMs,
       },
       thresholds: {
         warning: config.quotaWarningThreshold,
@@ -84,6 +113,22 @@ export async function GET(req: NextRequest) {
         'api-football': apiFootballOpen ? 'open' : 'closed',
         'football-data': footballDataOpen ? 'open' : 'closed',
       },
+      cache: {
+        hits: metrics.cacheHits,
+        misses: metrics.cacheMisses,
+        hitRate: cacheHitRate,
+        readFailures: metrics.cacheReadFailures,
+        writeFailures: metrics.cacheWriteFailures,
+      },
+      singleFlight: {
+        lockAcquisitions: metrics.singleFlightLockAcquisitions,
+        contention: metrics.singleFlightContention,
+        lockUnavailable: metrics.singleFlightLockUnavailable,
+        waiterTimeouts: metrics.singleFlightWaiterTimeouts,
+        failures: metrics.singleFlightFailures,
+      },
+      // Provider-specific counters (api-football vs football-data) plus
+      // cache/single-flight counters are all namespaced in `metrics`.
       metrics,
       lastRun: lastRun
         ? {
@@ -95,6 +140,8 @@ export async function GET(req: NextRequest) {
             startedAt: lastRun.startedAt,
             completedAt: lastRun.completedAt,
             errorMessage: lastRun.errorMessage,
+            // A non-completed run surfaces why: deferred (budget) or failed.
+            blockedReason: lastRun.status === 'deferred' ? 'execution budget exhausted; resume pending' : lastRun.errorMessage,
           }
         : null,
     });

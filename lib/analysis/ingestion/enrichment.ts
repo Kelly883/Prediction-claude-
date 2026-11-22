@@ -4,6 +4,7 @@ import { fetchFootballDataEnrichment } from '@/lib/api/football-data';
 import { ProviderAuthError, ProviderQuotaExhaustedError } from '@/lib/api/retry';
 import { classifyProviderFailure } from '@/lib/api/failure-classification';
 import { getProviderConfig } from '@/lib/api/provider-config';
+import { incrProviderMetric } from '@/lib/api/provider-metrics';
 import { logger } from '@/lib/logger';
 import { classifyEnrichment } from './quality';
 import { fetchWeather } from './weather';
@@ -54,6 +55,9 @@ export async function enrichFixtures(
         // The fallback result is classified as degraded below — never as
         // equivalent to primary-provider data.
         degradedFrom = provider;
+        // Provider-specific fallback counter (never counts a cache hit).
+        if (provider === 'api-football') void incrProviderMetric('af:fallbackActivated');
+        else if (provider === 'football-data') void incrProviderMetric('fd:fallbackActivated');
         logger.warn('provider.fallback.activated', {
           fixtureId: fixture.id,
           leagueId: fixture.leagueCode,

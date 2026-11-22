@@ -14,15 +14,21 @@ function isAuthorized(req: NextRequest): boolean {
 }
 
 /**
- * Provider quota refresh cron (Phase 1 — Stage 3).
+ * Provider quota refresh cron (Phase 1 — Stage 3; hardened §8).
  *
  * Polls the API-Football `/status` endpoint (which does NOT count against the
  * daily quota) and stores a quota snapshot for the ingestion gate to read. This
  * route is intentionally isolated from the analysis run so the daily run never
  * performs a live quota refresh inline.
  *
- * NOTE: scheduling this route is a production-configuration step and is NOT
- * part of this change (the production cron schedule must not be modified here).
+ * REQUIRED PRODUCTION ORDER (documented, NOT scheduled here):
+ *   1. `/api/cron/provider-quota`  — refresh quota (runs first).
+ *   2. `/api/cron/daily-analysis`  — reads the snapshot, evaluates the gate,
+ *      and only then ingests. A missing/stale/failed refresh blocks ingestion.
+ * Both routes require `Authorization: Bearer ${CRON_SECRET}`.
+ *
+ * Overlapping refreshes are de-duplicated with a short Redis lease so two
+ * invocations never issue duplicate `/status` polls.
  */
 async function handle(req: NextRequest): Promise<NextResponse> {
   if (!isAuthorized(req)) {
@@ -31,7 +37,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
 
   try {
     const now = new Date();
-    const snapshot = await refreshProviderQuota(now);
+    const snapshot = await refreshProviderQuota(now, { dedupeWindowSeconds: 30 });
     const assessment = assessQuota(snapshot);
     return withRequestId(req, NextResponse.json({
       status: snapshot.status,
@@ -39,6 +45,8 @@ async function handle(req: NextRequest): Promise<NextResponse> {
       dailyLimit: snapshot.dailyLimit,
       consumed: snapshot.consumed,
       remaining: snapshot.remaining,
+      perMinuteLimit: snapshot.perMinuteLimit,
+      perMinuteRemaining: snapshot.perMinuteRemaining,
       level: assessment.level,
       reason: assessment.reason,
       lastCheckedAt: snapshot.lastCheckedAt,

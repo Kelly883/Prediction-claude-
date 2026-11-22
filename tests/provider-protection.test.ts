@@ -333,13 +333,60 @@ describe('distributed single-flight cache', () => {
     ).rejects.toBeInstanceOf(SingleFlightError);
   });
 
-  it('runs the loader directly when Redis locking is unavailable (no bypass of the limiter)', async () => {
+  it('runs the loader directly when Redis locking is unavailable (default degrade mode; no bypass of the limiter)', async () => {
     const client = fakeRedis();
     client.set = async () => { throw new Error('redis down'); };
     const loader = vi.fn(async () => 'direct');
-    const value = await runSingleFlight({ client, loader, ...baseOptions });
+    const onLockUnavailable = vi.fn();
+    const value = await runSingleFlight({ client, loader, ...baseOptions, onLockUnavailable });
     expect(value).toBe('direct');
     expect(loader).toHaveBeenCalledTimes(1);
+    expect(onLockUnavailable).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails closed on Redis lock outage when outagePolicy is fail-closed (no duplicate provider calls, no fabricated value)', async () => {
+    const client = fakeRedis();
+    client.set = async () => { throw new Error('redis down'); };
+    const loader = vi.fn(async () => 'should-not-run');
+    const onLockUnavailable = vi.fn();
+    await expect(
+      runSingleFlight({ client, loader, ...baseOptions, outagePolicy: 'fail-closed', onLockUnavailable }),
+    ).rejects.toBeInstanceOf(SingleFlightError);
+    expect(loader).not.toHaveBeenCalled();
+    expect(onLockUnavailable).toHaveBeenCalledTimes(1);
+  });
+
+  it('invokes onFailure when the lock owner loader throws (and still releases the lock)', async () => {
+    const client = fakeRedis();
+    const onFailure = vi.fn();
+    const loader = async () => { throw new Error('boom'); };
+    await expect(runSingleFlight({ client, loader, ...baseOptions, onFailure })).rejects.toThrow('boom');
+    expect(onFailure).toHaveBeenCalledTimes(1);
+    expect(client.store.has('k:__lock')).toBe(false);
+  });
+
+  it('invokes onWaiterTimeout when the bounded wait is exceeded', async () => {
+    const client = fakeRedis();
+    await client.set('k:__lock', 'someone-else', { ex: 30 });
+    const onWaiterTimeout = vi.fn();
+    await expect(
+      runSingleFlight({ client, loader: async () => 'x', ...baseOptions, waitMs: 20, pollMs: 5, onWaiterTimeout }),
+    ).rejects.toBeInstanceOf(SingleFlightError);
+    expect(onWaiterTimeout).toHaveBeenCalledTimes(1);
+  });
+
+  it('a waiter takes over after the owner lock expires and never fabricates a result', async () => {
+    // Owner holds the lock, never writes a value, then the lock expires (the
+    // key disappears). The waiter acquires the lock itself and performs the
+    // REAL load — it is never handed a fabricated value.
+    const client = fakeRedis();
+    await client.set('k:__lock', 'dead-owner', { ex: 30 });
+    let loads = 0;
+    const loader = async () => { loads += 1; return 'recovered'; };
+    setTimeout(() => { client.store.delete('k:__lock'); }, 10); // simulate TTL expiry
+    const value = await runSingleFlight({ client, loader, ...baseOptions, waitMs: 400, pollMs: 5 });
+    expect(value).toBe('recovered');
+    expect(loads).toBe(1);
   });
 
   it('does not cache non-cacheable (null) results', async () => {

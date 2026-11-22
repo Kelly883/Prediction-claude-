@@ -19,6 +19,7 @@ import { deriveSeasonId } from '@/lib/api/season';
 import { acquireApiFootballSlot } from '@/lib/api/rate-limiter';
 import { captureRateLimitHeaders, storeRateLimitHeaders, API_FOOTBALL_RATE_LIMIT_HEADERS } from '@/lib/api/rate-limit-headers';
 import { classifyProviderFailure } from '@/lib/api/failure-classification';
+import { incrProviderMetric } from '@/lib/api/provider-metrics';
 import { logger } from '@/lib/logger';
 
 const BASE_URL = 'https://v3.football.api-sports.io';
@@ -70,6 +71,12 @@ async function request<T>(
       // Every attempt (including retries) reserves a slot in the shared
       // distributed rate limiter first, so retries cannot bypass the limit.
       await acquireApiFootballSlot();
+      // Count the actual outbound HTTP attempt. `provider:requests` is a
+      // deprecated alias retained for backward compatibility; `af:httpRequests`
+      // is the canonical, provider-namespaced counter (a cache hit never reaches
+      // this point, so cache hits are never counted as provider requests).
+      void incrProviderMetric('af:httpRequests');
+      void incrProviderMetric('provider:requests');
       const response = await fetch(url.toString(), {
         headers: { Accept: 'application/json', 'x-apisports-key': apiKey },
         signal: AbortSignal.timeout(TIMEOUT_MS),
@@ -95,6 +102,7 @@ async function request<T>(
         throw classifyApiFootballErrors(payload.errors);
       }
       await recordProviderSuccess('api-football');
+      void incrProviderMetric('af:success');
       logger.debug('provider.request', {
         provider: 'api-football',
         endpoint: path,
@@ -106,6 +114,10 @@ async function request<T>(
       // Only recoverable failures (network/5xx/429) count toward opening the
       // circuit; auth/quota errors are surfaced separately and must not be masked.
       const failure = classifyProviderFailure(err);
+      void incrProviderMetric('af:failed');
+      if (failure.category === 'rate_limit') void incrProviderMetric('af:429');
+      else if (failure.category === 'auth' || failure.category === 'invalid_key') void incrProviderMetric('af:authFailures');
+      else if (failure.category === 'quota') void incrProviderMetric('af:quotaFailures');
       logger.warn('provider.request.failed', {
         provider: 'api-football',
         endpoint: path,

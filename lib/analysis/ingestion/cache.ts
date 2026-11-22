@@ -13,11 +13,24 @@
  *   - Provider entitlement failures (auth/quota) propagate and are NEVER cached,
  *     so an exhausted provider can never look healthy.
  *   - `null`/`undefined` results are never cached.
+ *   - Automated ingestion is FAIL-CLOSED when Redis cannot provide single-flight
+ *     locking (see `outagePolicy` below): a Redis outage aborts the fetch rather
+ *     than fanning out duplicate provider calls. The global provider limiter is
+ *     likewise mandatory and fails closed.
  */
 import { redis } from '@/lib/redis';
 import { getProviderConfig, type ProviderConfig } from '@/lib/api/provider-config';
 import { incrProviderMetric } from '@/lib/api/provider-metrics';
 import { runSingleFlight } from './single-flight';
+
+export interface CachedFetchOptions {
+  /**
+   * Redis-outage behaviour. Defaults to `fail-closed` because every caller is
+   * an automated-ingestion provider fetch. `degrade` is retained for callers
+   * that explicitly opt into best-effort caching under Redis outage.
+   */
+  outagePolicy?: 'fail-closed' | 'degrade';
+}
 
 /**
  * Choose a TTL for a cache key. Each rule is documented in
@@ -34,7 +47,11 @@ export function resolveCacheTtlSeconds(key: string, cfg: ProviderConfig = getPro
   return cfg.cacheTtlDefaultSeconds;
 }
 
-export async function cachedProviderFetch<T>(key: string, loader: () => Promise<T>): Promise<T> {
+export async function cachedProviderFetch<T>(
+  key: string,
+  loader: () => Promise<T>,
+  options: CachedFetchOptions = {},
+): Promise<T> {
   const cfg = getProviderConfig();
   return runSingleFlight<T>({
     client: redis,
@@ -44,11 +61,15 @@ export async function cachedProviderFetch<T>(key: string, loader: () => Promise<
     lockTtlSeconds: Math.max(1, Math.ceil(cfg.singleFlightLockTtlMs / 1000)),
     waitMs: cfg.singleFlightWaitMs,
     pollMs: cfg.singleFlightPollMs,
+    outagePolicy: options.outagePolicy ?? 'fail-closed',
     onHit: () => void incrProviderMetric('cache:hit'),
     onMiss: () => void incrProviderMetric('cache:miss'),
     onReadFailure: () => void incrProviderMetric('cache:readFailure'),
     onWriteFailure: () => void incrProviderMetric('cache:writeFailure'),
     onLockAcquired: () => void incrProviderMetric('singleFlight:lockAcquired'),
     onContention: () => void incrProviderMetric('singleFlight:contended'),
+    onLockUnavailable: () => void incrProviderMetric('singleFlight:lockUnavailable'),
+    onWaiterTimeout: () => void incrProviderMetric('singleFlight:waiterTimeout'),
+    onFailure: () => void incrProviderMetric('singleFlight:failed'),
   });
 }

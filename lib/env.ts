@@ -43,6 +43,14 @@ const OptionalEnvSchema = z.object({
   PROVIDER_RPM: z.coerce.number().int().positive().optional(),
   PROVIDER_MAX_WAIT_MS: z.coerce.number().int().positive().optional(),
   PROVIDER_MAX_SLEEP_MS: z.coerce.number().int().positive().optional(),
+  // Independent Football-Data.org limiter (Phase 1 hardening). Defaults pinned
+  // to the documented free-plan ceiling by lib/api/provider-config.ts.
+  FOOTBALL_DATA_RPS: z.coerce.number().int().positive().optional(),
+  FOOTBALL_DATA_RPM: z.coerce.number().int().positive().optional(),
+  FOOTBALL_DATA_MAX_WAIT_MS: z.coerce.number().int().positive().optional(),
+  FOOTBALL_DATA_MAX_SLEEP_MS: z.coerce.number().int().positive().optional(),
+  PROVIDER_ANALYSIS_MAX_RUNTIME_MS: z.coerce.number().int().positive().optional(),
+  PROVIDER_ANALYSIS_BATCH_SIZE: z.coerce.number().int().positive().optional(),
   PROVIDER_QUOTA_WARNING_THRESHOLD: z.coerce.number().gt(0).lte(1).optional(),
   PROVIDER_QUOTA_CRITICAL_THRESHOLD: z.coerce.number().gt(0).lte(1).optional(),
   PROVIDER_QUOTA_STOP_THRESHOLD: z.coerce.number().gt(0).lte(1).optional(),
@@ -53,6 +61,16 @@ const OptionalEnvSchema = z.object({
   PROVIDER_SINGLE_FLIGHT_LOCK_TTL_MS: z.coerce.number().int().positive().optional(),
   PROVIDER_SINGLE_FLIGHT_WAIT_MS: z.coerce.number().int().positive().optional(),
   PROVIDER_SINGLE_FLIGHT_POLL_MS: z.coerce.number().int().positive().optional(),
+  // Endpoint-specific cache TTLs (seconds). Optional; validated + defaulted by
+  // lib/api/provider-config.ts. Listed here for documentation/typing only.
+  PROVIDER_CACHE_TTL_DEFAULT_SECONDS: z.coerce.number().int().positive().optional(),
+  PROVIDER_CACHE_TTL_FIXTURES_SECONDS: z.coerce.number().int().positive().optional(),
+  PROVIDER_CACHE_TTL_TEAM_STATS_SECONDS: z.coerce.number().int().positive().optional(),
+  PROVIDER_CACHE_TTL_H2H_SECONDS: z.coerce.number().int().positive().optional(),
+  PROVIDER_CACHE_TTL_INJURIES_SECONDS: z.coerce.number().int().positive().optional(),
+  PROVIDER_CACHE_TTL_ODDS_SECONDS: z.coerce.number().int().positive().optional(),
+  PROVIDER_CACHE_TTL_SCORERS_SECONDS: z.coerce.number().int().positive().optional(),
+  PROVIDER_CACHE_TTL_WEATHER_SECONDS: z.coerce.number().int().positive().optional(),
 });
 
 export type Env = z.infer<typeof CoreEnvSchema> & z.infer<typeof OptionalEnvSchema>;

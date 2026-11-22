@@ -16,6 +16,10 @@ import {
   recordProviderSuccess,
 } from '@/lib/api/circuit-breaker';
 import { footballDataCompetitionCode, partitionByProviderSupport } from '@/lib/api/provider-mapping';
+import { acquireFootballDataSlot } from '@/lib/api/rate-limiter';
+import { classifyProviderFailure } from '@/lib/api/failure-classification';
+import { incrProviderMetric } from '@/lib/api/provider-metrics';
+import { logger } from '@/lib/logger';
 
 const BASE_URL = 'https://api.football-data.org/v4';
 const TIMEOUT_MS = Number(process.env.FOOTBALL_API_TIMEOUT_MS ?? 10_000);
@@ -35,7 +39,17 @@ async function request<T>(path: string, params: Record<string, string | number> 
   await assertProviderAvailable('football-data');
 
   return withBoundedRetry('football-data', async () => {
+    const startedAt = Date.now();
     try {
+      // Every attempt (including retries) reserves a slot in the DEDICATED
+      // Football-Data.org distributed limiter first, so retries cannot bypass
+      // the provider's independent limit. This limiter is completely separate
+      // from the API-Football limiter.
+      await acquireFootballDataSlot();
+
+      // Count the actual outbound HTTP attempt (a logical fetch that was served
+      // from cache never reaches here, so cache hits are never counted).
+      void incrProviderMetric('fd:httpRequests');
       const response = await fetch(url.toString(), {
         headers: { Accept: 'application/json', 'X-Auth-Token': apiKey },
         signal: AbortSignal.timeout(TIMEOUT_MS),
@@ -57,8 +71,27 @@ async function request<T>(path: string, params: Record<string, string | number> 
       }
       const payload = await response.json() as T;
       await recordProviderSuccess('football-data');
+      void incrProviderMetric('fd:success');
+      logger.debug('provider.request', {
+        provider: 'football-data',
+        endpoint: path,
+        status: response.status,
+        durationMs: Date.now() - startedAt,
+      });
       return payload;
     } catch (err) {
+      const failure = classifyProviderFailure(err);
+      void incrProviderMetric('fd:failed');
+      if (failure.category === 'rate_limit') void incrProviderMetric('fd:429');
+      else if (failure.category === 'auth' || failure.category === 'invalid_key') void incrProviderMetric('fd:authFailures');
+      else if (failure.category === 'quota') void incrProviderMetric('fd:quotaFailures');
+      logger.warn('provider.request.failed', {
+        provider: 'football-data',
+        endpoint: path,
+        category: failure.category,
+        status: failure.status,
+        durationMs: Date.now() - startedAt,
+      });
       if (!(err instanceof ProviderError) || err.recoverable) {
         await recordProviderFailure('football-data');
       }

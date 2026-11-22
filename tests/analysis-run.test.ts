@@ -2,10 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   analysisRun: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
-  analysisResult: { createMany: vi.fn() },
+  analysisResult: { createMany: vi.fn(), findMany: vi.fn() },
   analysisConfig: { findMany: vi.fn() },
   transaction: vi.fn(),
-  redis: { get: vi.fn(), set: vi.fn(), del: vi.fn() },
+  redis: { get: vi.fn(), set: vi.fn(), del: vi.fn(), incr: vi.fn(), expire: vi.fn() },
   tx: {
     analysisResult: { createMany: vi.fn() },
     analysisRun: { update: vi.fn() },
@@ -15,6 +15,11 @@ const mocks = vi.hoisted(() => ({
   getEnabledLeagues: vi.fn(),
   scoreFixture: vi.fn(),
 }));
+
+// Deterministic execution budget: the Nth `expired()` check reports whether the
+// invocation budget is spent. `expireAfterCalls = 1` lets a single batch run to
+// completion; a higher number defers after that many batch checkpoints.
+const budgetState = vi.hoisted(() => ({ expireAfterCalls: 1 }));
 
 vi.mock('@/lib/prisma', () => ({
   prisma: {
@@ -37,6 +42,25 @@ vi.mock('@/lib/analysis/ingestion/enrichment', () => ({ enrichFixtures: mocks.en
 vi.mock('@/lib/analysis/engine', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/analysis/engine')>();
   return { ...actual, scoreFixture: mocks.scoreFixture, filterPicks: (outcomes: unknown[]) => outcomes };
+});
+// Keep the real estimator but make the wall-clock budget deterministic.
+vi.mock('@/lib/analysis/ingestion/budget', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/analysis/ingestion/budget')>();
+  return {
+    ...actual,
+    createRunBudget: () => {
+      let calls = 0;
+      return {
+        deadlineMs: 0,
+        expired: () => {
+          const expired = calls >= budgetState.expireAfterCalls;
+          calls += 1;
+          return expired;
+        },
+        remainingMs: () => 0,
+      };
+    },
+  };
 });
 
 import { runDailyAnalysis } from '@/lib/analysis/run';
@@ -89,13 +113,17 @@ function validOutcome(fixture: Fixture = FIXTURE): AnalysisOutcome {
 describe('runDailyAnalysis persistence', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    budgetState.expireAfterCalls = 1;
     mocks.redis.set.mockResolvedValue('OK');
     mocks.redis.del.mockResolvedValue(1);
+    mocks.redis.incr.mockResolvedValue(1);
+    mocks.redis.expire.mockResolvedValue(1);
     // Default: Redis reachable, quota key healthy, circuit closed (null).
     mocks.redis.get.mockImplementation(async (key: string) =>
       key === 'provider:quota:api-football' ? HEALTHY_QUOTA : null,
     );
     mocks.analysisConfig.findMany.mockResolvedValue([]);
+    mocks.analysisResult.findMany.mockResolvedValue([]);
     mocks.getEnabledLeagues.mockResolvedValue([
       { leagueName: 'English Premier League', leagueCode: 'PL', isEnabled: true, priority: 1 },
     ]);
@@ -250,5 +278,62 @@ describe('runDailyAnalysis persistence', () => {
     expect(result.status).toBe('blocked');
     expect(result.blockedReason).toMatch(/cooldown/i);
     expect(mocks.analysisRun.create).not.toHaveBeenCalled();
+  });
+
+  // --- §6: execution-time budget, resumable idempotent batches ---
+
+  const FIXTURE2: Fixture = { ...FIXTURE, id: 'fx-2' };
+
+  function twoFixtureWorkload(): void {
+    process.env.PROVIDER_ANALYSIS_BATCH_SIZE = '1';
+    mocks.fetchFixtures.mockResolvedValue({ fixtures: [FIXTURE, FIXTURE2], errors: [] });
+    mocks.enrichFixtures.mockImplementation(async (batch: Fixture[]) =>
+      batch.map((fixture) => ({ fixture, enrichment: {} })),
+    );
+    mocks.tx.analysisResult.createMany.mockResolvedValue({ count: 1 });
+  }
+
+  it('defers the remainder when the execution budget is spent (no partial-run success)', async () => {
+    twoFixtureWorkload();
+    mocks.tx.analysisRun.update.mockResolvedValue({ id: 'run-1', status: 'running', fixturesAnalyzed: 1, picksGenerated: 1 });
+    mocks.analysisRun.update.mockResolvedValue({ id: 'run-1', status: 'deferred' });
+
+    try {
+      const result = await runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z'), force: true });
+
+      expect(result.status).toBe('deferred');
+      expect(result.blockedReason).toMatch(/deferred/i);
+      // Only the first batch committed; the run is NOT marked completed.
+      expect(mocks.transaction).toHaveBeenCalledTimes(1);
+      expect(mocks.analysisRun.update).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'run-1' }, data: { status: 'deferred' } }),
+      );
+    } finally {
+      delete process.env.PROVIDER_ANALYSIS_BATCH_SIZE;
+    }
+  });
+
+  it('resumes a deferred run and skips already-persisted fixtures (no duplicate predictions)', async () => {
+    twoFixtureWorkload();
+    mocks.analysisRun.findFirst.mockResolvedValue({ id: 'run-def', status: 'deferred', fixturesAnalyzed: 1, picksGenerated: 1 });
+    mocks.analysisResult.findMany.mockResolvedValue([{ fixtureId: 'fx-1' }]);
+    mocks.analysisRun.update.mockResolvedValue({ id: 'run-def', status: 'running' });
+    mocks.tx.analysisRun.update.mockResolvedValue({ id: 'run-def', status: 'completed', fixturesAnalyzed: 2, picksGenerated: 2 });
+
+    try {
+      const result = await runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z') });
+
+      // Resumed the SAME run (flipped back to running) rather than creating a new one.
+      expect(mocks.analysisRun.update).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'run-def' }, data: { status: 'running' } }),
+      );
+      expect(mocks.analysisRun.create).not.toHaveBeenCalled();
+      // Only the not-yet-persisted fixture was enriched/scored.
+      expect(mocks.enrichFixtures).toHaveBeenCalledTimes(1);
+      expect(mocks.enrichFixtures).toHaveBeenCalledWith([FIXTURE2], expect.anything());
+      expect(result).toMatchObject({ runId: 'run-def', status: 'completed' });
+    } finally {
+      delete process.env.PROVIDER_ANALYSIS_BATCH_SIZE;
+    }
   });
 });

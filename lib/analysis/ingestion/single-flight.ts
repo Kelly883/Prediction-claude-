@@ -15,8 +15,22 @@
  *   - Waiters are bounded: they poll the cache and give up with a clear error
  *     (they are never handed a fabricated value). If the owner fails, the next
  *     waiter can take over on a later cycle — a natural retry opportunity.
- *   - If Redis is unavailable for locking we do NOT single-flight; we run the
- *     loader directly. The global provider rate limiter still bounds traffic.
+ *
+ * Redis-outage behaviour (`outagePolicy`):
+ *   FAILURE SCENARIO — Redis becomes unreachable between the initial cache read
+ *   and acquiring the lock (`client.set(... NX ...)` throws), so single-flight
+ *   cannot be established. Without the lock, N concurrent workers would each
+ *   miss the cache and each issue the SAME provider request.
+ *     - `fail-closed` (used by automated ingestion): abort with a
+ *       {@link SingleFlightError} instead of issuing duplicate provider calls.
+ *       The global provider limiter is ALSO Redis-backed and fails closed, so a
+ *       Redis outage stops ingestion entirely — it never degrades into
+ *       uncontrolled duplicate traffic.
+ *     - `degrade` (backward-compatible default): run the loader directly. This
+ *       is explicit and observable (`onLockUnavailable` → a metric) and is only
+ *       safe because the global provider limiter remains mandatory.
+ *   In both modes only a real cache read returns a value; no result is ever
+ *   fabricated.
  */
 import { randomUUID } from 'node:crypto';
 import { logger } from '@/lib/logger';
@@ -56,6 +70,15 @@ export interface SingleFlightOptions<T> {
   waitMs: number;
   /** Poll interval (ms) while waiting for the owner's result. */
   pollMs: number;
+  /**
+   * Behaviour when Redis is unreachable for lock acquisition (`set NX` throws).
+   *   - `fail-closed` (automated ingestion): abort with a {@link SingleFlightError}
+   *     rather than issuing duplicate provider calls.
+   *   - `degrade` (default, backward-compatible): run the loader directly. Safe
+   *     only because the global provider limiter is mandatory and also fails
+   *     closed on Redis outage.
+   */
+  outagePolicy?: 'fail-closed' | 'degrade';
   /** Cacheability predicate; defaults to "not null/undefined". */
   isCacheable?: (value: T) => boolean;
   now?: () => number;
@@ -67,6 +90,12 @@ export interface SingleFlightOptions<T> {
   onWriteFailure?: () => void;
   onLockAcquired?: (waitedMs: number) => void;
   onContention?: () => void;
+  /** Redis is unreachable for lock acquisition (any outage policy). */
+  onLockUnavailable?: () => void;
+  /** A waiter exceeded its bounded wait without an owner result. */
+  onWaiterTimeout?: () => void;
+  /** The lock owner's loader threw (the error still propagates). */
+  onFailure?: () => void;
 }
 
 const defaultSleep = (ms: number): Promise<void> =>
@@ -140,9 +169,20 @@ export async function runSingleFlight<T>(opts: SingleFlightOptions<T>): Promise<
       const result = await client.set(lockKey, token, { nx: true, ex: opts.lockTtlSeconds });
       acquired = result === 'OK';
     } catch (err) {
-      // Redis unavailable for locking: do NOT single-flight and leave no lock
-      // behind. Run the loader directly — the global rate limiter still applies.
-      logger.warn('football.cache.lockUnavailable', { key, error: errMsg(err) });
+      // Redis unavailable for locking. Observable either way; the global
+      // provider limiter still applies and itself fails closed on Redis outage.
+      logger.warn('football.cache.lockUnavailable', {
+        key,
+        outagePolicy: opts.outagePolicy ?? 'degrade',
+        error: errMsg(err),
+      });
+      opts.onLockUnavailable?.();
+      if (opts.outagePolicy === 'fail-closed') {
+        // Automated ingestion must not degrade into uncontrolled duplicate
+        // provider calls. No value is fabricated — the caller sees an error.
+        throw new SingleFlightError(`single-flight lock unavailable (Redis outage) for key "${key}"`);
+      }
+      // `degrade`: run the loader directly and leave no lock behind.
       return loader();
     }
 
@@ -153,6 +193,9 @@ export async function runSingleFlight<T>(opts: SingleFlightOptions<T>): Promise<
         const value = await loader();
         if (isCacheable(value)) await safeWrite(client, key, value, opts.ttlSeconds, opts.onWriteFailure);
         return value;
+      } catch (err) {
+        opts.onFailure?.();
+        throw err;
       } finally {
         // Always release our own lock, even if the loader threw.
         await releaseLockSafely(client, lockKey, token);
@@ -161,6 +204,7 @@ export async function runSingleFlight<T>(opts: SingleFlightOptions<T>): Promise<
 
     // Lock is held by another worker.
     if (now() >= deadline) {
+      opts.onWaiterTimeout?.();
       throw new SingleFlightError(`single-flight wait exceeded ${opts.waitMs}ms for key "${key}"`);
     }
     opts.onContention?.();
