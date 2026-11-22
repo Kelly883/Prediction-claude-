@@ -53,6 +53,13 @@ export function classifyEnrichment(provider: DataSource, enrichment: FixtureEnri
   return { quality: hasTeamStats ? 'FALLBACK_PARTIAL' : 'INSUFFICIENT_DATA', missingFields };
 }
 
+/** Check if enrichment has any usable data for prediction. */
+export function isUsableEnrichment(enrichment: FixtureEnrichment): boolean {
+  const hasTeamStats = enrichment.homeStats !== undefined || enrichment.awayStats !== undefined;
+  return hasTeamStats || enrichment.odds !== undefined || enrichment.h2h !== undefined
+    || (enrichment.players?.length ?? 0) > 0;
+}
+
 /** Human-readable description of a quality label, for admin surfaces. */
 export function describeQuality(quality: EnrichmentQuality): string {
   switch (quality) {

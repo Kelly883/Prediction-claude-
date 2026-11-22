@@ -75,7 +75,7 @@ export interface MarketEligibility {
   proceed?: boolean;
   reasons?: string[];
   missingFields: string[];
-  dataSources: string[];
+  dataSources: DataSource[];
   dataQuality: DataQuality;
   oddsAvailable: boolean;
   restricted?: boolean;
@@ -104,11 +104,12 @@ export interface Fixture {
   status?: FixtureStatus;
   /** Raw provider status label (short code or description), for diagnostics. */
   statusLabel?: string;
+  /** Human-readable reason for the status (e.g., "Match postponed"). */
+  statusReason?: string;
   /** Provider season identifier used for enrichment requests (e.g. "2026"). */
   seasonId?: string;
   source: DataSource;
   season?: number;
-  seasonId?: string;
 }
 
 export interface TeamStats {

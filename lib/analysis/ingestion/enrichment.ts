@@ -6,7 +6,7 @@ import { classifyProviderFailure } from '@/lib/api/failure-classification';
 import { getProviderConfig } from '@/lib/api/provider-config';
 import { incrProviderMetric } from '@/lib/api/provider-metrics';
 import { logger } from '@/lib/logger';
-import { classifyEnrichment } from './quality';
+import { classifyEnrichment, isUsableEnrichment } from './quality';
 import { fetchWeather } from './weather';
 
 const MAX_CONCURRENCY = 10;
@@ -47,15 +47,19 @@ export async function enrichFixtures(
     const customLoad = overrides?.loadEnrichment;
     const load = customLoad
       ? (provider: string) => customLoad(provider)
-      : (provider: string) => loadEnrichment(provider, fixture);
+      : (provider: string) => loadEnrichment(provider as DataSource, fixture);
     const errors: string[] = [];
     let enrichment: FixtureEnrichment = {};
     let usedProvider: DataSource | undefined;
     let degradedFrom: DataSource | undefined;
 
-    for (const provider of settings.dataSourcePriorities) {
+    for (const provider of settings.dataSourcePriorities as DataSource[]) {
       try {
-        enrichment = await load(provider as DataSource);
+        enrichment = await load(provider as string);
+        // Treat empty/insufficient enrichment as a failure to trigger fallback.
+        if (!isUsableEnrichment(enrichment)) {
+          throw new Error(`Provider ${provider} returned insufficient enrichment`);
+        }
         usedProvider = provider;
         break;
       } catch (err) {
@@ -96,6 +100,15 @@ export async function enrichFixtures(
       ? classifyEnrichment(usedProvider, enrichment)
       : { quality: 'INSUFFICIENT_DATA' as const, missingFields: [] };
 
+    // Build sources array for transparency.
+    const sources: Array<{ provider: string; fields?: string[]; quality?: string }> = [];
+    if (degradedFrom) {
+      sources.push({ provider: degradedFrom, quality: 'failed' });
+    }
+    if (usedProvider) {
+      sources.push({ provider: usedProvider, quality: classification.quality });
+    }
+
     // A fallback was used: record it explicitly so the degraded enrichment is
     // never mistaken for complete primary-provider data.
     if (degradedFrom) {
@@ -108,8 +121,10 @@ export async function enrichFixtures(
         ...enrichment,
         dataSource: usedProvider,
         quality: classification.quality,
+        dataQuality: classification.quality,
         missingFields: classification.missingFields,
         errors: [...(enrichment.errors ?? []), ...errors],
+        sources,
       },
     };
   });

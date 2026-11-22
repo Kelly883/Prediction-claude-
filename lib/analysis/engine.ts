@@ -13,7 +13,7 @@ import { scoreTotalCards } from './markets/totalCards';
 import { scoreTotalCorners } from './markets/totalCorners';
 import type { MarketContext } from './markets/shared';
 import { topFactors } from './utils/confidence';
-import type { AnalysisOutcome, AnalysisSettings, Fixture, FixtureEnrichment, MarketScore, MarketType } from '@/types/analysis';
+import type { AnalysisOutcome, AnalysisSettings, DataQuality, EvidenceLabel, Fixture, FixtureEnrichment, MarketScore, MarketType } from '@/types/analysis';
 
 /**
  * Score a fixture.
@@ -23,6 +23,30 @@ import type { AnalysisOutcome, AnalysisSettings, Fixture, FixtureEnrichment, Mar
  * persisted. `outcome.eligibility` records the decision for every market
  * (eligible or not) so administrators can see exactly why a market was skipped.
  */
+
+function evidenceLabelForQuality(quality: DataQuality): EvidenceLabel {
+  switch (quality) {
+    case 'PRIMARY_COMPLETE':
+    case 'PRIMARY_PARTIAL':
+      return 'VERIFIED';
+    case 'FALLBACK_PARTIAL':
+      return 'ESTIMATED';
+    default:
+      return 'NOT VERIFIED';
+  }
+}
+
+function confidenceLabelForQuality(quality: DataQuality): string {
+  switch (quality) {
+    case 'PRIMARY_COMPLETE':
+    case 'PRIMARY_PARTIAL':
+      return 'CALIBRATED_MODEL_SCORE';
+    case 'FALLBACK_PARTIAL':
+      return 'HEURISTIC_MODEL_SCORE';
+    default:
+      return 'HEURISTIC_MODEL_SCORE';
+  }
+}
 
 export function scoreFixture(
   fixture: Fixture,
@@ -37,7 +61,18 @@ export function scoreFixture(
   const add = (market: MarketType, score: (context: MarketContext) => MarketScore) => {
     if (!allowed.has(market)) return;
     const weights = settings.marketWeights[market] ?? DEFAULT_ANALYSIS_SETTINGS.marketWeights[market] ?? {};
-    scores.push(score({ fixture, enrichment, weights }));
+    const marketScore = score({ fixture, enrichment, weights });
+    // Attach evidence label and confidence label based on data quality.
+    const evidenceLabel = evidenceLabelForQuality(enrichment.dataQuality ?? 'INSUFFICIENT_DATA');
+    marketScore.confidenceLabel = confidenceLabelForQuality(enrichment.dataQuality ?? 'INSUFFICIENT_DATA');
+    marketScore.evidence = {
+      label: evidenceLabel,
+      dataQuality: enrichment.dataQuality ?? 'INSUFFICIENT_DATA',
+      oddsAvailability: enrichment.odds ? 'AVAILABLE' : 'MISSING',
+      strength: enrichment.dataQuality === 'PRIMARY_COMPLETE' ? 1 : enrichment.dataQuality === 'PRIMARY_PARTIAL' ? 0.7 : 0.4,
+      sources: enrichment.sources?.map((s) => s.provider) ?? [],
+    };
+    scores.push(marketScore);
   };
 
   add('MATCH_RESULT', scoreMatchResult);
@@ -51,12 +86,17 @@ export function scoreFixture(
   add('TOTAL_CARDS', scoreTotalCards);
   add('PLAYER_SCORER', scorePlayerScorer);
 
+  const evidenceLabel = evidenceLabelForQuality(enrichment.dataQuality ?? 'INSUFFICIENT_DATA');
   return {
     fixture,
     scores,
     best: scores[0],
     topFactors: scores[0] ? topFactors(scores[0].factors, 3) : [],
     eligibility,
+    evidenceLabel,
+    dataQuality: enrichment.dataQuality,
+    enrichmentQuality: enrichment.quality,
+    providerSource: enrichment.dataSource,
   };
 }
 

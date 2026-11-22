@@ -16,6 +16,7 @@ import {
   recordProviderSuccess,
 } from '@/lib/api/circuit-breaker';
 import { footballDataCompetitionCode, partitionByProviderSupport } from '@/lib/api/provider-mapping';
+import { deriveSeasonId } from '@/lib/api/season';
 import { acquireFootballDataSlot } from '@/lib/api/rate-limiter';
 import { classifyProviderFailure } from '@/lib/api/failure-classification';
 import { incrProviderMetric } from '@/lib/api/provider-metrics';
@@ -178,6 +179,8 @@ export function normalizeFixture(entry: any, leagueCode: string, competitionName
   if (!leagueName) return null;
 
   const { status, label } = normalizeFootballDataStatus(entry?.status);
+  const providerSeason = entry?.competition?.season?.startDate ? new Date(entry.competition.season.startDate).getFullYear() : undefined;
+  const seasonId = providerSeason ?? deriveSeasonId(leagueCode, kickoff);
 
   return {
     id: String(fixtureId),
@@ -189,7 +192,8 @@ export function normalizeFixture(entry: any, leagueCode: string, competitionName
     homeTeamId: String(homeId),
     awayTeamId: String(awayId),
     status,
-    statusLabel: label,
+    statusReason: label,
+    season: seasonId,
     source: 'football-data',
   };
 }

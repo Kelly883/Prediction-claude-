@@ -72,6 +72,20 @@ const FOOTBALL_DATA_STATUS: Record<string, FixtureStatus> = {
   AWARDED: 'awarded',
 };
 
+/** Human-readable reasons for Football-Data status codes. */
+const FOOTBALL_DATA_STATUS_REASONS: Record<string, string> = {
+  SCHEDULED: 'Match scheduled',
+  TIMED: 'Match timed',
+  IN_PLAY: 'Match in play',
+  PAUSED: 'Match paused',
+  FINISHED: 'Match finished',
+  SUSPENDED: 'Match suspended',
+  POSTPONED: 'Match postponed',
+  CANCELED: 'Match cancelled',
+  CANCELLED: 'Match cancelled',
+  AWARDED: 'Match awarded',
+};
+
 export interface NormalizedStatus {
   status: FixtureStatus;
   /** Raw provider label retained for diagnostics. */
@@ -89,7 +103,7 @@ export function normalizeApiFootballStatus(short?: unknown, long?: unknown): Nor
 /** Map a Football-Data.org status value. */
 export function normalizeFootballDataStatus(value?: unknown): NormalizedStatus {
   const code = typeof value === 'string' ? value.trim().toUpperCase() : '';
-  if (code && FOOTBALL_DATA_STATUS[code]) return { status: FOOTBALL_DATA_STATUS[code], label: code };
+  if (code && FOOTBALL_DATA_STATUS[code]) return { status: FOOTBALL_DATA_STATUS[code], label: FOOTBALL_DATA_STATUS_REASONS[code] };
   return { status: 'unknown', label: code || undefined };
 }
 

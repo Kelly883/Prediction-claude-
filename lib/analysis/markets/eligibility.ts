@@ -93,6 +93,11 @@ const FALLBACK_EXTRA: Requirement[] = [
   { label: 'awayForm', met: (e) => present(e.awayStats?.form) },
 ];
 
+/** Check if enrichment has advanced metrics (xG) vs only basic metrics (goals). */
+function hasAdvancedMetrics(enrichment: FixtureEnrichment): boolean {
+  return enrichment.homeStats?.xgFor !== undefined || enrichment.awayStats?.xgFor !== undefined;
+}
+
 const CORNERS_REQUIREMENTS: Requirement[] = [
   { label: 'homeCorners', met: (e) => present(e.homeStats?.cornersFor) },
   { label: 'awayCorners', met: (e) => present(e.awayStats?.cornersFor) },
@@ -151,6 +156,7 @@ export function evaluateMarketEligibility(
     return {
       ...base,
       eligible: false,
+      proceed: false,
       allowedToProceed: false,
       reason: 'Market disabled by policy: required data source is not yet verified',
       missingFields: ['policy:disabled'],
@@ -163,6 +169,7 @@ export function evaluateMarketEligibility(
     return {
       ...base,
       eligible,
+      proceed: eligible,
       allowedToProceed: eligible,
       reason: eligible
         ? 'Corner data verified for both teams'
@@ -177,6 +184,7 @@ export function evaluateMarketEligibility(
     return {
       ...base,
       eligible,
+      proceed: eligible,
       allowedToProceed: eligible,
       reason: eligible
         ? 'Captured Asian handicap line available'
@@ -190,13 +198,14 @@ export function evaluateMarketEligibility(
     return {
       ...base,
       eligible: false,
+      proceed: false,
       allowedToProceed: false,
       reason: 'No eligibility policy defined for this market',
       missingFields: ['policy:undefined'],
     };
   }
 
-  const effective = dataQuality === 'FALLBACK_PARTIAL' && policy.enforceStrictOnFallback
+  const effective = dataQuality === 'FALLBACK_PARTIAL' && policy.enforceStrictOnFallback && hasAdvancedMetrics(enrichment)
     ? [...requirements, ...FALLBACK_EXTRA]
     : requirements;
   let missing = missingFieldsFor(effective, enrichment);
@@ -209,6 +218,7 @@ export function evaluateMarketEligibility(
   return {
     ...base,
     eligible,
+    proceed: eligible,
     allowedToProceed: eligible,
     reason: eligible
       ? `Required inputs present (${dataQuality})`

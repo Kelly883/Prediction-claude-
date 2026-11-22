@@ -264,6 +264,26 @@ export interface AnalysisDependencies {
   scoreFixture?: typeof scoreFixture;
 }
 
+export async function recoverStaleRuns(staleThresholdMs: number = 15 * 60 * 1000): Promise<number> {
+  const cutoff = new Date(Date.now() - staleThresholdMs);
+  const stale = await prisma.analysisRun.findMany({
+    where: { status: 'running', updatedAt: { lt: cutoff } },
+    select: { id: true },
+  });
+  let recovered = 0;
+  for (const run of stale) {
+    const result = await prisma.analysisRun.updateMany({
+      where: { id: run.id, status: 'running' },
+      data: { status: 'failed', errorMessage: 'stale run recovered', completedAt: new Date() },
+    });
+    if (result.count === 1) {
+      recovered += 1;
+      logger.warn('analysis.run.staleRecovered', { runId: run.id });
+    }
+  }
+  return recovered;
+}
+
 export async function loadAnalysisSettings(): Promise<AnalysisSettings> {
   const configs = await prisma.analysisConfig.findMany({
     where: { key: { in: ['confidence_threshold', 'market_weights', 'data_source_priorities'] } },
@@ -292,6 +312,7 @@ export async function runDailyAnalysis(options: {
   // unique constraint on `AnalysisRun.runDate` — instead callers must pass
   // `force: true` to start an additional run. Duplicate fixtures *within* a run
   // are prevented by the unique `AnalysisResult(runId, fixtureId)` index.
+  await recoverStaleRuns();
   let resumeRunId: string | null = null;
   if (!options.force) {
     const existing = await prisma.analysisRun.findFirst({
