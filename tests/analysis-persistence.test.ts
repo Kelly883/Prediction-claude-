@@ -24,12 +24,23 @@ function outcome(overrides: {
     odds,
     oddsAvailable: odds !== null,
     confidence: overrides.confidence ?? 82,
+    confidenceLabel: 'HEURISTIC_MODEL_SCORE',
     factors: [{ name: 'homeXgVsAwayXg', score: 80, weight: 0.3 }],
+    evidence: {
+      label: 'VERIFIED' as const,
+      dataQuality: 'PRIMARY_COMPLETE' as const,
+      oddsAvailability: 'AVAILABLE' as const,
+      strength: 1,
+      sources: [] as string[],
+    },
   };
   return {
     fixture: FIXTURE,
     scores: overrides.scores ?? [best],
     best,
+    eligibility: [],
+    dataQuality: 'PRIMARY_COMPLETE' as const,
+    evidenceLabel: 'VERIFIED' as const,
     topFactors: [{ name: 'homeXgVsAwayXg', score: 80, weight: 0.3 }],
     eligibility: [],
   };

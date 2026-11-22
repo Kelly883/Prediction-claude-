@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireUser, errorResponse, ApiError } from '@/lib/rbac';
+import { requireSameOrigin, requireCsrf } from '@/lib/csrf';
 import { handleVerifiedWebhook } from '@/lib/payments';
 import { paystackVerifyTransaction } from '@/lib/providers/paystack';
 import { flutterwaveVerifyTransaction } from '@/lib/providers/flutterwave';
@@ -16,6 +17,8 @@ function isSuccessStatus(status: string): boolean {
 export async function POST(req: NextRequest) {
   const requestId = getRequestId(req);
   try {
+    requireSameOrigin(req);
+    requireCsrf(req);
     const user = await requireUser(req);
     const body = await req.json();
     const { reference, provider } = body;

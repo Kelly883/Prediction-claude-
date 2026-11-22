@@ -1,0 +1,51 @@
+{
+  "get": "fixtures",
+  "parameters": {
+    "league": "39",
+    "from": "2026-11-21",
+    "to": "2026-11-23"
+  },
+  "errors": [],
+  "results": 3,
+  "response": [
+    {
+      "fixture": {
+        "id": 101,
+        "date": "2026-11-22T15:00:00Z",
+        "status": { "long": "Not Started", "short": "NS", "elapsed": null },
+        "venue": { "id": 49119, "name": "Emirates Stadium", "city": "London", "lat": "51.556", "long": "-0.097" }
+      },
+      "league": { "id": 39, "name": "Premier League", "country": "England", "season": 2026, "round": "12" },
+      "teams": {
+        "home": { "id": 1, "name": "Arsenal" },
+        "away": { "id": 2, "name": "Chelsea" }
+      }
+    },
+    {
+      "fixture": {
+        "id": 102,
+        "date": "2026-11-22T17:30:00Z",
+        "status": { "long": "Match Postponed", "short": "PST", "elapsed": null },
+        "venue": { "id": null, "name": null, "city": null, "lat": null, "long": null }
+      },
+      "league": { "id": 39, "name": "Premier League", "country": "England", "season": 2026, "round": "12" },
+      "teams": {
+        "home": { "id": 3, "name": "Liverpool" },
+        "away": { "id": 4, "name": "Everton" }
+      }
+    },
+    {
+      "fixture": {
+        "id": 103,
+        "date": "2026-11-23T15:00:00Z",
+        "status": { "long": "Match Finished", "short": "FT", "elapsed": 90 },
+        "venue": { "id": null, "name": null, "city": null, "lat": null, "long": null }
+      },
+      "league": { "id": 39, "name": "Premier League", "country": "England", "season": 2026, "round": "12" },
+      "teams": {
+        "home": { "id": 5, "name": "Manchester City" },
+        "away": { "id": 6, "name": "Tottenham" }
+      }
+    }
+  ]
+}

@@ -16,7 +16,7 @@ export async function apiFetch(input: string, init: RequestInit = {}): Promise<R
   const method = (init.method || 'GET').toUpperCase();
   const isStateChanging = ['POST', 'PATCH', 'PUT', 'DELETE'].includes(method);
 
-  let headers = new Headers(init.headers);
+  const headers = new Headers(init.headers);
 
   if (isStateChanging) {
     const token = await getCsrfToken();

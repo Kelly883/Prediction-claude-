@@ -1,4 +1,4 @@
-import type { AnalysisSettings, DataSource, Fixture, FixtureEnrichment } from '@/types/analysis';
+import type { AnalysisSettings, DataSource, Fixture, FixtureEnrichment, WeatherRecord } from '@/types/analysis';
 import { fetchApiFootballEnrichment } from '@/lib/api/football-api';
 import { fetchFootballDataEnrichment } from '@/lib/api/football-data';
 import { ProviderAuthError, ProviderQuotaExhaustedError } from '@/lib/api/retry';
@@ -9,6 +9,12 @@ import { logger } from '@/lib/logger';
 import { classifyEnrichment } from './quality';
 import { fetchWeather } from './weather';
 
+const MAX_CONCURRENCY = 10;
+
+type EnrichmentOverrides = {
+  loadEnrichment?: (provider: string) => Promise<FixtureEnrichment>;
+  fetchWeather?: () => Promise<WeatherRecord | undefined>;
+};
 export async function mapWithConcurrency<T, R>(items: T[], limit: number, worker: (item: T, index: number) => Promise<R>): Promise<R[]> {
   const results = new Array<R>(items.length);
   let nextIndex = 0;
@@ -28,13 +34,20 @@ export async function mapWithConcurrency<T, R>(items: T[], limit: number, worker
 export async function enrichFixtures(
   fixtures: Fixture[],
   settings: AnalysisSettings,
+  overrides?: EnrichmentOverrides,
 ): Promise<Array<{ fixture: Fixture; enrichment: FixtureEnrichment }>> {
   // Fixture-level concurrency is configurable (default 10). It is NOT a
   // substitute for the global rate limiter: every provider request still
   // reserves a slot in the shared distributed limiter, which remains the final
   // authority regardless of this setting.
   const concurrency = Math.max(1, getProviderConfig().enrichmentConcurrency);
+  const fetchWeatherOverride = overrides?.fetchWeather;
+
   return mapWithConcurrency(fixtures, concurrency, async (fixture) => {
+    const customLoad = overrides?.loadEnrichment;
+    const load = customLoad
+      ? (provider: string) => customLoad(provider)
+      : (provider: string) => loadEnrichment(provider, fixture);
     const errors: string[] = [];
     let enrichment: FixtureEnrichment = {};
     let usedProvider: DataSource | undefined;
@@ -42,7 +55,7 @@ export async function enrichFixtures(
 
     for (const provider of settings.dataSourcePriorities) {
       try {
-        enrichment = await loadEnrichment(provider, fixture);
+        enrichment = await load(provider);
         usedProvider = provider;
         break;
       } catch (err) {
@@ -68,7 +81,9 @@ export async function enrichFixtures(
     }
 
     try {
-      const weather = await fetchWeather(fixture.venueLatitude, fixture.venueLongitude);
+      const weather = fetchWeatherOverride
+        ? await fetchWeatherOverride()
+        : await fetchWeather(fixture.venueLatitude, fixture.venueLongitude);
       if (weather) enrichment = { ...enrichment, weather };
     } catch (err) {
       errors.push(`weather: ${err instanceof Error ? err.message : String(err)}`);

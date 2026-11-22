@@ -6,6 +6,7 @@ import Link from 'next/link';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import PasswordField from '@/components/PasswordField';
+import PredictProSpinner from '@/components/PredictProSpinner';
 import { safeRedirectPath } from '@/lib/safe-redirect';
 import { apiJson } from '@/lib/api-client';
 
@@ -126,11 +127,7 @@ function LoginForm() {
   }
 
   if (authState === 'loading') {
-    return (
-      <div className="card" style={{ width: 400, maxWidth: '100%' }}>
-        <p style={{ color: 'var(--chalk-muted)' }}>Checking your session…</p>
-      </div>
-    );
+    return <PredictProSpinner />;
   }
 
   if (authState === 'authenticated' && currentUser) {
@@ -218,7 +215,7 @@ export default function LoginPage() {
     <>
       <Header />
       <section className="section" style={{ display: 'flex', justifyContent: 'center' }}>
-        <Suspense fallback={<div className="card" style={{ width: 400 }}>Loading…</div>}>
+        <Suspense fallback={<PredictProSpinner />}>
           <LoginForm />
         </Suspense>
       </section>

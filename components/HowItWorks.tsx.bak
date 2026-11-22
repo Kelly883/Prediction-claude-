@@ -1,0 +1,18 @@
+'use client';
+import Link from "next/link";
+
+/** Simple placeholder – to be expanded with real steps later */
+export default function HowItWorks(){
+  return (
+    <section className="section" style={{background:"var(--bg-primary)"}}>
+      <div className="container">
+        <h2 className="display mb-6" style={{color:"var(--accent-primary)"}}>How PredictPro Works</h2>
+        <p style={{color:"var(--chalk-muted)"}}>Three simple steps: choose a plan, access predictions, follow results.</p>
+        <div className="flex gap-4">
+          <Link href="/pricing" className="btn btn-primary">Choose a plan</Link>
+          <Link href="/predictions/today" className="btn btn-ghost">View predictions</Link>
+        </div>
+      </div>
+    </section>
+  );
+}

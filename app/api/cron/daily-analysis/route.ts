@@ -42,7 +42,6 @@ async function handle(req: NextRequest): Promise<NextResponse> {
       metadata: {
         actorType: 'system',
         actor: 'system:cron',
-        trigger: 'cron',
         source: 'cron',
         force,
         status: result.status,
@@ -51,6 +50,9 @@ async function handle(req: NextRequest): Promise<NextResponse> {
         alreadyRunning: result.alreadyRunning,
         blockedReason: result.blockedReason,
         errorCount: result.errors?.length ?? 0,
+        trigger: req.method === 'POST' ? 'manual' : 'cron',
+        method: req.method,
+        requestId: getRequestId(req),
       },
     });
 

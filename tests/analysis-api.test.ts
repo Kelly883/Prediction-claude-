@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   },
   analysisConfig: {
     findMany: vi.fn(),
+    findUnique: vi.fn(),
     upsert: vi.fn(),
   },
   transaction: vi.fn(),
@@ -226,6 +227,7 @@ describe('superadmin analysis config API', () => {
   });
 
   it('validates and stores threshold updates', async () => {
+    mocks.analysisConfig.findUnique.mockResolvedValue({ value: 75 });
     mocks.analysisConfig.upsert.mockResolvedValue({
       id: 'config-1',
       key: 'confidence_threshold',
@@ -246,6 +248,11 @@ describe('superadmin analysis config API', () => {
       create: expect.objectContaining({ value: 82 }),
     }));
     expect(mocks.requireAnalysisAdmin).toHaveBeenCalledWith(expect.anything(), true);
+    // Audit records both the previous and new value (before/after trail).
+    expect(mocks.writeAudit).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'analysis.config.update',
+      metadata: expect.objectContaining({ key: 'confidence_threshold', before: 75, after: 82 }),
+    }));
   });
 
   it('records the previous and new config values in the audit trail', async () => {

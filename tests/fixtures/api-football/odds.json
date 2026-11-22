@@ -1,0 +1,68 @@
+{
+  "get": "odds",
+  "parameters": { "fixture": "101" },
+  "errors": [],
+  "results": 2,
+  "response": [
+    {
+      "update": "2026-11-21T18:12:00Z",
+      "bookmakers": [
+        {
+          "id": 6,
+          "name": "Bet365",
+          "bets": [
+            {
+              "id": 1,
+              "name": "Match Winner",
+              "values": [
+                { "value": "Home", "odds": "1.53" },
+                { "value": "Draw", "odds": "4.20" },
+                { "value": "Away", "odds": "6.10" }
+              ]
+            },
+            {
+              "id": 8,
+              "name": "Double Chance",
+              "values": [
+                { "value": "1X", "odds": "1.22" },
+                { "value": "12", "odds": "1.21" },
+                { "value": "X2", "odds": "2.60" }
+              ]
+            },
+            {
+              "id": 12,
+              "name": "Asian Handicap",
+              "values": [
+                { "value": "Home -1.0", "odds": "2.05" },
+                { "value": "Away +1.0", "odds": "1.80" }
+              ]
+            },
+            {
+              "id": 22,
+              "name": "Total Corners",
+              "values": [
+                { "value": "Over 9.5", "odds": "1.87" },
+                { "value": "Under 9.5", "odds": "1.93" }
+              ]
+            }
+          ]
+        },
+        {
+          "id": 8,
+          "name": "William Hill",
+          "bets": [
+            {
+              "id": 1,
+              "name": "Match Winner",
+              "values": [
+                { "value": "Home", "odds": "1.50" },
+                { "value": "Draw", "odds": "4.33" },
+                { "value": "Away", "odds": "6.50" }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -8,6 +8,7 @@ import { scoreFirstHalfResult } from './markets/firstHalfResult';
 import { scoreMatchResult } from './markets/matchResult';
 import { scoreOverUnder } from './markets/overUnder';
 import { scorePlayerScorer } from './markets/playerScorer';
+import { dataQualityFor } from './markets/shared';
 import { scoreTotalCards } from './markets/totalCards';
 import { scoreTotalCorners } from './markets/totalCorners';
 import type { MarketContext } from './markets/shared';
@@ -22,6 +23,7 @@ import type { AnalysisOutcome, AnalysisSettings, Fixture, FixtureEnrichment, Mar
  * persisted. `outcome.eligibility` records the decision for every market
  * (eligible or not) so administrators can see exactly why a market was skipped.
  */
+
 export function scoreFixture(
   fixture: Fixture,
   enrichment: FixtureEnrichment,
@@ -49,17 +51,15 @@ export function scoreFixture(
   add('TOTAL_CARDS', scoreTotalCards);
   add('PLAYER_SCORER', scorePlayerScorer);
 
-  const ranked = [...scores].sort((left, right) => {
-    if (right.confidence !== left.confidence) return right.confidence - left.confidence;
-    return MARKET_ORDER.indexOf(left.market) - MARKET_ORDER.indexOf(right.market);
-  });
-  const best = ranked[0];
+  const dataQuality = dataQualityFor(enrichment);
+
   return {
     fixture,
     scores,
-    best,
-    topFactors: best ? topFactors(best.factors, 3) : [],
+    best: scores[0],
+    topFactors: scores[0] ? topFactors(scores[0].factors, 3) : [],
     eligibility,
+    dataQuality,
   };
 }
 

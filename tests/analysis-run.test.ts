@@ -98,13 +98,24 @@ function validOutcome(fixture: Fixture = FIXTURE): AnalysisOutcome {
     odds: 1.91,
     oddsAvailable: true,
     confidence: 82,
+    confidenceLabel: 'HEURISTIC_MODEL_SCORE',
     modelProbability: 0.55,
     factors: [{ name: 'homeXgVsAwayXg', score: 80, weight: 0.3 }],
+    evidence: {
+      label: 'VERIFIED' as const,
+      dataQuality: 'PRIMARY_COMPLETE' as const,
+      oddsAvailability: 'AVAILABLE' as const,
+      strength: 1,
+      sources: [] as string[],
+    },
   };
   return {
     fixture,
     scores: [best],
     best,
+    eligibility: [],
+    dataQuality: 'PRIMARY_COMPLETE' as const,
+    evidenceLabel: 'VERIFIED' as const,
     topFactors: [{ name: 'homeXgVsAwayXg', score: 80, weight: 0.3 }],
     eligibility: [],
   };

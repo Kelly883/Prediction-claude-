@@ -12,6 +12,7 @@ export type DataSource = 'api-football' | 'football-data';
 export type FixtureStatus =
   | 'scheduled'
   | 'in_play'
+  | 'live'
   | 'finished'
   | 'postponed'
   | 'cancelled'
@@ -32,6 +33,53 @@ export type EnrichmentQuality =
   | 'PRIMARY_PARTIAL'
   | 'FALLBACK_PARTIAL'
   | 'INSUFFICIENT_DATA';
+
+export type DataQuality = EnrichmentQuality;
+
+export type EvidenceLabel = 'NOT VERIFIED' | 'ESTIMATED' | 'CALCULATED' | 'VERIFIED';
+
+export interface OddsQuote {
+  provider: string;
+  bookmaker?: string;
+  market: MarketType;
+  selection: string;
+  price: number;
+  line?: number;
+  timestamp?: string;
+}
+
+export interface MarketEvidence {
+  label: EvidenceLabel;
+  dataQuality: DataQuality;
+  oddsAvailability: 'AVAILABLE' | 'MISSING';
+  strength: number;
+  sources: string[];
+  notes?: string[];
+}
+
+export interface ProvenanceRecord {
+  provider: string;
+  bookmaker?: string;
+  timestamp?: string;
+}
+
+export interface DataSourceRecord {
+  provider: string;
+  fields?: string[];
+  quality?: string;
+}
+
+export interface MarketEligibility {
+  market: MarketType;
+  eligible: boolean;
+  proceed: boolean;
+  reasons: string[];
+  missingFields: string[];
+  dataSources: string[];
+  dataQuality: DataQuality;
+  oddsAvailable: boolean;
+  restricted: boolean;
+}
 
 export interface LeagueConfigRecord {
   id?: string;
@@ -59,6 +107,8 @@ export interface Fixture {
   /** Provider season identifier used for enrichment requests (e.g. "2026"). */
   seasonId?: string;
   source: DataSource;
+  status?: FixtureStatus;
+  season?: number;
 }
 
 export interface TeamStats {
@@ -107,13 +157,14 @@ export interface OddsRecord {
   matchResult?: { home?: number; draw?: number; away?: number };
   btts?: { yes?: number; no?: number };
   overUnder25?: { over?: number; under?: number };
-  asianHandicap?: { home?: number; away?: number; line?: number };
+  asianHandicap?: { home?: number; away?: number; line?: number; homeLine?: number; awayLine?: number };
   doubleChance?: { homeDraw?: number; homeAway?: number; drawAway?: number };
   correctScore?: Record<string, number>;
   firstHalfResult?: { home?: number; draw?: number; away?: number };
   totalCorners?: { over?: number; under?: number; line?: number };
   totalCards?: { over?: number; under?: number; line?: number };
   playerScorer?: Record<string, number>;
+  provenance?: ProvenanceRecord;
 }
 
 export interface WeatherRecord {
@@ -154,6 +205,8 @@ export interface FixtureEnrichment {
   /** Named inputs that were required but unavailable, for admin transparency. */
   missingFields?: string[];
   errors?: string[];
+  dataQuality?: DataQuality;
+  sources?: DataSourceRecord[];
 }
 
 export interface FactorScore {
@@ -172,6 +225,7 @@ export interface MarketScore {
   odds: number | null;
   /** True only when `odds` came from a valid provider response. */
   oddsAvailable: boolean;
+  odds?: number;
   /**
    * Heuristic model score (0–100). This is NOT a calibrated win probability —
    * it combines weighted factor direction with data availability. The field
@@ -179,6 +233,7 @@ export interface MarketScore {
    * label it "Model score". See docs/PHASE_1_PRODUCTION_READINESS_AUDIT.md §E.
    */
   confidence: number;
+  confidenceLabel: string;
   /**
    * Model-derived probability (0–1) for the selected outcome, where the market
    * has a genuine probabilistic model (Match Result, Double Chance, Correct
@@ -186,6 +241,7 @@ export interface MarketScore {
    */
   modelProbability?: number;
   factors: FactorScore[];
+  evidence: MarketEvidence;
 }
 
 /**
@@ -213,6 +269,7 @@ export interface AnalysisOutcome {
    * eligibility gate. An outcome with no `best` must never be persisted.
    */
   best?: MarketScore;
+  eligibleBest?: MarketScore;
   topFactors: FactorScore[];
   /** Eligibility decision for every market, including ineligible ones. */
   eligibility: MarketEligibility[];
@@ -226,6 +283,8 @@ export interface AnalysisOutcome {
   oddsSource?: string;
   /** Timestamp the odds were captured from the provider, when present. */
   oddsCapturedAt?: Date;
+  dataQuality: DataQuality;
+  evidenceLabel: EvidenceLabel;
 }
 
 export type MarketWeights = Record<MarketType, Record<string, number>>;

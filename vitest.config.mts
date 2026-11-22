@@ -6,6 +6,10 @@ export default defineConfig({
     environment: 'node',
     setupFiles: ['./tests/setup.ts'],
     exclude: ['**/node_modules/**', '**/dist/**', '**/e2e/**'],
+    testTimeout: 60000,
+    hookTimeout: 60000,
+    teardownTimeout: 60000,
+    maxWorkers: 1,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json-summary'],

@@ -1,0 +1,1 @@
+ALTER TABLE "AnalysisResult" ALTER COLUMN "bestOdds" DROP NOT NULL;
