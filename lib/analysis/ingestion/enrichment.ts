@@ -55,7 +55,7 @@ export async function enrichFixtures(
 
     for (const provider of settings.dataSourcePriorities) {
       try {
-        enrichment = await load(provider);
+        enrichment = await load(provider as DataSource);
         usedProvider = provider;
         break;
       } catch (err) {

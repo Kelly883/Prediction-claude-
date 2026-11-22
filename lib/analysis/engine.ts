@@ -8,7 +8,7 @@ import { scoreFirstHalfResult } from './markets/firstHalfResult';
 import { scoreMatchResult } from './markets/matchResult';
 import { scoreOverUnder } from './markets/overUnder';
 import { scorePlayerScorer } from './markets/playerScorer';
-import { dataQualityFor } from './markets/shared';
+
 import { scoreTotalCards } from './markets/totalCards';
 import { scoreTotalCorners } from './markets/totalCorners';
 import type { MarketContext } from './markets/shared';
@@ -51,15 +51,12 @@ export function scoreFixture(
   add('TOTAL_CARDS', scoreTotalCards);
   add('PLAYER_SCORER', scorePlayerScorer);
 
-  const dataQuality = dataQualityFor(enrichment);
-
   return {
     fixture,
     scores,
     best: scores[0],
     topFactors: scores[0] ? topFactors(scores[0].factors, 3) : [],
     eligibility,
-    dataQuality,
   };
 }
 

@@ -35,6 +35,29 @@ const API_FOOTBALL_STATUS: Record<string, FixtureStatus> = {
   WO: 'awarded',
 };
 
+/** Human-readable reasons for API-Football status codes. */
+const API_FOOTBALL_STATUS_REASONS: Record<string, string> = {
+  TBD: 'Kickoff time not defined',
+  NS: 'Match not started',
+  '1H': 'First half in progress',
+  HT: 'Half-time',
+  '2H': 'Second half in progress',
+  ET: 'Extra time in progress',
+  BT: 'Break in play',
+  P: 'Match in progress',
+  LIVE: 'Match live',
+  SUSP: 'Match suspended',
+  INT: 'Match interrupted',
+  FT: 'Match finished',
+  AET: 'Match finished after extra time',
+  PEN: 'Match finished after penalties',
+  PST: 'Match postponed',
+  CANC: 'Match cancelled',
+  ABD: 'Match abandoned',
+  AWD: 'Match awarded',
+  WO: 'Walkover awarded',
+};
+
 /** Football-Data.org match status values → normalised status. */
 const FOOTBALL_DATA_STATUS: Record<string, FixtureStatus> = {
   SCHEDULED: 'scheduled',
@@ -59,7 +82,7 @@ export interface NormalizedStatus {
 export function normalizeApiFootballStatus(short?: unknown, long?: unknown): NormalizedStatus {
   const code = typeof short === 'string' ? short.trim().toUpperCase() : '';
   const label = code || (typeof long === 'string' ? long.trim() : undefined);
-  if (code && API_FOOTBALL_STATUS[code]) return { status: API_FOOTBALL_STATUS[code], label };
+  if (code && API_FOOTBALL_STATUS[code]) return { status: API_FOOTBALL_STATUS[code], label: API_FOOTBALL_STATUS_REASONS[code] };
   return { status: 'unknown', label };
 }
 

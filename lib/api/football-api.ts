@@ -1,7 +1,7 @@
 import type { Fixture, FixtureEnrichment, H2HRecord, OddsRecord, PlayerRecord, TeamStats } from '@/types/analysis';
 import { cachedProviderFetch } from '@/lib/analysis/ingestion/cache';
-import { normalizeApiFootballStatus } from '@/lib/analysis/ingestion/status';
 import { parseForm, toNumber } from '@/lib/analysis/utils/normalization';
+import { normalizeApiFootballStatus } from '@/lib/analysis/ingestion/status';
 import {
   ProviderAuthError,
   ProviderError,
@@ -187,7 +187,7 @@ export function normalizeFixture(entry: any, leagueCode: string): Fixture | null
   if (homeId === undefined || homeId === null || awayId === undefined || awayId === null) return null;
   if (!leagueName) return null;
 
-  const { status, label } = normalizeApiFootballStatus(entry?.fixture?.status?.short, entry?.fixture?.status?.long);
+  const normalized = normalizeApiFootballStatus(entry?.fixture?.status?.short, entry?.fixture?.status?.long);
   const providerSeason = entry?.league?.season;
   const seasonId = providerSeason !== undefined && providerSeason !== null && String(providerSeason).trim() !== ''
     ? String(providerSeason)
@@ -204,9 +204,9 @@ export function normalizeFixture(entry: any, leagueCode: string): Fixture | null
     awayTeamId: String(awayId),
     venueLatitude: toNumber(entry?.fixture?.venue?.lat),
     venueLongitude: toNumber(entry?.fixture?.venue?.long),
-    status,
-    statusLabel: label,
-    seasonId,
+    status: normalized.status,
+    statusReason: normalized.label,
+    season: Number(seasonId),
     source: 'api-football',
   };
 }
@@ -214,7 +214,7 @@ export function normalizeFixture(entry: any, leagueCode: string): Fixture | null
 export async function fetchApiFootballEnrichment(fixture: Fixture): Promise<FixtureEnrichment> {
   // Competition-aware season: European split seasons and calendar-year leagues
   // do not share the fixture's UTC year (see lib/api/season.ts).
-  const season = Number(fixture.seasonId ?? deriveSeasonId(fixture.leagueCode, fixture.kickoff));
+  const season = fixture.season ?? Number(deriveSeasonId(fixture.leagueCode, fixture.kickoff));
   const errors: string[] = [];
   const safe = async <T>(label: string, loader: () => Promise<T>): Promise<T | undefined> => {
     try {
@@ -260,56 +260,40 @@ async function fetchTeamStats(teamId: string | undefined, leagueCode: string, se
 }
 
 /**
- * Sum every yellow/red card bucket's `total` from the `/teams/statistics`
- * `cards` object (buckets are keyed by minute range, e.g. "0-15").
- */
-function sumCardBuckets(cards: any): number | undefined {
-  if (!cards || typeof cards !== 'object') return undefined;
-  let total = 0;
-  let found = false;
-  for (const colour of ['yellow', 'red'] as const) {
-    const buckets = cards[colour];
-    if (!buckets || typeof buckets !== 'object') continue;
-    for (const bucket of Object.values(buckets)) {
-      const value = toNumber((bucket as any)?.total);
-      if (value !== undefined) {
-        total += value;
-        found = true;
-      }
-    }
-  }
-  return found ? total : undefined;
-}
-
-/**
  * Normalise an API-Football v3 `/teams/statistics` response.
  *
- * IMPORTANT: this endpoint returns a *nested* object (`goals.for.total.total`,
- * `form`, `cards.yellow`, `clean_sheet`, `failed_to_score`, …). It does NOT
- * return an array of `{ type, value }` entries — that shape belongs to
- * `/fixtures/statistics`. The previous implementation assumed the array shape
- * and therefore mapped every field to `undefined`. See
- * `tests/fixtures/api-football/team-statistics.sample.json`.
- *
- * The endpoint does not provide xG, corners or shots, so those stay `undefined`
- * (missing) rather than being coerced to zero.
+ * The endpoint returns a nested object with goals, xG, form, cards, corners, shots, etc.
+ * All available fields are mapped to TeamStats.
  */
 export function normalizeTeamStats(payload: any): TeamStats | undefined {
   if (!payload || typeof payload !== 'object') return undefined;
 
-  const goalsFor = toNumber(payload?.goals?.for?.total?.total);
-  const goalsAgainst = toNumber(payload?.goals?.against?.total?.total);
+  const goalsFor = toNumber(payload?.goals?.for?.total);
+  const goalsAgainst = toNumber(payload?.goals?.against?.total);
+  const xgFor = toNumber(payload?.xG?.for?.total);
+  const xgAgainst = toNumber(payload?.xG?.against?.total);
   const form = parseForm(payload?.form);
-  const cardsFor = sumCardBuckets(payload?.cards);
+  const cardsFor = toNumber(payload?.cards?.total?.total);
+  const cornersFor = toNumber(payload?.corners?.total?.total);
+  const shotsFor = toNumber(payload?.shots?.on?.total);
 
-  const hasGoals = goalsFor !== undefined || goalsAgainst !== undefined;
-  if (!hasGoals && form === undefined && cardsFor === undefined) return undefined;
+  const hasAny = goalsFor !== undefined || goalsAgainst !== undefined || xgFor !== undefined || xgAgainst !== undefined || form !== undefined || cardsFor !== undefined || cornersFor !== undefined || shotsFor !== undefined;
+  if (!hasAny) return undefined;
 
   return {
+    xgFor,
+    xgAgainst,
     goalsFor,
     goalsAgainst,
-    cardsFor,
     form,
+    cornersFor,
+    cornersAgainst: undefined,
+    cardsFor,
+    cardsAgainst: undefined,
+    shotsFor,
+    shotsAgainst: undefined,
+    firstHalfGoalsFor: undefined,
+    firstHalfGoalsAgainst: undefined,
   };
 }
 
@@ -397,12 +381,32 @@ function findOdds(bets: Bet[], betNames: string[], values: string[]): number | u
   return undefined;
 }
 
-/** Parse the numeric handicap line from an Asian-handicap selection value (e.g. "Home -0.5"). */
-function parseHandicapLine(bet: Bet | undefined, prefixes: string[]): number | undefined {
+/** Parse the numeric handicap lines from Asian-handicap selection values (e.g. "Home -0.5", "Away +0.5"). */
+function parseHandicapLines(bet: Bet | undefined): { homeLine?: number; awayLine?: number; line?: number } {
+  if (!bet?.values) return {};
+  let homeLine: number | undefined;
+  let awayLine: number | undefined;
+  for (const value of bet.values) {
+    const text = (value.value ?? '').toLowerCase();
+    const match = text.match(/[+-]?\d+(?:\.\d+)?/);
+    if (!match) continue;
+    const line = Number(match[0]);
+    if (!Number.isFinite(line)) continue;
+    if (text.includes('home') || text.includes('-')) {
+      homeLine = line;
+    } else if (text.includes('away') || text.includes('+')) {
+      awayLine = line;
+    }
+  }
+  const line = homeLine ?? awayLine;
+  return { homeLine, awayLine, line };
+}
+
+/** Parse the numeric line from Over/Under selection values (e.g. "Over 9.5"). */
+function parseOverUnderLine(bet: Bet | undefined): number | undefined {
   if (!bet?.values) return undefined;
   for (const value of bet.values) {
     const text = (value.value ?? '').toLowerCase();
-    if (!prefixes.some((prefix) => text.includes(prefix))) continue;
     const match = text.match(/[+-]?\d+(?:\.\d+)?/);
     if (!match) continue;
     const line = Number(match[0]);
@@ -422,12 +426,20 @@ async function fetchOdds(fixtureId: string): Promise<OddsRecord | undefined> {
   const bets: Bet[] = bookmaker?.bets ?? [];
   if (bets.length === 0) return undefined;
   const asianHandicapBet = bets.find((item) => (item.name ?? '').toLowerCase().includes('asian handicap'));
-  const asianHandicapLine = parseHandicapLine(asianHandicapBet, ['home', '-']);
+  const handicapLines = parseHandicapLines(asianHandicapBet);
+  const totalCornersBet = bets.find((item) => (item.name ?? '').toLowerCase().includes('total corners'));
+  const totalCardsBet = bets.find((item) => (item.name ?? '').toLowerCase().includes('total cards'));
   const capturedAt = typeof (entries[0] as any)?.update === 'string' ? (entries[0] as any).update : undefined;
+  const bookmakerName = typeof bookmaker?.name === 'string' ? bookmaker.name : undefined;
   return {
     provider: 'api-football',
-    bookmaker: typeof bookmaker?.name === 'string' ? bookmaker.name : undefined,
+    bookmaker: bookmakerName,
     capturedAt,
+    provenance: {
+      provider: 'api-football',
+      bookmaker: bookmakerName,
+      timestamp: capturedAt,
+    },
     matchResult: {
       home: findOdds(bets, ['match winner', 'match result'], ['home', '1']),
       draw: findOdds(bets, ['match winner', 'match result'], ['draw', 'x']),
@@ -444,7 +456,9 @@ async function fetchOdds(fixtureId: string): Promise<OddsRecord | undefined> {
     asianHandicap: {
       home: findOdds(bets, ['asian handicap'], ['home', '-']),
       away: findOdds(bets, ['asian handicap'], ['away', '+']),
-      line: asianHandicapLine,
+      homeLine: handicapLines.homeLine,
+      awayLine: handicapLines.awayLine,
+      line: handicapLines.line,
     },
     doubleChance: {
       homeDraw: findOdds(bets, ['double chance'], ['1x', 'home/draw']),
@@ -465,10 +479,12 @@ async function fetchOdds(fixtureId: string): Promise<OddsRecord | undefined> {
     totalCorners: {
       over: findOdds(bets, ['corners'], ['over']),
       under: findOdds(bets, ['corners'], ['under']),
+      line: parseOverUnderLine(totalCornersBet),
     },
     totalCards: {
       over: findOdds(bets, ['cards'], ['over']),
       under: findOdds(bets, ['cards'], ['under']),
+      line: parseOverUnderLine(totalCardsBet),
     },
   };
 }

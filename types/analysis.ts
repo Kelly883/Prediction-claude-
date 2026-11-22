@@ -72,13 +72,13 @@ export interface DataSourceRecord {
 export interface MarketEligibility {
   market: MarketType;
   eligible: boolean;
-  proceed: boolean;
-  reasons: string[];
+  proceed?: boolean;
+  reasons?: string[];
   missingFields: string[];
   dataSources: string[];
   dataQuality: DataQuality;
   oddsAvailable: boolean;
-  restricted: boolean;
+  restricted?: boolean;
 }
 
 export interface LeagueConfigRecord {
@@ -107,8 +107,8 @@ export interface Fixture {
   /** Provider season identifier used for enrichment requests (e.g. "2026"). */
   seasonId?: string;
   source: DataSource;
-  status?: FixtureStatus;
   season?: number;
+  seasonId?: string;
 }
 
 export interface TeamStats {
@@ -225,7 +225,6 @@ export interface MarketScore {
   odds: number | null;
   /** True only when `odds` came from a valid provider response. */
   oddsAvailable: boolean;
-  odds?: number;
   /**
    * Heuristic model score (0–100). This is NOT a calibrated win probability —
    * it combines weighted factor direction with data availability. The field
@@ -233,7 +232,7 @@ export interface MarketScore {
    * label it "Model score". See docs/PHASE_1_PRODUCTION_READINESS_AUDIT.md §E.
    */
   confidence: number;
-  confidenceLabel: string;
+  confidenceLabel?: string;
   /**
    * Model-derived probability (0–1) for the selected outcome, where the market
    * has a genuine probabilistic model (Match Result, Double Chance, Correct
@@ -241,7 +240,7 @@ export interface MarketScore {
    */
   modelProbability?: number;
   factors: FactorScore[];
-  evidence: MarketEvidence;
+  evidence?: MarketEvidence;
 }
 
 /**
@@ -283,8 +282,8 @@ export interface AnalysisOutcome {
   oddsSource?: string;
   /** Timestamp the odds were captured from the provider, when present. */
   oddsCapturedAt?: Date;
-  dataQuality: DataQuality;
-  evidenceLabel: EvidenceLabel;
+  dataQuality?: DataQuality;
+  evidenceLabel?: EvidenceLabel;
 }
 
 export type MarketWeights = Record<MarketType, Record<string, number>>;
