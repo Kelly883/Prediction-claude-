@@ -39,7 +39,30 @@ import { getProviderConfig } from './provider-config';
 
 export type QuotaStatus = 'OK' | 'STALE' | 'UNKNOWN';
 export type QuotaLevel = 'ok' | 'warning' | 'critical' | 'stop' | 'unknown' | 'stale';
-export type QuotaSource = 'status-endpoint' | 'headers' | 'unknown';
+
+/**
+ * Provenance of a single measured value. Every numeric field in the snapshot
+ * carries the label of the exact place it was read from (or derived), so a
+ * consumer can never confuse a documented `/status` figure with a per-minute
+ * header, nor a measured value with an internally derived estimate:
+ *
+ *  - `PROVIDER_STATUS`         read directly from the `/status` body
+ *                              (`response.requests.current` / `limit_day`).
+ *  - `DAILY_RESPONSE_HEADERS`  read directly from the DAILY header pair
+ *                              (`x-ratelimit-requests-limit` / `-remaining`).
+ *  - `MINUTE_RATE_HEADERS`     read directly from the PER-MINUTE header pair
+ *                              (`X-RateLimit-Limit` / `-Remaining`).
+ *  - `INTERNAL_ESTIMATE`       derived from other verified values within the
+ *                              SAME window (e.g. `limit_day − current`), never
+ *                              invented and never crossing windows.
+ *  - `UNKNOWN`                 no verified value available (never zero).
+ */
+export type QuotaSource =
+  | 'PROVIDER_STATUS'
+  | 'DAILY_RESPONSE_HEADERS'
+  | 'MINUTE_RATE_HEADERS'
+  | 'INTERNAL_ESTIMATE'
+  | 'UNKNOWN';
 
 export interface ProviderQuotaSnapshot {
   provider: 'api-football';
@@ -48,21 +71,29 @@ export interface ProviderQuotaSnapshot {
   // --- DAILY quota window (drives the ingestion gate) ---
   /** Daily allocation, or null when unavailable. */
   dailyLimit: number | null;
+  /** Provenance of `dailyLimit`. */
+  dailyLimitSource: QuotaSource;
   /** Requests consumed today, or null when unavailable. */
   consumed: number | null;
+  /** Provenance of `consumed`. */
+  consumedSource: QuotaSource;
   /** Requests remaining today, or null when unavailable. */
   remaining: number | null;
+  /** Provenance of `remaining`. */
+  remainingSource: QuotaSource;
   // --- PER-MINUTE rate window (observability only; never feeds daily quota) ---
   /** Per-minute request ceiling, or null when unavailable. */
   perMinuteLimit: number | null;
+  /** Provenance of `perMinuteLimit`. */
+  perMinuteLimitSource: QuotaSource;
   /** Per-minute requests remaining, or null when unavailable. */
   perMinuteRemaining: number | null;
-  /** Where the per-minute figures were observed. */
-  perMinuteSource: 'headers' | 'unknown';
+  /** Provenance of `perMinuteRemaining`. */
+  perMinuteRemainingSource: QuotaSource;
   /** ISO timestamp of the last successful check. */
   lastCheckedAt: string;
   status: QuotaStatus;
-  /** Source of the DAILY figures (`status-endpoint` | `headers` | `unknown`). */
+  /** Overall source that established the DAILY window. */
   source: QuotaSource;
 }
 
@@ -74,8 +105,9 @@ function toFiniteNumber(value: unknown): number | null {
 }
 
 /**
- * Build a snapshot from a verified `/status` response. Nothing is invented, and
- * the daily and per-minute windows are kept strictly separate.
+ * Build a snapshot from a verified `/status` response. Nothing is invented, the
+ * daily and per-minute windows are kept strictly separate, and every value
+ * records the source it came from.
  */
 export function buildQuotaSnapshot(status: ApiFootballProviderStatus, now: Date = new Date()): ProviderQuotaSnapshot {
   // DAILY window headers.
@@ -94,22 +126,41 @@ export function buildQuotaSnapshot(status: ApiFootballProviderStatus, now: Date 
   const bodyConsumed = toFiniteNumber(status.requestsCurrent);
   const hasBodyDaily = bodyDailyLimit !== null || bodyConsumed !== null;
   const hasHeaderDaily = dailyHeaderLimit !== null || dailyHeaderRemaining !== null;
-  const source: QuotaSource = hasBodyDaily ? 'status-endpoint' : hasHeaderDaily ? 'headers' : 'unknown';
 
   let dailyLimit: number | null = null;
+  let dailyLimitSource: QuotaSource = 'UNKNOWN';
   let consumed: number | null = null;
+  let consumedSource: QuotaSource = 'UNKNOWN';
   let remaining: number | null = null;
+  let remainingSource: QuotaSource = 'UNKNOWN';
+  let source: QuotaSource = 'UNKNOWN';
+
   if (hasBodyDaily) {
+    source = 'PROVIDER_STATUS';
     dailyLimit = bodyDailyLimit;
+    dailyLimitSource = bodyDailyLimit !== null ? 'PROVIDER_STATUS' : 'UNKNOWN';
     consumed = bodyConsumed;
-    remaining = dailyLimit !== null && consumed !== null ? Math.max(0, dailyLimit - consumed) : null;
+    consumedSource = bodyConsumed !== null ? 'PROVIDER_STATUS' : 'UNKNOWN';
+    // `remaining` is DERIVED within the daily window → INTERNAL_ESTIMATE.
+    if (dailyLimit !== null && consumed !== null) {
+      remaining = Math.max(0, dailyLimit - consumed);
+      remainingSource = 'INTERNAL_ESTIMATE';
+    }
   } else if (hasHeaderDaily) {
+    source = 'DAILY_RESPONSE_HEADERS';
     dailyLimit = dailyHeaderLimit;
+    dailyLimitSource = dailyHeaderLimit !== null ? 'DAILY_RESPONSE_HEADERS' : 'UNKNOWN';
     remaining = dailyHeaderRemaining;
-    consumed = dailyLimit !== null && remaining !== null ? Math.max(0, dailyLimit - remaining) : null;
+    remainingSource = dailyHeaderRemaining !== null ? 'DAILY_RESPONSE_HEADERS' : 'UNKNOWN';
+    // `consumed` is DERIVED within the daily window → INTERNAL_ESTIMATE.
+    if (dailyLimit !== null && remaining !== null) {
+      consumed = Math.max(0, dailyLimit - remaining);
+      consumedSource = 'INTERNAL_ESTIMATE';
+    }
   }
 
-  const perMinuteSource: 'headers' | 'unknown' = perMinuteLimit !== null || perMinuteRemaining !== null ? 'headers' : 'unknown';
+  const perMinuteLimitSource: QuotaSource = perMinuteLimit !== null ? 'MINUTE_RATE_HEADERS' : 'UNKNOWN';
+  const perMinuteRemainingSource: QuotaSource = perMinuteRemaining !== null ? 'MINUTE_RATE_HEADERS' : 'UNKNOWN';
   // Daily quota is "established" only when both the allocation and consumption
   // are known; otherwise it stays UNKNOWN (never zero).
   const statusLabel: QuotaStatus = dailyLimit !== null && consumed !== null ? 'OK' : 'UNKNOWN';
@@ -119,11 +170,15 @@ export function buildQuotaSnapshot(status: ApiFootballProviderStatus, now: Date 
     plan: status.plan,
     subscriptionEnd: status.subscriptionEnd ?? null,
     dailyLimit,
+    dailyLimitSource,
     consumed,
+    consumedSource,
     remaining,
+    remainingSource,
     perMinuteLimit,
+    perMinuteLimitSource,
     perMinuteRemaining,
-    perMinuteSource,
+    perMinuteRemainingSource,
     lastCheckedAt: now.toISOString(),
     status: statusLabel,
     source,
@@ -135,14 +190,18 @@ export function unknownQuotaSnapshot(now: Date = new Date()): ProviderQuotaSnaps
   return {
     provider: 'api-football',
     dailyLimit: null,
+    dailyLimitSource: 'UNKNOWN',
     consumed: null,
+    consumedSource: 'UNKNOWN',
     remaining: null,
+    remainingSource: 'UNKNOWN',
     perMinuteLimit: null,
+    perMinuteLimitSource: 'UNKNOWN',
     perMinuteRemaining: null,
-    perMinuteSource: 'unknown',
+    perMinuteRemainingSource: 'UNKNOWN',
     lastCheckedAt: now.toISOString(),
     status: 'UNKNOWN',
-    source: 'unknown',
+    source: 'UNKNOWN',
   };
 }
 
@@ -294,14 +353,18 @@ export async function headerQuotaSnapshot(now: Date = new Date()): Promise<Provi
   return {
     provider: 'api-football',
     dailyLimit,
+    dailyLimitSource: dailyLimit !== null ? 'DAILY_RESPONSE_HEADERS' : 'UNKNOWN',
     consumed,
+    consumedSource: consumed !== null ? 'INTERNAL_ESTIMATE' : 'UNKNOWN',
     remaining,
+    remainingSource: remaining !== null ? 'DAILY_RESPONSE_HEADERS' : 'UNKNOWN',
     perMinuteLimit: headers.perMinuteLimit,
+    perMinuteLimitSource: headers.perMinuteLimit !== null ? 'MINUTE_RATE_HEADERS' : 'UNKNOWN',
     perMinuteRemaining: headers.perMinuteRemaining,
-    perMinuteSource: headers.perMinuteLimit !== null || headers.perMinuteRemaining !== null ? 'headers' : 'unknown',
+    perMinuteRemainingSource: headers.perMinuteRemaining !== null ? 'MINUTE_RATE_HEADERS' : 'UNKNOWN',
     lastCheckedAt: headers.capturedAt,
     status: stale ? 'STALE' : dailyLimit !== null && consumed !== null ? 'OK' : 'UNKNOWN',
-    source: 'headers',
+    source: 'DAILY_RESPONSE_HEADERS',
   };
 }
 

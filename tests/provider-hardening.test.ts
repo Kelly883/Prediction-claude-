@@ -326,24 +326,39 @@ describe('§4 quota — daily and per-minute windows never mix', () => {
     // DAILY window comes from /status (highest priority), NEVER the per-minute pair.
     expect(snap).toMatchObject({
       dailyLimit: 7_500,
+      dailyLimitSource: 'PROVIDER_STATUS',
       consumed: 100,
+      consumedSource: 'PROVIDER_STATUS',
       remaining: 7_400,
+      // remaining is DERIVED from /status values → INTERNAL_ESTIMATE.
+      remainingSource: 'INTERNAL_ESTIMATE',
       status: 'OK',
-      source: 'status-endpoint',
+      source: 'PROVIDER_STATUS',
     });
-    // PER-MINUTE window is stored separately and labelled.
+    // PER-MINUTE window is stored separately and labelled MINUTE_RATE_HEADERS.
     expect(snap.perMinuteLimit).toBe(300);
     expect(snap.perMinuteRemaining).toBe(250);
-    expect(snap.perMinuteSource).toBe('headers');
+    expect(snap.perMinuteLimitSource).toBe('MINUTE_RATE_HEADERS');
+    expect(snap.perMinuteRemainingSource).toBe('MINUTE_RATE_HEADERS');
   });
 
   it('falls back to the DAILY header pair when /status daily fields are absent', () => {
     const snap = buildQuotaSnapshot({
       headers: { 'x-ratelimit-requests-limit': '7500', 'x-ratelimit-requests-remaining': '7000' },
     });
-    expect(snap).toMatchObject({ dailyLimit: 7_500, consumed: 500, remaining: 7_000, source: 'headers', status: 'OK' });
+    expect(snap).toMatchObject({
+      dailyLimit: 7_500,
+      dailyLimitSource: 'DAILY_RESPONSE_HEADERS',
+      consumed: 500,
+      // consumed is DERIVED from the DAILY header pair → INTERNAL_ESTIMATE.
+      consumedSource: 'INTERNAL_ESTIMATE',
+      remaining: 7_000,
+      remainingSource: 'DAILY_RESPONSE_HEADERS',
+      source: 'DAILY_RESPONSE_HEADERS',
+      status: 'OK',
+    });
     expect(snap.perMinuteLimit).toBeNull();
-    expect(snap.perMinuteSource).toBe('unknown');
+    expect(snap.perMinuteLimitSource).toBe('UNKNOWN');
   });
 
   it('NEVER derives daily quota from per-minute headers', () => {
@@ -354,10 +369,11 @@ describe('§4 quota — daily and per-minute windows never mix', () => {
     expect(snap.consumed).toBeNull();
     expect(snap.remaining).toBeNull();
     expect(snap.status).toBe('UNKNOWN');
-    expect(snap.source).toBe('unknown');
+    expect(snap.source).toBe('UNKNOWN');
     // The per-minute values are still surfaced, but only in the per-minute fields.
     expect(snap.perMinuteLimit).toBe(300);
     expect(snap.perMinuteRemaining).toBe(250);
+    expect(snap.perMinuteLimitSource).toBe('MINUTE_RATE_HEADERS');
   });
 
   it('leaves daily UNKNOWN when only a partial DAILY pair is present (never zero)', () => {
@@ -370,7 +386,10 @@ describe('§4 quota — daily and per-minute windows never mix', () => {
 
   it('represents a missing quota as UNKNOWN, never zero', () => {
     const snap = buildQuotaSnapshot({ headers: {} });
-    expect(snap).toMatchObject({ dailyLimit: null, consumed: null, remaining: null, status: 'UNKNOWN', source: 'unknown' });
+    expect(snap).toMatchObject({ dailyLimit: null, consumed: null, remaining: null, status: 'UNKNOWN', source: 'UNKNOWN' });
+    expect(snap.dailyLimitSource).toBe('UNKNOWN');
+    expect(snap.consumedSource).toBe('UNKNOWN');
+    expect(snap.remainingSource).toBe('UNKNOWN');
     expect(unknownQuotaSnapshot()).toMatchObject({ dailyLimit: null, consumed: null, status: 'UNKNOWN' });
   });
 
@@ -444,7 +463,7 @@ describe('§4/§8 quota refresh guards', () => {
       plan: 'Pro', subscriptionEnd: null, requestsCurrent: 100, requestsLimitDay: 7_500, headers: {},
     });
     const snap = await refreshProviderQuota(DAY);
-    expect(snap).toMatchObject({ dailyLimit: 7_500, consumed: 100, remaining: 7_400, status: 'OK', source: 'status-endpoint' });
+    expect(snap).toMatchObject({ dailyLimit: 7_500, consumed: 100, remaining: 7_400, status: 'OK', source: 'PROVIDER_STATUS' });
     const stored = await redis.get<typeof snap>(QUOTA_KEY);
     expect(stored?.dailyLimit).toBe(7_500);
   });
@@ -452,7 +471,7 @@ describe('§4/§8 quota refresh guards', () => {
   it('never overwrites a newer valid snapshot with an older refresh', async () => {
     await redis.set(QUOTA_KEY, {
       ...unknownQuotaSnapshot(),
-      dailyLimit: 7_500, consumed: 200, remaining: 7_300, status: 'OK', source: 'status-endpoint',
+      dailyLimit: 7_500, consumed: 200, remaining: 7_300, status: 'OK', source: 'PROVIDER_STATUS',
       lastCheckedAt: '2026-11-22T07:00:00.000Z',
     });
     hoisted.fetchApiFootballStatus.mockResolvedValue({ requestsCurrent: 999, requestsLimitDay: 7_500, headers: {} });
@@ -465,7 +484,7 @@ describe('§4/§8 quota refresh guards', () => {
   it('never overwrites a valid snapshot with an incomplete (UNKNOWN) refresh', async () => {
     await redis.set(QUOTA_KEY, {
       ...unknownQuotaSnapshot(),
-      dailyLimit: 7_500, consumed: 100, remaining: 7_400, status: 'OK', source: 'status-endpoint',
+      dailyLimit: 7_500, consumed: 100, remaining: 7_400, status: 'OK', source: 'PROVIDER_STATUS',
       lastCheckedAt: '2026-11-22T05:00:00.000Z',
     });
     hoisted.fetchApiFootballStatus.mockResolvedValue({ headers: {} });

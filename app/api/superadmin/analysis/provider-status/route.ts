@@ -69,14 +69,19 @@ export async function GET(req: NextRequest) {
         provider: quota.provider,
         plan: quota.plan ?? null,
         subscriptionEnd: quota.subscriptionEnd ?? null,
-        // DAILY window (drives the ingestion gate).
+        // DAILY window (drives the ingestion gate). Every value carries the
+        // source it was read from / derived from.
         dailyLimit: quota.dailyLimit,
+        dailyLimitSource: quota.dailyLimitSource,
         consumed: quota.consumed,
+        consumedSource: quota.consumedSource,
         remaining: quota.remaining,
+        remainingSource: quota.remainingSource,
         // PER-MINUTE window (observability only — never feeds daily quota).
         perMinuteLimit: quota.perMinuteLimit,
+        perMinuteLimitSource: quota.perMinuteLimitSource,
         perMinuteRemaining: quota.perMinuteRemaining,
-        perMinuteSource: quota.perMinuteSource,
+        perMinuteRemainingSource: quota.perMinuteRemainingSource,
         lastCheckedAt: quota.lastCheckedAt,
         status: quota.status,
         source: quota.source,

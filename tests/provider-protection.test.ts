@@ -118,7 +118,7 @@ describe('provider quota monitoring', () => {
 
   it('builds a verified snapshot from the /status fields', () => {
     const snap = buildQuotaSnapshot({ requestsCurrent: 100, requestsLimitDay: 7_500, headers: {} });
-    expect(snap).toMatchObject({ dailyLimit: 7_500, consumed: 100, remaining: 7_400, status: 'OK', source: 'status-endpoint' });
+    expect(snap).toMatchObject({ dailyLimit: 7_500, consumed: 100, remaining: 7_400, status: 'OK', source: 'PROVIDER_STATUS' });
   });
 
   it('represents unavailable quota as UNKNOWN, never zero', () => {
@@ -136,7 +136,7 @@ describe('provider quota monitoring', () => {
     const snap = buildQuotaSnapshot({
       headers: { 'x-ratelimit-requests-limit': '7500', 'x-ratelimit-requests-remaining': '7000' },
     });
-    expect(snap).toMatchObject({ dailyLimit: 7_500, remaining: 7_000, consumed: 500, source: 'headers' });
+    expect(snap).toMatchObject({ dailyLimit: 7_500, remaining: 7_000, consumed: 500, source: 'DAILY_RESPONSE_HEADERS' });
   });
 
   it('applies the 70 / 85 / 95 % thresholds', () => {
@@ -174,7 +174,7 @@ describe('provider quota monitoring', () => {
       consumed: 7_400,
       remaining: 100,
       status: 'OK',
-      source: 'status-endpoint',
+      source: 'PROVIDER_STATUS',
       lastCheckedAt: now.toISOString(),
     });
     expect((await evaluateQuotaGate(now)).allowed).toBe(false);
@@ -186,7 +186,7 @@ describe('provider quota monitoring', () => {
       consumed: 5,
       remaining: 7_495,
       status: 'OK',
-      source: 'status-endpoint',
+      source: 'PROVIDER_STATUS',
       lastCheckedAt: now.toISOString(),
     });
     expect((await evaluateQuotaGate(now)).allowed).toBe(true);

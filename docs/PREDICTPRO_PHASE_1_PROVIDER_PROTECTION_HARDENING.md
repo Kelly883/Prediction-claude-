@@ -187,12 +187,17 @@ enforces strict window separation:
   (`x-ratelimit-requests-limit` / `-remaining`), else `unknown`. `remaining`
   and `consumed` are derived **within** that one source.
 * **Per-minute** (`X-RateLimit-Limit` / `X-RateLimit-Remaining`) is stored in
-  **separate** fields (`perMinuteLimit`, `perMinuteRemaining`, `perMinuteSource`)
-  and is **never** used for daily consumption.
+  **separate** fields (`perMinuteLimit`, `perMinuteRemaining`) and is **never**
+  used for daily consumption.
 * Missing ⇒ `null` (never 0); if the daily window cannot be established, `status`
-  stays `UNKNOWN`. `STALE` handling is preserved. Each measurement records its
-  `source`. A newer valid snapshot is never overwritten by an older or
-  incomplete refresh; out-of-order header captures are ignored.
+  stays `UNKNOWN`. `STALE` handling is preserved. A newer valid snapshot is never
+  overwritten by an older or incomplete refresh; out-of-order header captures are
+  ignored.
+* **Per-value provenance.** Every numeric field carries a `*Source`
+  (`PROVIDER_STATUS` read from `/status`; `DAILY_RESPONSE_HEADERS` read from the
+  DAILY headers; `MINUTE_RATE_HEADERS` read from the per-minute headers;
+  `INTERNAL_ESTIMATE` derived within one window; `UNKNOWN` = no verified value).
+  Overall `source` is the daily window's origin.
 
 > **Real bug found and fixed during this task.** Mock-VERIFIED by the test
 > *"builds daily + per-minute from /status and headers without mixing"*: the prior

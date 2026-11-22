@@ -279,21 +279,36 @@ independent measurement windows** and they are kept strictly separate:
 pair, else `unknown` — and derives `remaining`/`consumed` consistently within that
 single source. **A per-minute header is never used to compute daily consumption.**
 
-**Snapshot** (`provider:quota:api-football`, TTL `PROVIDER_QUOTA_SNAPSHOT_TTL_SECONDS`):
+**Snapshot** (`provider:quota:api-football`, TTL `PROVIDER_QUOTA_SNAPSHOT_TTL_SECONDS`).
+**Every numeric value records the exact place it came from** (per-value `*Source`):
 
 | Field | Notes |
 | --- | --- |
 | `provider` | `api-football` |
 | `plan`, `subscriptionEnd` | from `/status` subscription (optional) |
 | `dailyLimit` | daily window only: `requests.limit_day`, else the DAILY header limit, else `null` |
+| `dailyLimitSource` | `PROVIDER_STATUS` / `DAILY_RESPONSE_HEADERS` / `UNKNOWN` |
 | `consumed` | daily window only: `requests.current`, else `dailyLimit − dailyRemaining`, else `null` |
+| `consumedSource` | `PROVIDER_STATUS` (from `/status`) / `INTERNAL_ESTIMATE` (derived) / `UNKNOWN` |
 | `remaining` | daily window only: `dailyLimit − consumed`, or the DAILY header remaining, else `null` |
+| `remainingSource` | `DAILY_RESPONSE_HEADERS` / `INTERNAL_ESTIMATE` (derived from `/status`) / `UNKNOWN` |
 | `perMinuteLimit` | per-minute window only: `X-RateLimit-Limit`, else `null` |
+| `perMinuteLimitSource` | `MINUTE_RATE_HEADERS` / `UNKNOWN` |
 | `perMinuteRemaining` | per-minute window only: `X-RateLimit-Remaining`, else `null` |
-| `perMinuteSource` | `headers` / `unknown` |
+| `perMinuteRemainingSource` | `MINUTE_RATE_HEADERS` / `UNKNOWN` |
 | `lastCheckedAt` | ISO time of the check |
 | `status` | `OK` / `STALE` / `UNKNOWN` |
-| `source` | daily source: `status-endpoint` / `headers` / `unknown` |
+| `source` | overall daily source: `PROVIDER_STATUS` / `DAILY_RESPONSE_HEADERS` / `UNKNOWN` |
+
+**Source vocabulary** (never mixed across windows):
+
+| Label | Meaning |
+| --- | --- |
+| `PROVIDER_STATUS` | read directly from the `/status` body (`response.requests.current` / `limit_day`) |
+| `DAILY_RESPONSE_HEADERS` | read directly from the DAILY header pair (`x-ratelimit-requests-*`) |
+| `MINUTE_RATE_HEADERS` | read directly from the PER-MINUTE header pair (`X-RateLimit-*`) |
+| `INTERNAL_ESTIMATE` | derived from other verified values **within the same window** (e.g. `limit_day − current`) |
+| `UNKNOWN` | no verified value available (never zero) |
 
 **Never assume an unavailable value is zero.** Missing values are `null`; if the
 daily window cannot be established (`limit` or `consumed` unknown) `status` stays
@@ -315,6 +330,16 @@ paths go through the global limiter.
 > above are taken from the provider's documentation. **No authorized live `/status`
 > response was obtained in this change**, so the field names are
 > documentation-verified, not capture-verified.
+>
+> **Quota-mapping verification.** Covered by
+> [`tests/quota-mapping-verification.test.ts`](file:///workspace/tests/quota-mapping-verification.test.ts)
+> (MOCK-VERIFIED/CALCULATED): the documented `/status` example maps to
+> `PROVIDER_STATUS`; the DAILY header pair maps to `DAILY_RESPONSE_HEADERS`; the
+> per-minute pair maps to `MINUTE_RATE_HEADERS`; derived values are
+> `INTERNAL_ESTIMATE`; missing/partial/contradictory/zero/stale cases are asserted;
+> and `/status` is shown to pass through the distributed limiter yet not to consume
+> daily quota. Live account quota, subscription entitlement and the real header
+> names remain **NOT VERIFIED** until an authorized live probe is run.
 
 ---
 
