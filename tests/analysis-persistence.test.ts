@@ -42,7 +42,6 @@ function outcome(overrides: {
     dataQuality: 'PRIMARY_COMPLETE' as const,
     evidenceLabel: 'VERIFIED' as const,
     topFactors: [{ name: 'homeXgVsAwayXg', score: 80, weight: 0.3 }],
-    eligibility: [],
   };
 }
 

@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  analysisRun: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
+  analysisRun: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn(), findMany: vi.fn() },
   analysisResult: { createMany: vi.fn(), findMany: vi.fn() },
   analysisConfig: { findMany: vi.fn() },
   transaction: vi.fn(),
-  redis: { get: vi.fn(), set: vi.fn(), del: vi.fn(), incr: vi.fn(), expire: vi.fn() },
+  redis: { get: vi.fn(), set: vi.fn(), del: vi.fn(), incr: vi.fn(), expire: vi.fn(), eval: vi.fn() },
   tx: {
     analysisResult: { createMany: vi.fn() },
     analysisRun: { update: vi.fn() },
@@ -117,7 +117,6 @@ function validOutcome(fixture: Fixture = FIXTURE): AnalysisOutcome {
     dataQuality: 'PRIMARY_COMPLETE' as const,
     evidenceLabel: 'VERIFIED' as const,
     topFactors: [{ name: 'homeXgVsAwayXg', score: 80, weight: 0.3 }],
-    eligibility: [],
   };
 }
 
@@ -129,6 +128,9 @@ describe('runDailyAnalysis persistence', () => {
     mocks.redis.del.mockResolvedValue(1);
     mocks.redis.incr.mockResolvedValue(1);
     mocks.redis.expire.mockResolvedValue(1);
+    mocks.redis.eval.mockResolvedValue(1);
+    // No stale runs to recover by default; lock CAS operations succeed.
+    mocks.analysisRun.findMany.mockResolvedValue([]);
     // Default: Redis reachable, quota key healthy, circuit closed (null).
     mocks.redis.get.mockImplementation(async (key: string) =>
       key === 'provider:quota:api-football' ? HEALTHY_QUOTA : null,
@@ -346,5 +348,67 @@ describe('runDailyAnalysis persistence', () => {
     } finally {
       delete process.env.PROVIDER_ANALYSIS_BATCH_SIZE;
     }
+  });
+
+  // --- M1: cumulative count excludes insufficient-data / failed outcomes ---
+
+  const FIXTURE3: Fixture = { ...FIXTURE, id: 'fx-3' };
+  const FIXTURE4: Fixture = { ...FIXTURE, id: 'fx-4' };
+
+  it('resumes a deferred run and counts only successfully-analysed prior fixtures', async () => {
+    process.env.PROVIDER_ANALYSIS_BATCH_SIZE = '1';
+    budgetState.expireAfterCalls = 1; // one batch, then defer
+    mocks.analysisRun.findFirst.mockResolvedValue({
+      id: 'run-def', status: 'deferred', fixturesAnalyzed: 0, picksGenerated: 0,
+    });
+    // fx-1 previously succeeded; fx-2 previously had INSUFFICIENT_DATA (must NOT count).
+    mocks.analysisResult.findMany.mockResolvedValue([
+      { fixtureId: 'fx-1', enrichmentQuality: 'PRIMARY_COMPLETE' },
+      { fixtureId: 'fx-2', enrichmentQuality: 'INSUFFICIENT_DATA' },
+    ]);
+    let updateCallCount = 0;
+    mocks.analysisRun.update.mockImplementation(async (args: { where: { id: string }; data: { status: string } }) => {
+      updateCallCount += 1;
+      if (updateCallCount === 1) {
+        // First call: resume run (status: 'running')
+        return { id: 'run-def', status: 'running', fixturesAnalyzed: 1, picksGenerated: 1 };
+      }
+      // Second call: deferred status change
+      return { id: 'run-def', status: 'deferred', fixturesAnalyzed: 2, picksGenerated: 1 };
+    });
+    mocks.tx.analysisRun.update.mockResolvedValue({ id: 'run-def', status: 'deferred', fixturesAnalyzed: 2, picksGenerated: 1 });
+    mocks.fetchFixtures.mockResolvedValue({ fixtures: [FIXTURE, FIXTURE2, FIXTURE3, FIXTURE4], errors: [] });
+    mocks.enrichFixtures.mockImplementation(async (batch: Fixture[]) =>
+      batch.map((fixture) => ({ fixture, enrichment: {} })),
+    );
+    mocks.scoreFixture.mockImplementation((fixture: Fixture) => validOutcome(fixture));
+    mocks.tx.analysisResult.createMany.mockResolvedValue({ count: 1 });
+
+    try {
+      const result = await runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z') });
+
+      expect(result.status).toBe('deferred');
+      // fx-1 (prior success) + fx-3 (this run's success) counted; fx-2 (INSUFFICIENT_DATA) excluded; fx-4 not yet processed.
+      expect(result.fixturesAnalyzed).toBe(2);
+      expect(result.blockedReason).toMatch(/deferred/i);
+    } finally {
+      delete process.env.PROVIDER_ANALYSIS_BATCH_SIZE;
+      budgetState.expireAfterCalls = 1;
+    }
+  });
+
+  // --- H2: two workers competing for the same run ---
+
+  it('does not create a second run when the day-lock is held by another worker', async () => {
+    mocks.redis.set.mockResolvedValue(null); // lock held elsewhere
+    mocks.analysisRun.findFirst.mockResolvedValue({
+      id: 'held-run', status: 'running', fixturesAnalyzed: 3, picksGenerated: 1,
+    });
+
+    const result = await runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z'), force: true });
+
+    expect(result).toMatchObject({ runId: 'held-run', status: 'running', alreadyRunning: true });
+    expect(mocks.analysisRun.create).not.toHaveBeenCalled();
+    expect(mocks.transaction).not.toHaveBeenCalled();
   });
 });

@@ -227,7 +227,7 @@ describe('superadmin analysis config API', () => {
   });
 
   it('validates and stores threshold updates', async () => {
-    mocks.analysisConfig.findUnique.mockResolvedValue({ value: 75 });
+    mocks.analysisConfig.findMany.mockResolvedValue([{ key: 'confidence_threshold', value: 75 }]);
     mocks.analysisConfig.upsert.mockResolvedValue({
       id: 'config-1',
       key: 'confidence_threshold',
@@ -251,7 +251,7 @@ describe('superadmin analysis config API', () => {
     // Audit records both the previous and new value (before/after trail).
     expect(mocks.writeAudit).toHaveBeenCalledWith(expect.objectContaining({
       action: 'analysis.config.update',
-      metadata: expect.objectContaining({ key: 'confidence_threshold', before: 75, after: 82 }),
+      metadata: expect.objectContaining({ key: 'confidence_threshold', previousValue: 75, newValue: 82 }),
     }));
   });
 

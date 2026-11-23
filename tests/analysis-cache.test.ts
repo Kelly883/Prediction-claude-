@@ -5,10 +5,16 @@ const store = new Map<string, unknown>();
 vi.mock('@/lib/redis', () => ({
   redis: {
     get: vi.fn(async (key: string) => (store.has(key) ? (store.get(key) as never) : null)),
-    set: vi.fn(async (key: string, value: unknown) => {
-      store.set(key, value);
+    set: vi.fn(async (key: string, value: unknown, opts?: { nx?: boolean; ex?: number }) => {
+      const k = String(key);
+      if (opts?.nx && store.has(k)) return null;
+      store.set(k, value);
       return 'OK';
     }),
+    del: vi.fn(async () => 1),
+    incr: vi.fn(async () => 1),
+    expire: vi.fn(async () => 1),
+    eval: vi.fn(async () => [1, 0]),
   },
 }));
 

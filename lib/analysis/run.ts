@@ -25,13 +25,20 @@ import type { AnalysisSettings, Fixture, FixtureEnrichment } from '@/types/analy
 // completed between discovery and recovery is never overwritten.
 // ---------------------------------------------------------------------------
 
-/** Unique owner token for the current analysis lock holder. Generated once per run. */
-let analysisLockOwner: string | null = null;
+export interface RunLockState {
+  /** Unique owner token for the lock holder, or null when not held. */
+  owner: string | null;
+  /** Interval handle for lock renewal; cleared when processing ends. */
+  timer: ReturnType<typeof setInterval> | null;
+  /** Set true when renewal loses ownership; processing must stop. */
+  lost: boolean;
+}
 
-/** Interval handle for lock renewal; cleared when processing ends. */
-let lockRenewalTimer: ReturnType<typeof setInterval> | null = null;
+export function createRunLockState(): RunLockState {
+  return { owner: null, timer: null, lost: false };
+}
 
-/** Redis key prefix for the per-day analysis lock. */
+/** Redis key for the per-day analysis lock. */
 function analysisLockKey(day: string): string {
   return `analysis:daily:${day}`;
 }
@@ -80,12 +87,12 @@ async function readFixtureAttempt(fixtureId: string): Promise<number> {
  * Acquire the per-day analysis lock with a unique owner token.
  * Returns the token when acquired, null otherwise. Fails closed on Redis error.
  */
-async function acquireAnalysisLock(day: string, ttlSeconds: number): Promise<string | null> {
+export async function acquireAnalysisLock(state: RunLockState, day: string, ttlSeconds: number): Promise<string | null> {
   const token = randomUUID();
   try {
     const result = await redis.set(analysisLockKey(day), token, { nx: true, ex: ttlSeconds });
     if (result === 'OK') {
-      analysisLockOwner = token;
+      state.owner = token;
       return token;
     }
     return null;
@@ -102,8 +109,8 @@ async function acquireAnalysisLock(day: string, ttlSeconds: number): Promise<str
  * Renew the analysis lock only if the stored owner token matches ours.
  * Uses a Lua compare-and-set so a worker can never renew another worker's lock.
  */
-async function renewAnalysisLock(day: string, ttlSeconds: number): Promise<boolean> {
-  if (!analysisLockOwner) return false;
+export async function renewAnalysisLock(state: RunLockState, day: string, ttlSeconds: number): Promise<boolean> {
+  if (!state.owner) return false;
   try {
     const lua = `
 if redis.call('GET', KEYS[1]) == ARGV[1] then
@@ -111,7 +118,7 @@ if redis.call('GET', KEYS[1]) == ARGV[1] then
 end
 return 0
 `;
-    const result = await redis.eval(lua, [analysisLockKey(day)], [analysisLockOwner, String(ttlSeconds)]);
+    const result = await redis.eval(lua, [analysisLockKey(day)], [state.owner, String(ttlSeconds)]);
     return Number(result) === 1;
   } catch (err) {
     logger.warn('analysis.lock.renewFailed', {
@@ -126,8 +133,8 @@ return 0
  * Release the analysis lock only if we still own it (compare-and-delete).
  * Never deletes a lock owned by another worker.
  */
-async function releaseAnalysisLock(): Promise<void> {
-  if (!analysisLockOwner) return;
+export async function releaseAnalysisLock(state: RunLockState): Promise<void> {
+  if (!state.owner) return;
   try {
     const lua = `
 if redis.call('GET', KEYS[1]) == ARGV[1] then
@@ -135,13 +142,13 @@ if redis.call('GET', KEYS[1]) == ARGV[1] then
 end
 return 0
 `;
-    await redis.eval(lua, [analysisLockKey(dateOnly(new Date()))], [analysisLockOwner]);
+    await redis.eval(lua, [analysisLockKey(dateOnly(new Date()))], [state.owner]);
   } catch (err) {
     logger.warn('analysis.lock.releaseFailed', {
       error: err instanceof Error ? err.message : String(err),
     });
   } finally {
-    analysisLockOwner = null;
+    state.owner = null;
   }
 }
 
@@ -149,21 +156,22 @@ return 0
  * Start renewing the analysis lock every `renewalIntervalMs` milliseconds.
  * The interval is cleared by stopLockRenewal().
  */
-function startLockRenewal(day: string, ttlSeconds: number, renewalIntervalMs: number): void {
-  if (lockRenewalTimer) clearInterval(lockRenewalTimer);
-  lockRenewalTimer = setInterval(async () => {
-    const ok = await renewAnalysisLock(day, ttlSeconds);
+export function startLockRenewal(state: RunLockState, day: string, ttlSeconds: number, renewalIntervalMs: number): void {
+  if (state.timer) clearInterval(state.timer);
+  state.timer = setInterval(async () => {
+    const ok = await renewAnalysisLock(state, day, ttlSeconds);
     if (!ok) {
       logger.warn('analysis.lock.renewalLost', { day });
-      stopLockRenewal();
+      state.lost = true;
+      stopLockRenewal(state);
     }
   }, renewalIntervalMs);
 }
 
-function stopLockRenewal(): void {
-  if (lockRenewalTimer) {
-    clearInterval(lockRenewalTimer);
-    lockRenewalTimer = null;
+export function stopLockRenewal(state: RunLockState): void {
+  if (state.timer) {
+    clearInterval(state.timer);
+    state.timer = null;
   }
 }
 
@@ -172,60 +180,9 @@ function stopLockRenewal(): void {
 //
 // Recovers runs that were left `running` after a worker crash or invocation
 // timeout. Uses a conditional update so a run that completed between the
-// initial query and the update is never overwritten.
+// initial query and the update is never overwritten, and never recovers a run
+// whose Redis day-lock is still held by an active worker.
 // ---------------------------------------------------------------------------
-
-/**
- * Recover stale analysis runs that have been `running` longer than the
- * stale threshold. Only transitions a run from `running` → `failed`; a run
- * that is already `completed`, `deferred`, or `failed` is never touched.
- * Returns the number of runs actually recovered.
- *
- * The conditional `updateMany` ensures we never overwrite a run whose status
- * changed between the discovery query and the update (e.g. a worker finished
- * and committed `completed` just before recovery ran).
- */
-export async function recoverStaleRuns(staleThresholdMs: number): Promise<number> {
-  const cutoff = new Date(Date.now() - staleThresholdMs);
-  const stale = await prisma.analysisRun.findMany({
-    where: {
-      status: 'running',
-      updatedAt: { lt: cutoff },
-    },
-    select: { id: true, runDate: true, updatedAt: true },
-  });
-
-  let recovered = 0;
-  for (const run of stale) {
-    const result = await prisma.analysisRun.updateMany({
-      where: {
-        id: run.id,
-        status: 'running',
-      },
-      data: {
-        status: 'failed',
-        errorMessage:
-          'Stale-run recovery: run was left running beyond the stale threshold without completing',
-        completedAt: new Date(),
-      },
-    });
-    if (result.count === 1) {
-      recovered += 1;
-      logger.warn('analysis.run.staleRecovered', {
-        runId: run.id,
-        runDate: run.runDate,
-        updatedAt: run.updatedAt,
-      });
-      void incrProviderMetric('ingestion:staleRecovered');
-    } else {
-      logger.info('analysis.run.staleSkipAlreadyChanged', {
-        runId: run.id,
-        observedStatus: 'running',
-      });
-    }
-  }
-  return recovered;
-}
 
 export interface DailyRunResult {
   /** Null when the run was blocked before a row was created (Stage 9 gating). */
@@ -252,7 +209,7 @@ export interface DailyRunResult {
  * have no reliable evidence for any market and must never be presented as
  * analysed.
  */
-function isSuccessfullyAnalysed(outcome: { enrichmentQuality?: string | null; best?: { market: string; confidence: number } | undefined }): boolean {
+export function isSuccessfullyAnalysed(outcome: { enrichmentQuality?: string | null; best?: { market: string; confidence: number } | undefined }): boolean {
   if (!outcome.best) return false;
   if (outcome.enrichmentQuality === 'INSUFFICIENT_DATA') return false;
   return true;
@@ -268,17 +225,27 @@ export async function recoverStaleRuns(staleThresholdMs: number = 15 * 60 * 1000
   const cutoff = new Date(Date.now() - staleThresholdMs);
   const stale = await prisma.analysisRun.findMany({
     where: { status: 'running', updatedAt: { lt: cutoff } },
-    select: { id: true },
+    select: { id: true, runDate: true, updatedAt: true },
   });
   let recovered = 0;
   for (const run of stale) {
+    // H1: never recover a run whose Redis day-lock is still held by an active
+    // worker — that worker may simply be mid-batch.
+    const dayLock = await redis.get(analysisLockKey(dateOnly(run.runDate)));
+    if (dayLock !== null) {
+      logger.info('analysis.run.staleSkipLockHeld', { runId: run.id, runDate: run.runDate });
+      continue;
+    }
     const result = await prisma.analysisRun.updateMany({
       where: { id: run.id, status: 'running' },
       data: { status: 'failed', errorMessage: 'stale run recovered', completedAt: new Date() },
     });
     if (result.count === 1) {
       recovered += 1;
-      logger.warn('analysis.run.staleRecovered', { runId: run.id });
+      logger.warn('analysis.run.staleRecovered', { runId: run.id, runDate: run.runDate, updatedAt: run.updatedAt });
+      void incrProviderMetric('ingestion:staleRecovered');
+    } else {
+      logger.info('analysis.run.staleSkipAlreadyChanged', { runId: run.id, observedStatus: 'running' });
     }
   }
   return recovered;
@@ -353,9 +320,10 @@ export async function runDailyAnalysis(options: {
 
   const lockTtlSeconds = 600;
   const lockRenewalIntervalMs = 30_000; // renew every 30s, well within 600s TTL
+  const lockState = createRunLockState();
   let hasLock = false;
   try {
-    const token = await acquireAnalysisLock(day, lockTtlSeconds);
+    const token = await acquireAnalysisLock(lockState, day, lockTtlSeconds);
     hasLock = token !== null;
   } catch (err) {
     // Do NOT pretend to hold a distributed lock. If Redis is unavailable we log
@@ -420,7 +388,7 @@ export async function runDailyAnalysis(options: {
   // Start lock renewal now that we hold the lock and are actively processing
   // (covers both new runs and resumed deferred runs).
   if (hasLock) {
-    startLockRenewal(day, lockTtlSeconds, lockRenewalIntervalMs);
+    startLockRenewal(lockState, day, lockTtlSeconds, lockRenewalIntervalMs);
   }
 
   const providerConfig = getProviderConfig();
@@ -463,12 +431,18 @@ export async function runDailyAnalysis(options: {
     // Durable progress: when resuming, skip fixtures already persisted (the
     // (runId, fixtureId) unique index makes per-batch writes idempotent anyway).
     const alreadyPersisted = new Set<string>();
+    // Only fixtures that were successfully analysed count toward the cumulative
+    // tally; INSUFFICIENT_DATA / failed outcomes are excluded (see M1).
+    const successfulAlreadyPersisted = new Set<string>();
     if (resumeRunId) {
       const persisted = await prisma.analysisResult.findMany({
         where: { runId: run.id },
-        select: { fixtureId: true },
+        select: { fixtureId: true, enrichmentQuality: true },
       });
-      for (const row of persisted) alreadyPersisted.add(row.fixtureId);
+      for (const row of persisted) {
+        alreadyPersisted.add(row.fixtureId);
+        if (row.enrichmentQuality !== 'INSUFFICIENT_DATA') successfulAlreadyPersisted.add(row.fixtureId);
+      }
     }
     const pending = fixtureResult.fixtures.filter((fixture) => !alreadyPersisted.has(fixture.id));
 
@@ -525,7 +499,37 @@ export async function runDailyAnalysis(options: {
     let deferred = false;
     let completedRow: { id: string; fixturesAnalyzed: number; picksGenerated: number } | null = null;
 
+    // --- L2: Exhausted-run lifecycle ---
+    // When every pending fixture has exhausted its retry allowance the run
+    // reaches a clear terminal state (`failed`) instead of silently creating a
+    // new run that would repeat all previous work. The run row, its audit
+    // history and its persisted results are preserved. An intentional rerun is
+    // requested explicitly via `force: true` (which starts a fresh run); the
+    // daily cron continues to handle other eligible days/work unimpeded.
+    if (retryablePending.length === 0 && pending.length > 0) {
+      const runRow = await prisma.analysisRun.update({
+        where: { id: run.id },
+        data: {
+          status: 'failed',
+          errorMessage: `All ${pending.length} pending fixture(s) exhausted the ${maxAttempts}-attempt retry allowance`,
+          completedAt: new Date(),
+        },
+      });
+      void incrProviderMetric('ingestion:exhausted');
+      return {
+        runId: run.id,
+        status: 'failed',
+        fixturesAnalyzed: runRow.fixturesAnalyzed,
+        picksGenerated: runRow.picksGenerated,
+        errors,
+      };
+    }
+
     for (let index = 0; index < batches.length; index += 1) {
+      // H2: losing ownership mid-run stops the worker from processing or
+      // committing another batch.
+      if (lockState.lost) break;
+
       // Checkpoint BEFORE each batch: if the invocation budget is spent we
       // DEFER the remainder. We never truncate the fixture list silently and
       // never publish partial results as a successful full run.
@@ -603,13 +607,29 @@ export async function runDailyAnalysis(options: {
       if (isLast) completedRow = updated;
     }
 
+    // H2: if ownership was lost mid-run, stop here — do not commit further
+    // batches and do not report a successful/partial completion.
+    if (lockState.lost) {
+      const runRow = await prisma.analysisRun.update({
+        where: { id: run.id },
+        data: { status: 'failed', errorMessage: 'analysis lock lost mid-run; ownership revoked', completedAt: new Date() },
+      });
+      return {
+        runId: run.id,
+        status: 'failed',
+        fixturesAnalyzed: runRow.fixturesAnalyzed,
+        picksGenerated: runRow.picksGenerated,
+        errors: [...errors, 'analysis lock lost mid-run'],
+      };
+    }
+
     if (deferred) {
       const remaining = pending.length - processed;
       // Durable deferral: per-batch counters were already committed; only the
       // status changes. A later invocation resumes this SAME run.
       // fixturesAnalyzed reflects cumulative successfully-analysed fixtures,
       // including those already persisted before this invocation.
-      await prisma.analysisRun.update({ where: { id: run.id }, data: { status: 'deferred' } });
+      const runRow = await prisma.analysisRun.update({ where: { id: run.id }, data: { status: 'deferred' } });
       logger.warn('analysis.run.deferred', {
         runId: run.id,
         processed,
@@ -622,8 +642,8 @@ export async function runDailyAnalysis(options: {
       return {
         runId: run.id,
         status: 'deferred',
-        fixturesAnalyzed: alreadyPersisted.size + successfulThisRun,
-        picksGenerated: picksThisRun,
+        fixturesAnalyzed: runRow.fixturesAnalyzed,
+        picksGenerated: runRow.picksGenerated,
         blockedReason: `execution budget (${providerConfig.analysisMaxRuntimeMs}ms) exhausted after ${processed}/${pending.length} pending fixture(s); ${remaining} deferred to the next invocation`,
         errors,
       };
@@ -656,9 +676,9 @@ export async function runDailyAnalysis(options: {
     });
     throw err;
   } finally {
-    stopLockRenewal();
+    stopLockRenewal(lockState);
     if (hasLock) {
-      await releaseAnalysisLock();
+      await releaseAnalysisLock(lockState);
     }
   }
 }

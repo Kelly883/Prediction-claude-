@@ -50,7 +50,7 @@ async function handle(req: NextRequest): Promise<NextResponse> {
         alreadyRunning: result.alreadyRunning,
         blockedReason: result.blockedReason,
         errorCount: result.errors?.length ?? 0,
-        trigger: req.method === 'POST' ? 'manual' : 'cron',
+        trigger: 'cron',
         method: req.method,
         requestId: getRequestId(req),
       },

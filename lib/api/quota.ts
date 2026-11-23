@@ -28,6 +28,9 @@ import { redis } from '@/lib/redis';
 import { logger } from '@/lib/logger';
 import { fetchApiFootballStatus, type ApiFootballProviderStatus } from '@/lib/api/football-api';
 import {
+  ProviderQuotaExhaustedError,
+} from '@/lib/api/retry';
+import {
   getStoredRateLimitHeaders,
   DAILY_LIMIT_HEADER,
   DAILY_REMAINING_HEADER,

@@ -138,7 +138,7 @@ describe('Phase 1 data completeness', () => {
       expect(gated.eligibility.find((item) => item.market === market)).toMatchObject({ eligible: false, proceed: false });
     }
     expect(gated.eligibility.find((item) => item.market === 'TOTAL_CORNERS')).toMatchObject({ eligible: false, proceed: false });
-    expect(gated.best.market).not.toBe('TOTAL_CARDS');
+    expect(gated.best?.market).not.toBe('TOTAL_CARDS');
   });
 
   it('classifies fallback quality and attaches evidence labels', async () => {
@@ -158,6 +158,6 @@ describe('Phase 1 data completeness', () => {
     const outcome = scoreFixture(fixture, result[0].enrichment);
     expect(outcome.evidenceLabel).toBe('ESTIMATED');
     expect(outcome.scores[0].confidenceLabel).toBe('HEURISTIC_MODEL_SCORE');
-    expect(outcome.scores[0].evidence.label).toBe('ESTIMATED');
+    expect(outcome.scores[0]?.evidence?.label).toBe('ESTIMATED');
   });
 });

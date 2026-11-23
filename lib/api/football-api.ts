@@ -208,8 +208,10 @@ export function normalizeFixture(entry: any, leagueCode: string): Fixture | null
     venueLatitude: toNumber(entry?.fixture?.venue?.lat),
     venueLongitude: toNumber(entry?.fixture?.venue?.long),
     status: normalized.status,
+    statusLabel: entry?.fixture?.status?.short ?? undefined,
     statusReason: normalized.label,
     season: Number(seasonId),
+    seasonId: seasonId,
     source: 'api-football',
   };
 }
@@ -271,12 +273,32 @@ async function fetchTeamStats(teamId: string | undefined, leagueCode: string, se
 export function normalizeTeamStats(payload: any): TeamStats | undefined {
   if (!payload || typeof payload !== 'object') return undefined;
 
-  const goalsFor = toNumber(payload?.goals?.for?.total);
-  const goalsAgainst = toNumber(payload?.goals?.against?.total);
+  const rawGoalsFor = payload?.goals?.for?.total;
+  const rawGoalsAgainst = payload?.goals?.against?.total;
+  const goalsFor = typeof rawGoalsFor === 'number' ? rawGoalsFor : toNumber(rawGoalsFor?.total);
+  const goalsAgainst = typeof rawGoalsAgainst === 'number' ? rawGoalsAgainst : toNumber(rawGoalsAgainst?.total);
   const xgFor = toNumber(payload?.xG?.for?.total);
   const xgAgainst = toNumber(payload?.xG?.against?.total);
   const form = parseForm(payload?.form);
-  const cardsFor = toNumber(payload?.cards?.total?.total);
+
+  // Cards can arrive either as a flat `cards.total.total` (number) or as
+  // minute-bucketed `cards.<color>.<bucket>.total` entries (sum all leaves).
+  let cardsFor: number | undefined = undefined;
+  const cardsTotal = payload?.cards?.total;
+  if (cardsTotal && typeof cardsTotal === 'object' && !Array.isArray(cardsTotal)) {
+    cardsFor = toNumber(cardsTotal.total);
+  } else {
+    const sumCardLeaves = (node: unknown): number => {
+      if (node === null || typeof node !== 'object') return 0;
+      const typed = node as { total?: unknown };
+      if (typeof typed.total === 'number') return typed.total;
+      return Object.values(node).reduce((acc, value) => acc + sumCardLeaves(value), 0);
+    };
+    const cardObj = payload?.cards;
+    if (cardObj && typeof cardObj === 'object' && Object.keys(cardObj).length > 0) {
+      cardsFor = sumCardLeaves(cardObj);
+    }
+  }
   const cornersFor = toNumber(payload?.corners?.total?.total);
   const shotsFor = toNumber(payload?.shots?.on?.total);
 

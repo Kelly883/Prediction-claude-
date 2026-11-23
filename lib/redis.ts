@@ -69,6 +69,12 @@ function createInMemoryRedis() {
 }
 
 function createRedisClient(): unknown {
+  // Tests never use a real Upstash connection: always use the in-memory store
+  // regardless of whether Upstash credentials are present in the environment.
+  if (process.env.NODE_ENV === 'test') {
+    return createInMemoryRedis();
+  }
+
   if (isDistributedRedisConfigured()) {
     try {
       return new Redis({
