@@ -44,8 +44,8 @@ import {
   releaseAnalysisLock,
   startLockRenewal,
   stopLockRenewal,
-  type RunLockState,
 } from '@/lib/analysis/run';
+import { redis } from '@/lib/redis';
 
 const DAY = new Date().toISOString().slice(0, 10);
 const LOCK_KEY = `analysis:daily:${DAY}`;
@@ -145,5 +145,63 @@ describe('analysis lock (H2): renewal timer lifecycle', () => {
     await new Promise((r) => setTimeout(r, 60)); // let the interval fire + async callback complete
     expect(s.lost).toBe(true);
     expect(s.timer).toBeNull();
+  });
+});
+
+describe('analysis lock (H2): lock expiry', () => {
+  it('lets another worker acquire after the TTL elapses without renewal', async () => {
+    const first = createRunLockState();
+    const t1 = await acquireAnalysisLock(first, DAY, 600);
+    expect(t1).not.toBeNull();
+
+    // TTL elapses with no heartbeat: the key is gone.
+    store.delete(LOCK_KEY);
+
+    // A second worker can now acquire a fresh, distinct lock.
+    const second = createRunLockState();
+    const t2 = await acquireAnalysisLock(second, DAY, 600);
+    expect(t2).not.toBeNull();
+    expect(t2).not.toBe(t1);
+    expect(store.get(LOCK_KEY)).toBe(t2);
+  });
+
+  it('the expired owner can no longer renew (compare-and-set fails)', async () => {
+    const owner = createRunLockState();
+    const token = await acquireAnalysisLock(owner, DAY, 600);
+    store.delete(LOCK_KEY); // lock expired
+    expect(await renewAnalysisLock(owner, DAY, 600)).toBe(false);
+    expect(token).not.toBeNull();
+  });
+});
+
+describe('analysis lock (H2): Redis failure handling', () => {
+  it('fails safe on acquire: returns null and records no owner', async () => {
+    const s = createRunLockState();
+    (redis.set as unknown as { mockRejectedValueOnce: (e: unknown) => void }).mockRejectedValueOnce(
+      new Error('redis down'),
+    );
+    const token = await acquireAnalysisLock(s, DAY, 600);
+    expect(token).toBeNull();
+    expect(s.owner).toBeNull();
+  });
+
+  it('treats a Redis error during renewal as lost ownership (returns false)', async () => {
+    const s = createRunLockState();
+    s.owner = 'token-x';
+    store.set(LOCK_KEY, 'token-x');
+    (redis.eval as unknown as { mockRejectedValueOnce: (e: unknown) => void }).mockRejectedValueOnce(
+      new Error('redis down'),
+    );
+    expect(await renewAnalysisLock(s, DAY, 600)).toBe(false);
+  });
+
+  it('does not throw on release when Redis fails, and still clears the owner', async () => {
+    const s = createRunLockState();
+    s.owner = 'token-x';
+    (redis.eval as unknown as { mockRejectedValueOnce: (e: unknown) => void }).mockRejectedValueOnce(
+      new Error('redis down'),
+    );
+    await expect(releaseAnalysisLock(s)).resolves.toBeUndefined();
+    expect(s.owner).toBeNull();
   });
 });
