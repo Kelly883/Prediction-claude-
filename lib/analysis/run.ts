@@ -259,6 +259,36 @@ export async function loadAnalysisSettings(): Promise<AnalysisSettings> {
   return parseStoredConfigs(configs.map((config) => ({ key: config.key, value: config.value })));
 }
 
+/**
+ * Durable M2 resume checkpoint persisted alongside each batch's results.
+ * Mirrors the `AnalysisRun.checkpoint` JSON column (see prisma/schema.prisma).
+ * A `type` alias (not an interface) so it is assignable to Prisma's
+ * `InputJsonValue` without casts.
+ */
+type AnalysisCheckpoint = {
+  processedFixtureIds: string[];
+  fixturesAnalyzed: number;
+  picksGenerated: number;
+  completedBatches: number;
+  updatedAt: string;
+};
+
+/** Safely coerce a stored JSON checkpoint into a well-formed value. */
+function normalizeCheckpoint(raw: Prisma.JsonValue | null | undefined): AnalysisCheckpoint | null {
+  if (raw === null || raw === undefined || typeof raw !== 'object' || Array.isArray(raw)) {
+    return null;
+  }
+  const obj = raw as Record<string, Prisma.JsonValue>;
+  const processedFixtureIds = Array.isArray(obj.processedFixtureIds)
+    ? obj.processedFixtureIds.filter((value): value is string => typeof value === 'string')
+    : [];
+  const fixturesAnalyzed = typeof obj.fixturesAnalyzed === 'number' ? obj.fixturesAnalyzed : 0;
+  const picksGenerated = typeof obj.picksGenerated === 'number' ? obj.picksGenerated : 0;
+  const completedBatches = typeof obj.completedBatches === 'number' ? obj.completedBatches : 0;
+  const updatedAt = typeof obj.updatedAt === 'string' ? obj.updatedAt : new Date().toISOString();
+  return { processedFixtureIds, fixturesAnalyzed, picksGenerated, completedBatches, updatedAt };
+}
+
 export async function runDailyAnalysis(options: {
   now?: Date;
   force?: boolean;
@@ -281,6 +311,11 @@ export async function runDailyAnalysis(options: {
   // are prevented by the unique `AnalysisResult(runId, fixtureId)` index.
   await recoverStaleRuns();
   let resumeRunId: string | null = null;
+  // Durable resume state: cumulative counters and the persisted checkpoint from
+  // the deferred run we are continuing (zero/empty for a fresh run).
+  let resumeFixturesAnalyzed = 0;
+  let resumePicksGenerated = 0;
+  let resumeCheckpoint: AnalysisCheckpoint | null = null;
   if (!options.force) {
     const existing = await prisma.analysisRun.findFirst({
       where: { runDate, status: { in: ['running', 'completed', 'deferred'] } },
@@ -290,6 +325,9 @@ export async function runDailyAnalysis(options: {
       // Resume the deferred run: skip fixtures already persisted (durable
       // progress) and continue from where the budget stopped.
       resumeRunId = existing.id;
+      resumeFixturesAnalyzed = existing.fixturesAnalyzed;
+      resumePicksGenerated = existing.picksGenerated;
+      resumeCheckpoint = normalizeCheckpoint(existing.checkpoint);
     } else if (existing) {
       return {
         runId: existing.id,
@@ -395,6 +433,13 @@ export async function runDailyAnalysis(options: {
   const budget = createRunBudget(providerConfig.analysisMaxRuntimeMs);
   const batchSize = Math.max(1, providerConfig.analysisBatchSize);
 
+  // Cumulative durable progress (M2). Seeded from the resumed run's persisted
+  // counters/checkpoint so retries never double-count, then advanced per batch.
+  let cumulativeFixtures = resumeFixturesAnalyzed;
+  let cumulativePicks = resumePicksGenerated;
+  let completedBatches = resumeCheckpoint?.completedBatches ?? 0;
+  const processedFixtureIds: string[] = resumeCheckpoint ? [...resumeCheckpoint.processedFixtureIds] : [];
+
   try {
     const settings = await loadAnalysisSettings();
     const leagues = await getEnabledLeagues();
@@ -442,6 +487,8 @@ export async function runDailyAnalysis(options: {
       for (const row of persisted) {
         alreadyPersisted.add(row.fixtureId);
         if (row.enrichmentQuality !== 'INSUFFICIENT_DATA') successfulAlreadyPersisted.add(row.fixtureId);
+        // Keep the durable checkpoint in sync with what is actually persisted.
+        if (!processedFixtureIds.includes(row.fixtureId)) processedFixtureIds.push(row.fixtureId);
       }
     }
     const pending = fixtureResult.fixtures.filter((fixture) => !alreadyPersisted.has(fixture.id));
@@ -453,10 +500,17 @@ export async function runDailyAnalysis(options: {
     // we do NOT recount because previously processed fixtures are already
     // reflected in the run's persisted fixturesAnalyzed value.
     if (pending.length === 0) {
+      const checkpoint: AnalysisCheckpoint = {
+        processedFixtureIds: [...processedFixtureIds],
+        fixturesAnalyzed: cumulativeFixtures,
+        picksGenerated: cumulativePicks,
+        completedBatches,
+        updatedAt: new Date().toISOString(),
+      };
       const completed = await prisma.$transaction((tx) =>
         tx.analysisRun.update({
           where: { id: run.id },
-          data: { status: 'completed', completedAt: new Date() },
+          data: { status: 'completed', completedAt: new Date(), checkpoint },
         }),
       );
       logger.info('analysis.run.completed', {
@@ -507,14 +561,26 @@ export async function runDailyAnalysis(options: {
     // requested explicitly via `force: true` (which starts a fresh run); the
     // daily cron continues to handle other eligible days/work unimpeded.
     if (retryablePending.length === 0 && pending.length > 0) {
-      const runRow = await prisma.analysisRun.update({
-        where: { id: run.id },
-        data: {
-          status: 'failed',
-          errorMessage: `All ${pending.length} pending fixture(s) exhausted the ${maxAttempts}-attempt retry allowance`,
-          completedAt: new Date(),
-        },
-      });
+      const checkpoint: AnalysisCheckpoint = {
+        processedFixtureIds: [...processedFixtureIds],
+        fixturesAnalyzed: cumulativeFixtures,
+        picksGenerated: cumulativePicks,
+        completedBatches,
+        updatedAt: new Date().toISOString(),
+      };
+      // Atomic status transition guarded by the current `running` state so a
+      // concurrent worker that already finalised the run is not clobbered.
+      const runRow = await prisma.$transaction((tx) =>
+        tx.analysisRun.update({
+          where: { id: run.id, status: 'running' },
+          data: {
+            status: 'failed',
+            errorMessage: `All ${pending.length} pending fixture(s) exhausted the ${maxAttempts}-attempt retry allowance`,
+            completedAt: new Date(),
+            checkpoint,
+          },
+        }),
+      );
       void incrProviderMetric('ingestion:exhausted');
       return {
         runId: run.id,
@@ -574,31 +640,64 @@ export async function runDailyAnalysis(options: {
       // batch additionally marks the run `completed` in the SAME transaction.
       // `skipDuplicates` keeps the write retry-safe against the unique
       // `(runId, fixtureId)` index.
-      const { inserted, updated } = await prisma.$transaction(async (tx) => {
-        let inserted = 0;
-        if (rows.length > 0) {
-          const created = await tx.analysisResult.createMany({
-            data: rows as unknown as Prisma.AnalysisResultCreateManyInput[],
-            skipDuplicates: true,
+      const { inserted, updated, nextFixtures, nextPicks, nextCompletedBatches, nextProcessed } =
+        await prisma.$transaction(async (tx) => {
+          let inserted = 0;
+          if (rows.length > 0) {
+            const created = await tx.analysisResult.createMany({
+              data: rows as unknown as Prisma.AnalysisResultCreateManyInput[],
+              skipDuplicates: true,
+            });
+            inserted = created.count;
+          }
+          // Compute the next cumulative state from the pre-batch values. These
+          // are only committed to the outer counters once the transaction
+          // resolves, so a rolled-back batch never advances durable progress.
+          const nextFixtures = cumulativeFixtures + successfulInBatch;
+          // `inserted` already excludes duplicates skipped by the unique index,
+          // so picksGenerated is never double-counted on a retried batch.
+          const nextPicks = cumulativePicks + inserted;
+          const nextCompletedBatches = completedBatches + 1;
+          const nextProcessed = [...processedFixtureIds];
+          for (const fixture of batch) {
+            if (!nextProcessed.includes(fixture.id)) nextProcessed.push(fixture.id);
+          }
+          const checkpoint: AnalysisCheckpoint = {
+            processedFixtureIds: nextProcessed,
+            fixturesAnalyzed: nextFixtures,
+            picksGenerated: nextPicks,
+            completedBatches: nextCompletedBatches,
+            updatedAt: new Date().toISOString(),
+          };
+          const updatedRow = await tx.analysisRun.update({
+            where: { id: run.id },
+            data: isLast
+              ? {
+                  status: 'completed',
+                  completedAt: new Date(),
+                  fixturesAnalyzed: nextFixtures,
+                  picksGenerated: nextPicks,
+                  checkpoint,
+                }
+              : {
+                  fixturesAnalyzed: nextFixtures,
+                  picksGenerated: nextPicks,
+                  checkpoint,
+                },
           });
-          inserted = created.count;
-        }
-        const updatedRow = await tx.analysisRun.update({
-          where: { id: run.id },
-          data: isLast
-            ? {
-                status: 'completed',
-                completedAt: new Date(),
-                fixturesAnalyzed: { increment: successfulInBatch },
-                picksGenerated: { increment: inserted },
-              }
-            : {
-                fixturesAnalyzed: { increment: successfulInBatch },
-                picksGenerated: { increment: inserted },
-              },
+          return {
+            inserted,
+            updated: updatedRow,
+            nextFixtures,
+            nextPicks,
+            nextCompletedBatches,
+            nextProcessed,
+          };
         });
-        return { inserted, updated: updatedRow };
-      });
+      cumulativeFixtures = nextFixtures;
+      cumulativePicks = nextPicks;
+      completedBatches = nextCompletedBatches;
+      processedFixtureIds.splice(0, processedFixtureIds.length, ...nextProcessed);
 
       processed += batch.length;
       successfulThisRun += successfulInBatch;
@@ -628,8 +727,22 @@ export async function runDailyAnalysis(options: {
       // Durable deferral: per-batch counters were already committed; only the
       // status changes. A later invocation resumes this SAME run.
       // fixturesAnalyzed reflects cumulative successfully-analysed fixtures,
-      // including those already persisted before this invocation.
-      const runRow = await prisma.analysisRun.update({ where: { id: run.id }, data: { status: 'deferred' } });
+      // including those already persisted before this invocation. The status
+      // transition and its checkpoint commit atomically, guarded by the current
+      // `running` state so a concurrent finaliser is not clobbered.
+      const checkpoint: AnalysisCheckpoint = {
+        processedFixtureIds: [...processedFixtureIds],
+        fixturesAnalyzed: cumulativeFixtures,
+        picksGenerated: cumulativePicks,
+        completedBatches,
+        updatedAt: new Date().toISOString(),
+      };
+      const runRow = await prisma.$transaction((tx) =>
+        tx.analysisRun.update({
+          where: { id: run.id, status: 'running' },
+          data: { status: 'deferred', checkpoint },
+        }),
+      );
       logger.warn('analysis.run.deferred', {
         runId: run.id,
         processed,
