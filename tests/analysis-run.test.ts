@@ -668,6 +668,7 @@ describe('runDailyAnalysis M2 transaction boundaries', () => {
     mocks.enrichFixtures.mockResolvedValue([{ fixture: FIXTURE, enrichment: {} }]);
     mocks.scoreFixture.mockImplementation((fixture: Fixture) => validOutcome(fixture));
     mocks.analysisRun.create.mockResolvedValue({ id: 'run-1', status: 'running' });
+    mocks.analysisRun.update.mockResolvedValue({ id: 'run-1', status: 'failed' });
     mocks.tx.analysisResult.createMany.mockResolvedValue({ count: 1 });
 
     // Transaction mock that tracks call count
