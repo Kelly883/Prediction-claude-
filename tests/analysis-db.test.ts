@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { PrismaClient } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { runDailyAnalysis } from '@/lib/analysis/run';
+import type { Fixture } from '@/types/analysis';
 
 /**
  * Live-Postgres integration tests for the analysis persistence layer.
@@ -123,7 +125,7 @@ describe('AnalysisResult persistence (live Postgres)', () => {
             picksGenerated: 1,
             completedBatches: 1,
             updatedAt: new Date().toISOString(),
-          },
+          } as Prisma.InputJsonValue,
         },
       });
     });
@@ -154,7 +156,7 @@ describe('AnalysisResult persistence (live Postgres)', () => {
               picksGenerated: 999,
               completedBatches: 999,
               updatedAt: new Date().toISOString(),
-            },
+            } as Prisma.InputJsonValue,
           },
         });
         // Simulate a crash AFTER both writes — the whole transaction must abort.
@@ -212,7 +214,7 @@ describe('runDailyAnalysis M2 transaction boundaries (live Postgres)', () => {
   let testRunDate: Date;
 
   beforeAll(async () => {
-    prisma = new PrismaClient({ datasources: { db: { url: testDbUrl } } });
+    prisma = new PrismaClient({ datasources: { db: { url: testDbUrl() } } });
     await prisma.$connect();
     testRunDate = new Date('2099-12-30T00:00:00.000Z');
   });
@@ -234,15 +236,18 @@ describe('runDailyAnalysis M2 transaction boundaries (live Postgres)', () => {
   // Test fixture that produces a valid outcome
   const createTestFixture = (id: string) => ({
     id,
-    sourceId: id,
+    leagueCode: 'PL',
+    leagueName: 'Premier League',
     kickoff: new Date('2099-12-30T15:00:00.000Z'),
     homeTeam: 'Home FC',
     awayTeam: 'Away FC',
     source: 'api-football' as const,
   });
 
-  const validOutcome = (fixture: ReturnType<typeof createTestFixture>) => ({
-    fixture,
+  type TestFixture = ReturnType<typeof createTestFixture> & Fixture;
+
+  const validOutcome = (fixture: Fixture) => ({
+    fixture: fixture as TestFixture,
     scores: [{
       market: 'MATCH_RESULT' as const,
       selection: fixture.homeTeam,
@@ -302,7 +307,7 @@ describe('runDailyAnalysis M2 transaction boundaries (live Postgres)', () => {
     expect(result.runId).toBeDefined();
 
     // Verify persisted state
-    const run = await prisma.analysisRun.findUnique({ where: { id: result.runId } });
+    const run = await prisma.analysisRun.findUnique({ where: { id: result.runId! } });
     expect(run?.status).toBe('completed');
     expect(run?.fixturesAnalyzed).toBe(1);
     expect(run?.picksGenerated).toBe(1);
@@ -311,7 +316,7 @@ describe('runDailyAnalysis M2 transaction boundaries (live Postgres)', () => {
     const checkpoint = run?.checkpoint as { processedFixtureIds: string[] } | null;
     expect(checkpoint?.processedFixtureIds).toContain(fixture.id);
 
-    const results = await prisma.analysisResult.findMany({ where: { runId: result.runId } });
+    const results = await prisma.analysisResult.findMany({ where: { runId: result.runId! } });
     expect(results).toHaveLength(1);
   });
 
@@ -355,7 +360,7 @@ describe('runDailyAnalysis M2 transaction boundaries (live Postgres)', () => {
             fixtureId: fixture.id,
             homeTeam: fixture.homeTeam,
             awayTeam: fixture.awayTeam,
-            league: fixture.source,
+            league: 'PL',
             kickoff: fixture.kickoff,
             bestMarket: 'MATCH_RESULT',
             bestSelection: fixture.homeTeam,
@@ -411,7 +416,7 @@ describe('runDailyAnalysis M2 transaction boundaries (live Postgres)', () => {
           picksGenerated: 2,
           completedBatches: 1,
           updatedAt: new Date().toISOString(),
-        },
+        } as Prisma.InputJsonValue,
       },
     });
 
@@ -429,7 +434,7 @@ describe('runDailyAnalysis M2 transaction boundaries (live Postgres)', () => {
         where: { id: run.id, status: 'running' },
         data: {
           status: 'deferred',
-          checkpoint: deferCheckpoint as any,
+          checkpoint: deferCheckpoint as Prisma.InputJsonValue,
         },
       });
     });
@@ -498,7 +503,7 @@ describe('runDailyAnalysis M2 transaction boundaries (live Postgres)', () => {
           status: 'failed',
           errorMessage: 'All fixtures exhausted retry allowance',
           completedAt: new Date(),
-          checkpoint: exhaustedCheckpoint as any,
+          checkpoint: exhaustedCheckpoint as Prisma.InputJsonValue,
         },
       });
     });
@@ -600,7 +605,7 @@ describe('runDailyAnalysis M2 transaction boundaries (live Postgres)', () => {
     expect(result1.picksGenerated).toBe(2);
 
     // Verify checkpoint persisted
-    const run = await prisma.analysisRun.findUnique({ where: { id: result1.runId } });
+    const run = await prisma.analysisRun.findUnique({ where: { id: result1.runId! } });
     const checkpoint = run?.checkpoint as { processedFixtureIds: string[] } | null;
     expect(checkpoint?.processedFixtureIds).toEqual(expect.arrayContaining([fixture1.id, fixture2.id]));
   });

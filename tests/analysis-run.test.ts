@@ -83,7 +83,8 @@ vi.mock('@/lib/api/provider-config', () => ({
 
 const FIXTURE: Fixture = {
   id: 'fx-1',
-  sourceId: 'fx-1',
+  leagueCode: 'PL',
+  leagueName: 'Premier League',
   kickoff: new Date('2026-11-22T15:00:00.000Z'),
   homeTeam: 'Home FC',
   awayTeam: 'Away FC',
@@ -620,6 +621,7 @@ describe('runDailyAnalysis atomic batch + checkpoint (M2)', () => {
     // The checkpoint still records the newly-processed fixture id.
     const updateArg = mocks.tx.analysisRun.update.mock.calls[1][0] as {
       data: {
+        fixturesAnalyzed: number;
         picksGenerated: number;
         checkpoint?: { fixturesAnalyzed: number; picksGenerated: number; processedFixtureIds: string[] };
       };
