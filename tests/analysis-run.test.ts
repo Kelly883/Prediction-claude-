@@ -160,6 +160,8 @@ function createRunRow(overrides: Partial<{
 
 function setupDefaultMocks() {
   vi.resetAllMocks();
+  delete process.env.PROVIDER_ANALYSIS_BATCH_SIZE;
+  delete process.env.PROVIDER_ANALYSIS_MAX_ATTEMPTS;
   budgetState.expireAfterCalls = 1;
   mocks.redis.set.mockResolvedValue('OK');
   mocks.redis.del.mockResolvedValue(1);
