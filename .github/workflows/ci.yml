@@ -9,13 +9,29 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # Use PostgreSQL service container for integration tests
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: test
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U test -d test"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
     env:
       # Dummy values for build-time only — nothing here is real, and no live
       # DB/Redis/provider connection is required: pages that query the DB
       # are marked `dynamic = 'force-dynamic'` so Next.js defers those calls
       # to request time instead of executing them during `next build`.
-      DATABASE_URL: "postgresql://user:pass@localhost:5432/predictpro"
-      DIRECT_URL: "postgresql://user:pass@localhost:5432/predictpro"
+      DATABASE_URL: "postgresql://test:test@localhost:5432/test"
+      DIRECT_URL: "postgresql://test:test@localhost:5432/test"
+      TEST_DATABASE_URL: "postgresql://test:test@localhost:5432/test"
       JWT_ACCESS_SECRET: "ci-only-secret-not-real-32-bytes-min"
       JWT_REFRESH_SECRET: "ci-only-secret-not-real-32-bytes-min"
       UPSTASH_REDIS_REST_URL: "https://example.upstash.io"
@@ -46,11 +62,17 @@ jobs:
       - name: Prisma generate
         run: npx prisma generate
 
+      - name: Apply migrations
+        run: npx prisma migrate deploy
+
       - name: TypeScript check
         run: npx tsc --noEmit
 
       - name: Unit tests
-        run: npx vitest run
+        run: npx vitest run --config vitest.config.mts
+
+      - name: Integration tests (PostgreSQL)
+        run: npx vitest run --config vitest.config.integration.mts
 
       - name: Build
         run: npm run build
