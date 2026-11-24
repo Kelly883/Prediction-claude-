@@ -1,5 +1,4 @@
 // Runs before every test file. Secrets must be set before modules are imported.
-import { vi } from 'vitest';
 (process.env as any).NODE_ENV = 'test';
 process.env.APP_URL = 'http://localhost:3000';
 process.env.CRON_SECRET = 'test-cron-secret-at-least-32-characters-long-ok';
@@ -33,9 +32,3 @@ process.env.PROVIDER_RETRY_BASE_MS = '0';
 // Keep the provider circuit breaker from tripping during ordinary adapter tests;
 // the breaker's own suite overrides this threshold per test.
 process.env.PROVIDER_CIRCUIT_THRESHOLD = '100';
-
-// Clear the module registry between test files so that vi.mock() factories
-// registered by one test file cannot leak into another via module caching.
-// This ensures each test file gets its own isolated mocks for @/lib/prisma
-// and other mocked modules, preventing cross-file mock pollution.
-vi.resetModules();
