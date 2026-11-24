@@ -334,7 +334,7 @@ describe('runDailyAnalysis atomic batch + checkpoint (M2)', () => {
       if (stage === 'results') throw new Error('injected results failure');
       return { count: 1 };
     });
-    mocks.tx.analysisRun.update.mockImplementation(async (args: { data: { checkpoint?: unknown } }) => {
+    mocks.tx.analysisRun.update.mockImplementation(async (args: { data: { checkpoint?: typeof baseCheckpoint } }) => {
       if (stage === 'checkpoint') throw new Error('injected checkpoint failure');
       return createRunRow({
         status: 'completed',
