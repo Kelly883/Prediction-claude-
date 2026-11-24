@@ -127,6 +127,7 @@ model Plan {
   durationDays     Int
   priceNGN         Decimal     @db.Decimal(12, 2)
   priceUSDOverride Decimal?    @db.Decimal(12, 2)
+  currency         Currency    @default(NGN)
   fxMarkupPercent  Decimal?    @db.Decimal(5, 2)
   accessScope      AccessScope @default(all)
   categoryIds      String[]    @default([])
@@ -381,6 +382,12 @@ model AnalysisRun {
   status           AnalysisRunStatus @default(pending)
   fixturesAnalyzed Int      @default(0)
   picksGenerated   Int      @default(0)
+  // Durable resume checkpoint (M2): the set of fixture ids already persisted
+  // for this run plus the cumulative counters, committed in the SAME
+  // transaction as the batch's AnalysisResult rows. A crash can therefore never
+  // leave results committed without their checkpoint (or vice versa), so a
+  // resumed run neither reprocesses nor skips fixtures.
+  checkpoint       Json?
   startedAt        DateTime?
   completedAt      DateTime?
   errorMessage     String?
