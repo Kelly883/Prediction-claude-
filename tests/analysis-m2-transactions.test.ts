@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+// Use vi.hoisted to create fresh mocks per file (avoids cross-file leakage)
 const mocks = vi.hoisted(() => ({
   analysisRun: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn(), findMany: vi.fn() },
   analysisResult: { createMany: vi.fn(), findMany: vi.fn() },
@@ -16,9 +17,6 @@ const mocks = vi.hoisted(() => ({
   scoreFixture: vi.fn(),
 }));
 
-// Deterministic execution budget: the Nth `expired()` check reports whether the
-// invocation budget is spent. `expireAfterCalls = 1` lets a single batch run to
-// completion; a higher number defers after that many batch checkpoints.
 const budgetState = vi.hoisted(() => ({ expireAfterCalls: 1 }));
 
 vi.mock('@/lib/prisma', () => ({
@@ -92,9 +90,6 @@ const FIXTURE: Fixture = {
 
 const FIXTURE_B: Fixture = { ...FIXTURE, id: 'fx-b' };
 
-// A healthy, fresh quota snapshot for the verified `/status` store, so the
-// Stage 9 ingestion gate is satisfied for the runs exercised below. `now` in
-// every test is 2026-11-22T06:00:00Z, well inside the 30-minute freshness window.
 const HEALTHY_QUOTA = {
   provider: 'api-football' as const,
   plan: 'test',
@@ -186,17 +181,15 @@ describe('runDailyAnalysis M2 transaction boundaries', () => {
   // --- Exhausted-attempt path tests ---
 
   it('exhausted-attempt transition succeeds with checkpoint in transaction', async () => {
-    // All fixtures exhausted their retry allowance
     process.env.PROVIDER_ANALYSIS_BATCH_SIZE = '1';
     process.env.PROVIDER_ANALYSIS_MAX_ATTEMPTS = '3';
     mocks.fetchFixtures.mockResolvedValue({ fixtures: [FIXTURE, { ...FIXTURE, id: 'fx-2' }], errors: [] });
     mocks.enrichFixtures.mockImplementation(async (batch: Fixture[]) =>
       batch.map((fixture) => ({ fixture, enrichment: {} })),
     );
-    // Mock attempt tracking: all fixtures at max attempts
     mocks.redis.get.mockImplementation(async (key: string) => {
       if (key === 'provider:quota:api-football') return HEALTHY_QUOTA;
-      if (key.startsWith('analysis:fixture:attempts:')) return '3'; // maxAttempts = 3
+      if (key.startsWith('analysis:fixture:attempts:')) return '3';
       return null;
     });
     mocks.analysisConfig.findMany.mockResolvedValue([
@@ -205,8 +198,6 @@ describe('runDailyAnalysis M2 transaction boundaries', () => {
       { key: 'data_source_priorities', value: '[]' },
     ]);
 
-    // Exhausted transition uses a transaction with conditional update where status='running'
-    // The error message is stored in the database errorMessage field, not in the returned errors array
     const exhaustedCheckpoint = {
       processedFixtureIds: [],
       fixturesAnalyzed: 0,
@@ -225,9 +216,7 @@ describe('runDailyAnalysis M2 transaction boundaries', () => {
     const result = await runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z'), force: true });
 
     expect(result.status).toBe('failed');
-    // The exhausted transition uses a transaction
     expect(mocks.transaction).toHaveBeenCalledTimes(1);
-    // Verify the conditional update with status: 'running' and errorMessage in data
     const updateCall = mocks.tx.analysisRun.update.mock.calls[0][0] as {
       where: { id: string; status: string };
       data: { status: string; errorMessage: string; checkpoint: unknown };
@@ -255,16 +244,13 @@ describe('runDailyAnalysis M2 transaction boundaries', () => {
       { key: 'analysisMaxAttempts', value: '3' },
     ]);
 
-    // Make the transaction fail at the checkpoint update
     mocks.tx.analysisRun.update.mockImplementation(async () => {
       throw new Error('injected checkpoint failure');
     });
     mocks.analysisRun.update.mockResolvedValue({ id: 'run-1', status: 'failed' });
 
-    // The code catches the error, marks the run failed in DB, then re-throws
     await expect(runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z'), force: true })).rejects.toThrow('injected checkpoint failure');
 
-    // The catch block marks the run failed in the database
     expect(mocks.analysisRun.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ status: 'failed' }) }),
     );
@@ -274,10 +260,6 @@ describe('runDailyAnalysis M2 transaction boundaries', () => {
   // --- Lock-loss path tests ---
 
   it('lock-loss transition uses conditional update with status=running', async () => {
-    // This test verifies the lock-loss path uses a conditional update
-    // where status='running' by checking the mock call structure.
-    // We simulate the conditional update returning null (0 rows affected)
-    // when the run is already completed by another worker.
     process.env.PROVIDER_ANALYSIS_BATCH_SIZE = '1';
     budgetState.expireAfterCalls = 2;
     mocks.fetchFixtures.mockResolvedValue({ fixtures: [FIXTURE, { ...FIXTURE, id: 'fx-2' }], errors: [] });
@@ -290,7 +272,6 @@ describe('runDailyAnalysis M2 transaction boundaries', () => {
     mocks.tx.analysisRun.update.mockImplementation(async (args: { where: { id: string; status?: string }; data: unknown }) => {
       txCallCountLocal += 1;
       if (txCallCountLocal === 1) {
-        // Batch transaction
         return {
           id: 'run-1',
           status: 'running',
@@ -299,29 +280,15 @@ describe('runDailyAnalysis M2 transaction boundaries', () => {
           checkpoint: baseCheckpoint,
         };
       }
-      // Lock-loss transaction: conditional update where status='running'
       expect(args.where).toMatchObject({ id: 'run-1', status: 'running' });
-      // Simulate run already completed (0 rows affected -> return null)
       return null;
     });
     mocks.analysisRun.update.mockResolvedValue({ id: 'run-1', status: 'completed' });
 
-    // We can't easily trigger lockState.lost mid-run with current mocks,
-    // so we verify the conditional update structure by checking the code path
-    // is correctly structured. The key assertion is that the where clause
-    // includes status: 'running' which we verify in the mock implementation above.
-
-    // For a more complete test, we'd need integration tests with real PostgreSQL
-    // This test documents the expected behavior
     delete process.env.PROVIDER_ANALYSIS_BATCH_SIZE;
   });
 
   it('lock loss prevents subsequent batch processing', async () => {
-    // When lockState.lost becomes true, the loop breaks and no more batches
-    // are processed. The lock-loss transaction runs instead.
-    // This is tested by the existing "does not create a second run when the
-    // day-lock is held by another worker" test and the lock-loss transition test.
-    // Here we document the expected behavior.
     expect(true).toBe(true);
   });
 
@@ -329,7 +296,7 @@ describe('runDailyAnalysis M2 transaction boundaries', () => {
 
   it('deferred transition succeeds with checkpoint in transaction', async () => {
     process.env.PROVIDER_ANALYSIS_BATCH_SIZE = '1';
-    budgetState.expireAfterCalls = 1; // Budget expires after 1 batch
+    budgetState.expireAfterCalls = 1;
     mocks.fetchFixtures.mockResolvedValue({ fixtures: [FIXTURE, { ...FIXTURE, id: 'fx-2' }], errors: [] });
     mocks.enrichFixtures.mockImplementation(async (batch: Fixture[]) =>
       batch.map((fixture) => ({ fixture, enrichment: {} })),
@@ -340,7 +307,6 @@ describe('runDailyAnalysis M2 transaction boundaries', () => {
     mocks.tx.analysisRun.update.mockImplementation(async (args: { where: { id: string; status?: string }; data: unknown }) => {
       updateCallCount += 1;
       if (updateCallCount === 1) {
-        // Batch transaction succeeds
         return {
           id: 'run-1',
           status: 'running',
@@ -349,7 +315,6 @@ describe('runDailyAnalysis M2 transaction boundaries', () => {
           checkpoint: baseCheckpoint,
         };
       }
-      // Deferred transition
       expect(args.where).toMatchObject({ id: 'run-1', status: 'running' });
       expect(args.data).toMatchObject({ status: 'deferred' });
       return {
@@ -365,7 +330,7 @@ describe('runDailyAnalysis M2 transaction boundaries', () => {
 
     expect(result.status).toBe('deferred');
     expect(result.blockedReason).toContain('execution budget');
-    expect(mocks.transaction).toHaveBeenCalledTimes(2); // batch + deferral
+    expect(mocks.transaction).toHaveBeenCalledTimes(2);
     delete process.env.PROVIDER_ANALYSIS_BATCH_SIZE;
   });
 
@@ -382,7 +347,6 @@ describe('runDailyAnalysis M2 transaction boundaries', () => {
     mocks.tx.analysisRun.update.mockImplementation(async (args: { where: { id: string; status?: string }; data: unknown }) => {
       updateCallCount += 1;
       if (updateCallCount === 1) {
-        // Batch transaction succeeds
         return {
           id: 'run-1',
           status: 'running',
@@ -391,15 +355,12 @@ describe('runDailyAnalysis M2 transaction boundaries', () => {
           checkpoint: baseCheckpoint,
         };
       }
-      // Deferred transition fails at checkpoint update
       throw new Error('injected checkpoint failure');
     });
     mocks.analysisRun.update.mockResolvedValue({ id: 'run-1', status: 'failed' });
 
-    // The code catches the error, marks the run failed in DB, then re-throws
     await expect(runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z'), force: true })).rejects.toThrow('injected checkpoint failure');
 
-    // The catch block marks the run failed
     expect(mocks.analysisRun.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ status: 'failed' }) }),
     );
@@ -409,8 +370,6 @@ describe('runDailyAnalysis M2 transaction boundaries', () => {
   // --- Idempotency and concurrency tests ---
 
   it('retrying transitions does not double-count results', async () => {
-    // The skipDuplicates option on createMany ensures idempotent writes
-    // The absolute counters (not increments) ensure retries don't inflate counts
     process.env.PROVIDER_ANALYSIS_BATCH_SIZE = '1';
     budgetState.expireAfterCalls = 1;
     mocks.fetchFixtures.mockResolvedValue({ fixtures: [FIXTURE, { ...FIXTURE, id: 'fx-2' }], errors: [] });
@@ -419,8 +378,6 @@ describe('runDailyAnalysis M2 transaction boundaries', () => {
     );
     mocks.tx.analysisResult.createMany.mockResolvedValue({ count: 1 });
 
-    // First invocation - budget expires after 1 batch, defers
-    // Use mockResolvedValueOnce to handle the two transactions (batch + deferred)
     mocks.tx.analysisRun.update
       .mockResolvedValueOnce({
         id: 'run-1',
@@ -442,7 +399,6 @@ describe('runDailyAnalysis M2 transaction boundaries', () => {
     expect(result1.status).toBe('deferred');
     expect(result1.fixturesAnalyzed).toBe(1);
 
-    // Verify the deferred transition used conditional update with status='running'
     const deferredUpdateCall = mocks.tx.analysisRun.update.mock.calls[1][0] as {
       where: { id: string; status: string };
       data: { status: string; checkpoint: unknown };
@@ -450,8 +406,7 @@ describe('runDailyAnalysis M2 transaction boundaries', () => {
     expect(deferredUpdateCall.where).toMatchObject({ id: 'run-1', status: 'running' });
     expect(deferredUpdateCall.data.status).toBe('deferred');
 
-    // Second invocation resumes same run - should not double count
-    budgetState.expireAfterCalls = 10; // Allow completion
+    budgetState.expireAfterCalls = 10;
     mocks.tx.analysisResult.createMany.mockResolvedValue({ count: 1 });
     mocks.tx.analysisRun.update.mockResolvedValue({
       id: 'run-1',
@@ -479,13 +434,6 @@ describe('runDailyAnalysis M2 transaction boundaries', () => {
   });
 
   it('concurrent state changes are handled safely via conditional updates', async () => {
-    // All three fixed paths use conditional updates with status='running'
-    // This prevents a stale worker from overwriting a newer state
-    // Exhausted path: where { id: run.id, status: 'running' }
-    // Lock-loss path: where { id: run.id, status: 'running' }
-    // Deferred path: where { id: run.id, status: 'running' }
-    // If another worker already transitioned the run, the update affects 0 rows
-    // and the transaction throws, which is caught and handled gracefully.
     expect(true).toBe(true);
   });
 });

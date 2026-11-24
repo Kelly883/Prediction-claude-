@@ -1,24 +1,24 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({
-  analysisRun: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn(), findMany: vi.fn() },
-  analysisResult: { createMany: vi.fn(), findMany: vi.fn() },
-  analysisConfig: { findMany: vi.fn() },
-  transaction: vi.fn(),
-  redis: { get: vi.fn(), set: vi.fn(), del: vi.fn(), incr: vi.fn(), expire: vi.fn(), eval: vi.fn() },
-  tx: {
-    analysisResult: { createMany: vi.fn() },
-    analysisRun: { update: vi.fn() },
-  },
-  fetchFixtures: vi.fn(),
-  enrichFixtures: vi.fn(),
-  getEnabledLeagues: vi.fn(),
-  scoreFixture: vi.fn(),
-}));
+// Use vi.hoisted but create fresh mocks per file to avoid cross-file leakage
+const mocks = vi.hoisted(() => {
+  return {
+    analysisRun: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn(), findMany: vi.fn() },
+    analysisResult: { createMany: vi.fn(), findMany: vi.fn() },
+    analysisConfig: { findMany: vi.fn() },
+    transaction: vi.fn(),
+    redis: { get: vi.fn(), set: vi.fn(), del: vi.fn(), incr: vi.fn(), expire: vi.fn(), eval: vi.fn() },
+    tx: {
+      analysisResult: { createMany: vi.fn() },
+      analysisRun: { update: vi.fn() },
+    },
+    fetchFixtures: vi.fn(),
+    enrichFixtures: vi.fn(),
+    getEnabledLeagues: vi.fn(),
+    scoreFixture: vi.fn(),
+  };
+});
 
-// Deterministic execution budget: the Nth `expired()` check reports whether the
-// invocation budget is spent. `expireAfterCalls = 1` lets a single batch run to
-// completion; a higher number defers after that many batch checkpoints.
 const budgetState = vi.hoisted(() => ({ expireAfterCalls: 1 }));
 
 vi.mock('@/lib/prisma', () => ({
@@ -43,7 +43,6 @@ vi.mock('@/lib/analysis/engine', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/analysis/engine')>();
   return { ...actual, scoreFixture: mocks.scoreFixture, filterPicks: (outcomes: unknown[]) => outcomes };
 });
-// Keep the real estimator but make the wall-clock budget deterministic.
 vi.mock('@/lib/analysis/ingestion/budget', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/analysis/ingestion/budget')>();
   return {
@@ -93,9 +92,6 @@ const FIXTURE: Fixture = {
 
 const FIXTURE_B: Fixture = { ...FIXTURE, id: 'fx-b' };
 
-// A healthy, fresh quota snapshot for the verified `/status` store, so the
-// Stage 9 ingestion gate is satisfied for the runs exercised below. `now` in
-// every test is 2026-11-22T06:00:00Z, well inside the 30-minute freshness window.
 const HEALTHY_QUOTA = {
   provider: 'api-football' as const,
   plan: 'test',
@@ -154,9 +150,7 @@ describe('runDailyAnalysis persistence', () => {
     mocks.redis.incr.mockResolvedValue(1);
     mocks.redis.expire.mockResolvedValue(1);
     mocks.redis.eval.mockResolvedValue(1);
-    // No stale runs to recover by default; lock CAS operations succeed.
     mocks.analysisRun.findMany.mockResolvedValue([]);
-    // Default: Redis reachable, quota key healthy, circuit closed (null).
     mocks.redis.get.mockImplementation(async (key: string) =>
       key === 'provider:quota:api-football' ? HEALTHY_QUOTA : null,
     );
@@ -194,7 +188,6 @@ describe('runDailyAnalysis persistence', () => {
     expect(mocks.tx.analysisRun.update).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: 'run-1' }, data: expect.objectContaining({ status: 'completed' }) }),
     );
-    // The non-transactional update must not be used for the success path.
     expect(mocks.analysisRun.update).not.toHaveBeenCalled();
     expect(result).toMatchObject({ status: 'completed', picksGenerated: 1, fixturesAnalyzed: 1 });
   });
@@ -205,7 +198,6 @@ describe('runDailyAnalysis persistence', () => {
 
     await expect(runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z') })).rejects.toThrow('duplicate key value');
 
-    // The transaction never completed, so the run must be marked failed (never completed).
     expect(mocks.tx.analysisRun.update).not.toHaveBeenCalled();
     expect(mocks.analysisRun.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ status: 'failed' }) }),
@@ -289,7 +281,7 @@ describe('runDailyAnalysis Stage 9 gating', () => {
   });
 
   it('blocks the run when quota information is unknown (conservative policy)', async () => {
-    mocks.redis.get.mockImplementation(async () => null); // no snapshot, circuit closed
+    mocks.redis.get.mockImplementation(async () => null);
 
     const result = await runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z'), force: true });
 
@@ -341,7 +333,6 @@ describe('runDailyAnalysis atomic batch + checkpoint (M2)', () => {
     mocks.redis.expire.mockResolvedValue(1);
     mocks.redis.eval.mockResolvedValue(1);
     mocks.analysisRun.findMany.mockResolvedValue([]);
-    // No same-day run exists unless a test overrides this (fresh run path).
     mocks.analysisRun.findFirst.mockResolvedValue(null);
     mocks.redis.get.mockImplementation(async (key: string) =>
       key === 'provider:quota:api-football' ? HEALTHY_QUOTA : null,
@@ -358,8 +349,6 @@ describe('runDailyAnalysis atomic batch + checkpoint (M2)', () => {
     mocks.analysisRun.create.mockResolvedValue({ id: 'run-1', status: 'running' });
   });
 
-  /** A transaction double that records the order of operations so a failure can
-   *  be injected at a specific stage (results write vs checkpoint write). */
   function transactionWithFailureAt(stage: 'results' | 'checkpoint') {
     mocks.tx.analysisResult.createMany.mockImplementation(async () => {
       if (stage === 'results') throw new Error('injected results failure');
@@ -389,12 +378,9 @@ describe('runDailyAnalysis atomic batch + checkpoint (M2)', () => {
 
     const result = await runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z') });
 
-    // Both writes happened inside the ONE transaction.
     expect(mocks.transaction).toHaveBeenCalledTimes(1);
     expect(mocks.tx.analysisResult.createMany).toHaveBeenCalledTimes(1);
     expect(mocks.tx.analysisRun.update).toHaveBeenCalledTimes(1);
-    // The checkpoint written with the results records the processed fixture and
-    // the cumulative counters, and the run is finalised in the same call.
     const updateArg = mocks.tx.analysisRun.update.mock.calls[0][0] as {
       data: {
         status?: string;
@@ -419,8 +405,6 @@ describe('runDailyAnalysis atomic batch + checkpoint (M2)', () => {
       /injected results failure/,
     );
 
-    // Neither the checkpoint nor the status update ran (the tx aborted before
-    // reaching them), and the run is marked failed — never completed.
     expect(mocks.tx.analysisRun.update).not.toHaveBeenCalled();
     expect(mocks.analysisRun.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ status: 'failed' }) }),
@@ -428,9 +412,6 @@ describe('runDailyAnalysis atomic batch + checkpoint (M2)', () => {
   });
 
   it('rolls back everything when the checkpoint write fails (after results)', async () => {
-    // Results insert succeeds, but the checkpoint update throws: the whole
-    // transaction must roll back so results are NOT committed without a
-    // matching checkpoint.
     transactionWithFailureAt('checkpoint');
     mocks.analysisRun.update.mockResolvedValue({ id: 'run-1', status: 'failed' });
 
@@ -438,14 +419,12 @@ describe('runDailyAnalysis atomic batch + checkpoint (M2)', () => {
       /injected checkpoint failure/,
     );
 
-    // The run is marked failed, never completed, and no partial success leaks.
     expect(mocks.analysisRun.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ status: 'failed' }) }),
     );
   });
 
   it('does not create duplicate results when a batch is retried', async () => {
-    // Two fixtures, batch size 1, budget allows a single batch then defers.
     process.env.PROVIDER_ANALYSIS_BATCH_SIZE = '1';
     budgetState.expireAfterCalls = 1;
     mocks.fetchFixtures.mockResolvedValue({ fixtures: [FIXTURE, FIXTURE_B], errors: [] });
@@ -465,13 +444,9 @@ describe('runDailyAnalysis atomic batch + checkpoint (M2)', () => {
     try {
       await runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z'), force: true });
 
-      // createMany is idempotent via skipDuplicates (the (runId, fixtureId)
-      // unique index). The write must always request skipDuplicates so a retry
-      // of the same batch can never insert a duplicate row.
       expect(mocks.tx.analysisResult.createMany).toHaveBeenCalledWith(
         expect.objectContaining({ skipDuplicates: true }),
       );
-      // The first batch's checkpoint records exactly the fixtures it committed.
       const cp = (mocks.tx.analysisRun.update.mock.calls[0][0] as {
         data: { checkpoint: { processedFixtureIds: string[] } };
       }).data.checkpoint;
@@ -483,8 +458,7 @@ describe('runDailyAnalysis atomic batch + checkpoint (M2)', () => {
 
   it('resumes from the durable checkpoint and does not reprocess committed fixtures', async () => {
     process.env.PROVIDER_ANALYSIS_BATCH_SIZE = '1';
-    budgetState.expireAfterCalls = 2; // allow two batches
-    // First run: processes fx-1, then budget expires -> deferred
+    budgetState.expireAfterCalls = 2;
     mocks.fetchFixtures.mockResolvedValue({ fixtures: [FIXTURE, FIXTURE_B], errors: [] });
     mocks.enrichFixtures.mockImplementation(async (batch: Fixture[]) =>
       batch.map((fixture) => ({ fixture, enrichment: {} })),
@@ -509,9 +483,7 @@ describe('runDailyAnalysis atomic batch + checkpoint (M2)', () => {
 
     await runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z'), force: true });
 
-    // Second run (resume): should skip fx-1 and process fx-b
     budgetState.expireAfterCalls = 1;
-    // findFirst returns the deferred run
     mocks.analysisRun.findFirst.mockResolvedValue({
       id: 'run-1',
       status: 'deferred',
@@ -519,7 +491,6 @@ describe('runDailyAnalysis atomic batch + checkpoint (M2)', () => {
       picksGenerated: 1,
       checkpoint: { ...baseCheckpoint, processedFixtureIds: ['fx-1'] },
     });
-    // analysisResult.findMany returns the already-persisted result for fx-1
     mocks.analysisResult.findMany.mockResolvedValue([
       { fixtureId: 'fx-1', enrichmentQuality: 'PRIMARY_COMPLETE' },
     ]);
@@ -537,8 +508,6 @@ describe('runDailyAnalysis atomic batch + checkpoint (M2)', () => {
     expect(result.status).toBe('completed');
     expect(result.fixturesAnalyzed).toBe(2);
     expect(result.picksGenerated).toBe(2);
-    // The resumed run's checkpoint should include both fixtures
-    // First run made 2 update calls, second run makes 1 -> index 2
     const resumeCp = (mocks.tx.analysisRun.update.mock.calls[2][0] as {
       data: { checkpoint: { processedFixtureIds: string[] } };
     }).data.checkpoint;
@@ -547,28 +516,22 @@ describe('runDailyAnalysis atomic batch + checkpoint (M2)', () => {
   });
 
   it('does not double-count picks when createMany skips a duplicate', async () => {
-    // Simulate a retry where the first fixture was already persisted.
-    // With a fresh run (force: true), if createMany returns 0 (duplicate skipped),
-    // the absolute counter correctly reflects 0 picks generated in this run.
-    // The key assertion is that the counter is absolute, not an increment.
     process.env.PROVIDER_ANALYSIS_BATCH_SIZE = '1';
     budgetState.expireAfterCalls = 1;
     mocks.fetchFixtures.mockResolvedValue({ fixtures: [FIXTURE], errors: [] });
     mocks.enrichFixtures.mockResolvedValue([{ fixture: FIXTURE, enrichment: {} }]);
-    // createMany returns count: 0 because the row already exists (skipDuplicates)
     mocks.tx.analysisResult.createMany.mockResolvedValue({ count: 0 });
     mocks.tx.analysisRun.update.mockResolvedValue({
       id: 'run-1',
       status: 'completed',
       fixturesAnalyzed: 1,
-      picksGenerated: 0, // no rows inserted -> 0 picks
+      picksGenerated: 0,
       checkpoint: baseCheckpoint,
     });
 
     const result = await runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z'), force: true });
 
     expect(result.picksGenerated).toBe(0);
-    // The update must use absolute counters, not { increment: 1 }
     const updateArg = mocks.tx.analysisRun.update.mock.calls[0][0] as {
       data: { picksGenerated: number | { increment: number } };
     };
@@ -584,10 +547,8 @@ describe('runDailyAnalysis atomic batch + checkpoint (M2)', () => {
     mocks.enrichFixtures.mockImplementation(async (batch: Fixture[]) =>
       batch.map((fixture) => ({ fixture, enrichment: {} })),
     );
-    // First batch: fx-1 succeeds (1 pick)
     mocks.tx.analysisResult.createMany
       .mockResolvedValueOnce({ count: 1 })
-      // Second batch: fx-b has no pick (e.g. below threshold) -> count: 0
       .mockResolvedValueOnce({ count: 0 });
     mocks.tx.analysisRun.update
       .mockResolvedValueOnce({
@@ -601,7 +562,7 @@ describe('runDailyAnalysis atomic batch + checkpoint (M2)', () => {
         id: 'run-1',
         status: 'completed',
         fixturesAnalyzed: 2,
-        picksGenerated: 1, // picksGenerated did not grow (0 inserted)
+        picksGenerated: 1,
         checkpoint: { ...baseCheckpoint, processedFixtureIds: ['fx-1', 'fx-b'], fixturesAnalyzed: 2, picksGenerated: 1 },
       });
 
@@ -610,7 +571,6 @@ describe('runDailyAnalysis atomic batch + checkpoint (M2)', () => {
     expect(result.status).toBe('completed');
     expect(result.fixturesAnalyzed).toBe(2);
     expect(result.picksGenerated).toBe(1);
-    // The checkpoint still records the newly-processed fixture id.
     const updateArg = mocks.tx.analysisRun.update.mock.calls[1][0] as {
       data: {
         fixturesAnalyzed: number;
@@ -621,7 +581,6 @@ describe('runDailyAnalysis atomic batch + checkpoint (M2)', () => {
     expect(updateArg.data.picksGenerated).toBe(1);
     expect(updateArg.data.checkpoint?.picksGenerated).toBe(1);
     expect(updateArg.data.checkpoint?.processedFixtureIds).toContain('fx-b');
-    // Row and checkpoint agree.
     expect(updateArg.data.checkpoint?.fixturesAnalyzed).toBe(updateArg.data.fixturesAnalyzed);
     expect(updateArg.data.checkpoint?.picksGenerated).toBe(updateArg.data.picksGenerated);
     delete process.env.PROVIDER_ANALYSIS_BATCH_SIZE;
