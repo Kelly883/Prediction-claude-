@@ -159,7 +159,7 @@ function createRunRow(overrides: Partial<{
 }
 
 function setupDefaultMocks() {
-  vi.clearAllMocks();
+  vi.resetAllMocks();
   budgetState.expireAfterCalls = 1;
   mocks.redis.set.mockResolvedValue('OK');
   mocks.redis.del.mockResolvedValue(1);
