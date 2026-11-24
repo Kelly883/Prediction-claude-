@@ -145,14 +145,6 @@ const baseCheckpoint = {
   updatedAt: new Date().toISOString(),
 };
 
-const baseRunRow = {
-  id: 'run-1',
-  status: 'running' as const,
-  fixturesAnalyzed: 1,
-  picksGenerated: 1,
-  checkpoint: baseCheckpoint,
-};
-
 describe('runDailyAnalysis persistence', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -671,10 +663,15 @@ describe('runDailyAnalysis M2 transaction boundaries', () => {
     mocks.analysisRun.update.mockResolvedValue({ id: 'run-1', status: 'failed' });
     mocks.tx.analysisResult.createMany.mockResolvedValue({ count: 1 });
 
-    // Transaction mock that tracks call count
+    // Transaction mock that tracks call count and catches errors like real Prisma
     mocks.transaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => {
       txCallCount += 1;
-      return cb(mocks.tx);
+      try {
+        return await cb(mocks.tx);
+      } catch (error) {
+        // Simulate Prisma: rollback happens, then error is re-thrown
+        throw error;
+      }
     });
   });
 
@@ -735,7 +732,7 @@ describe('runDailyAnalysis M2 transaction boundaries', () => {
     delete process.env.PROVIDER_ANALYSIS_MAX_ATTEMPTS;
   });
 
-  it('exhausted transition rolls back when checkpoint update fails', async () => {
+  it('exhausted transition throws when checkpoint update fails', async () => {
     process.env.PROVIDER_ANALYSIS_BATCH_SIZE = '1';
     mocks.fetchFixtures.mockResolvedValue({ fixtures: [FIXTURE], errors: [] });
     mocks.redis.get.mockImplementation(async (key: string) => {
@@ -751,13 +748,15 @@ describe('runDailyAnalysis M2 transaction boundaries', () => {
     ]);
 
     // Make the transaction fail at the checkpoint update
-    mocks.tx.analysisRun.update.mockRejectedValue(new Error('injected checkpoint failure'));
+    mocks.tx.analysisRun.update.mockImplementation(async () => {
+      throw new Error('injected checkpoint failure');
+    });
     mocks.analysisRun.update.mockResolvedValue({ id: 'run-1', status: 'failed' });
 
-    await expect(runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z'), force: true }))
-      .rejects.toThrow('injected checkpoint failure');
+    // The code catches the error, marks the run failed in DB, then re-throws
+    await expect(runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z'), force: true })).rejects.toThrow('injected checkpoint failure');
 
-    // The transaction aborted; the run should be marked failed via the catch block
+    // The catch block marks the run failed in the database
     expect(mocks.analysisRun.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ status: 'failed' }) }),
     );
@@ -878,7 +877,7 @@ describe('runDailyAnalysis M2 transaction boundaries', () => {
     delete process.env.PROVIDER_ANALYSIS_BATCH_SIZE;
   });
 
-  it('deferred transition fails during checkpoint update and rolls back', async () => {
+  it('deferred transition throws when checkpoint update fails', async () => {
     process.env.PROVIDER_ANALYSIS_BATCH_SIZE = '1';
     budgetState.expireAfterCalls = 1;
     mocks.fetchFixtures.mockResolvedValue({ fixtures: [FIXTURE, { ...FIXTURE, id: 'fx-2' }], errors: [] });
@@ -905,8 +904,8 @@ describe('runDailyAnalysis M2 transaction boundaries', () => {
     });
     mocks.analysisRun.update.mockResolvedValue({ id: 'run-1', status: 'failed' });
 
-    await expect(runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z'), force: true }))
-      .rejects.toThrow('injected checkpoint failure');
+    // The code catches the error, marks the run failed in DB, then re-throws
+    await expect(runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z'), force: true })).rejects.toThrow('injected checkpoint failure');
 
     // The catch block marks the run failed
     expect(mocks.analysisRun.update).toHaveBeenCalledWith(
