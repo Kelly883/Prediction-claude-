@@ -141,43 +141,64 @@ const baseCheckpoint = {
   updatedAt: new Date().toISOString(),
 };
 
+function createRunRow(overrides: Partial<{
+  id: string;
+  status: string;
+  fixturesAnalyzed: number;
+  picksGenerated: number;
+  checkpoint: typeof baseCheckpoint;
+}> = {}) {
+  return {
+    id: 'run-1',
+    status: 'completed',
+    fixturesAnalyzed: 1,
+    picksGenerated: 1,
+    checkpoint: baseCheckpoint,
+    ...overrides,
+  };
+}
+
+function setupDefaultMocks() {
+  vi.clearAllMocks();
+  budgetState.expireAfterCalls = 1;
+  mocks.redis.set.mockResolvedValue('OK');
+  mocks.redis.del.mockResolvedValue(1);
+  mocks.redis.incr.mockResolvedValue(1);
+  mocks.redis.expire.mockResolvedValue(1);
+  mocks.redis.eval.mockResolvedValue(1);
+  mocks.analysisRun.findMany.mockResolvedValue([]);
+  mocks.analysisRun.findFirst.mockResolvedValue(null);
+  mocks.redis.get.mockImplementation(async (key: string) =>
+    key === 'provider:quota:api-football' ? HEALTHY_QUOTA : null,
+  );
+  mocks.analysisConfig.findMany.mockResolvedValue([]);
+  mocks.analysisResult.findMany.mockResolvedValue([]);
+  mocks.getEnabledLeagues.mockResolvedValue([
+    { leagueName: 'English Premier League', leagueCode: 'PL', isEnabled: true, priority: 1 },
+  ]);
+  mocks.fetchFixtures.mockResolvedValue({ fixtures: [FIXTURE], errors: [] });
+  mocks.enrichFixtures.mockResolvedValue([{ fixture: FIXTURE, enrichment: {} }]);
+  mocks.scoreFixture.mockImplementation((fixture: Fixture) => validOutcome(fixture));
+  mocks.transaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(mocks.tx));
+  mocks.analysisRun.create.mockResolvedValue({ id: 'run-1', status: 'running' });
+  mocks.analysisRun.update.mockResolvedValue(createRunRow({ status: 'failed' }));
+  mocks.tx.analysisResult.createMany.mockResolvedValue({ count: 1 });
+}
+
 // ============================================================
 // Persistence tests
 // ============================================================
 describe('runDailyAnalysis persistence', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    budgetState.expireAfterCalls = 1;
-    mocks.redis.set.mockResolvedValue('OK');
-    mocks.redis.del.mockResolvedValue(1);
-    mocks.redis.incr.mockResolvedValue(1);
-    mocks.redis.expire.mockResolvedValue(1);
-    mocks.redis.eval.mockResolvedValue(1);
-    mocks.analysisRun.findMany.mockResolvedValue([]);
-    mocks.redis.get.mockImplementation(async (key: string) =>
-      key === 'provider:quota:api-football' ? HEALTHY_QUOTA : null,
-    );
-    mocks.analysisConfig.findMany.mockResolvedValue([]);
-    mocks.analysisResult.findMany.mockResolvedValue([]);
-    mocks.getEnabledLeagues.mockResolvedValue([
-      { leagueName: 'English Premier League', leagueCode: 'PL', isEnabled: true, priority: 1 },
-    ]);
-    mocks.fetchFixtures.mockResolvedValue({ fixtures: [FIXTURE], errors: [] });
-    mocks.enrichFixtures.mockResolvedValue([{ fixture: FIXTURE, enrichment: {} }]);
-    mocks.scoreFixture.mockImplementation((fixture: Fixture) => validOutcome(fixture));
-    mocks.transaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(mocks.tx));
-    mocks.analysisRun.create.mockResolvedValue({ id: 'run-1', status: 'running' });
-  });
+  beforeEach(setupDefaultMocks);
 
   it('persists results and finalises the run inside a single transaction', async () => {
     mocks.tx.analysisResult.createMany.mockResolvedValue({ count: 1 });
-    mocks.tx.analysisRun.update.mockResolvedValue({
-      id: 'run-1',
+    mocks.tx.analysisRun.update.mockResolvedValue(createRunRow({
       status: 'completed',
       fixturesAnalyzed: 1,
       picksGenerated: 1,
       checkpoint: baseCheckpoint,
-    });
+    }));
 
     const result = await runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z') });
 
@@ -197,7 +218,7 @@ describe('runDailyAnalysis persistence', () => {
 
   it('rolls back and marks the run failed when result persistence throws', async () => {
     mocks.tx.analysisResult.createMany.mockRejectedValue(new Error('duplicate key value'));
-    mocks.analysisRun.update.mockResolvedValue({ id: 'run-1', status: 'failed' });
+    mocks.analysisRun.update.mockResolvedValue(createRunRow({ status: 'failed' }));
 
     await expect(runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z') })).rejects.toThrow('duplicate key value');
 
@@ -228,13 +249,12 @@ describe('runDailyAnalysis persistence', () => {
       picksGenerated: 2,
     });
     mocks.tx.analysisResult.createMany.mockResolvedValue({ count: 1 });
-    mocks.tx.analysisRun.update.mockResolvedValue({
-      id: 'run-1',
+    mocks.tx.analysisRun.update.mockResolvedValue(createRunRow({
       status: 'completed',
       fixturesAnalyzed: 1,
       picksGenerated: 1,
       checkpoint: baseCheckpoint,
-    });
+    }));
 
     const result = await runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z'), force: true });
 
@@ -248,27 +268,7 @@ describe('runDailyAnalysis persistence', () => {
 // ============================================================
 
 describe('runDailyAnalysis Stage 9 gating', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    budgetState.expireAfterCalls = 1;
-    mocks.redis.set.mockResolvedValue('OK');
-    mocks.redis.del.mockResolvedValue(1);
-    mocks.redis.incr.mockResolvedValue(1);
-    mocks.redis.expire.mockResolvedValue(1);
-    mocks.redis.eval.mockResolvedValue(1);
-    mocks.analysisRun.findMany.mockResolvedValue([]);
-    mocks.analysisRun.findFirst.mockResolvedValue(null);
-    mocks.analysisConfig.findMany.mockResolvedValue([]);
-    mocks.analysisResult.findMany.mockResolvedValue([]);
-    mocks.getEnabledLeagues.mockResolvedValue([
-      { leagueName: 'English Premier League', leagueCode: 'PL', isEnabled: true, priority: 1 },
-    ]);
-    mocks.fetchFixtures.mockResolvedValue({ fixtures: [FIXTURE], errors: [] });
-    mocks.enrichFixtures.mockResolvedValue([{ fixture: FIXTURE, enrichment: {} }]);
-    mocks.scoreFixture.mockImplementation((fixture: Fixture) => validOutcome(fixture));
-    mocks.transaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(mocks.tx));
-    mocks.analysisRun.create.mockResolvedValue({ id: 'run-1', status: 'running' });
-  });
+  beforeEach(setupDefaultMocks);
 
   it('blocks the run when Redis is unavailable', async () => {
     mocks.redis.get.mockRejectedValue(new Error('ECONNREFUSED'));
@@ -327,30 +327,7 @@ describe('runDailyAnalysis Stage 9 gating', () => {
 // ============================================================
 
 describe('runDailyAnalysis atomic batch + checkpoint (M2)', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    budgetState.expireAfterCalls = 1;
-    mocks.redis.set.mockResolvedValue('OK');
-    mocks.redis.del.mockResolvedValue(1);
-    mocks.redis.incr.mockResolvedValue(1);
-    mocks.redis.expire.mockResolvedValue(1);
-    mocks.redis.eval.mockResolvedValue(1);
-    mocks.analysisRun.findMany.mockResolvedValue([]);
-    mocks.analysisRun.findFirst.mockResolvedValue(null);
-    mocks.redis.get.mockImplementation(async (key: string) =>
-      key === 'provider:quota:api-football' ? HEALTHY_QUOTA : null,
-    );
-    mocks.analysisConfig.findMany.mockResolvedValue([]);
-    mocks.analysisResult.findMany.mockResolvedValue([]);
-    mocks.getEnabledLeagues.mockResolvedValue([
-      { leagueName: 'English Premier League', leagueCode: 'PL', isEnabled: true, priority: 1 },
-    ]);
-    mocks.fetchFixtures.mockResolvedValue({ fixtures: [FIXTURE], errors: [] });
-    mocks.enrichFixtures.mockResolvedValue([{ fixture: FIXTURE, enrichment: {} }]);
-    mocks.scoreFixture.mockImplementation((fixture: Fixture) => validOutcome(fixture));
-    mocks.transaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(mocks.tx));
-    mocks.analysisRun.create.mockResolvedValue({ id: 'run-1', status: 'running' });
-  });
+  beforeEach(setupDefaultMocks);
 
   function transactionWithFailureAt(stage: 'results' | 'checkpoint') {
     mocks.tx.analysisResult.createMany.mockImplementation(async () => {
@@ -359,25 +336,23 @@ describe('runDailyAnalysis atomic batch + checkpoint (M2)', () => {
     });
     mocks.tx.analysisRun.update.mockImplementation(async (args: { data: { checkpoint?: unknown } }) => {
       if (stage === 'checkpoint') throw new Error('injected checkpoint failure');
-      return {
-        id: 'run-1',
+      return createRunRow({
         status: 'completed',
         fixturesAnalyzed: 1,
         picksGenerated: 1,
         checkpoint: args.data.checkpoint ?? baseCheckpoint,
-      };
+      });
     });
   }
 
   it('commits results AND the checkpoint together on success', async () => {
     mocks.tx.analysisResult.createMany.mockResolvedValue({ count: 1 });
-    mocks.tx.analysisRun.update.mockResolvedValue({
-      id: 'run-1',
+    mocks.tx.analysisRun.update.mockResolvedValue(createRunRow({
       status: 'completed',
       fixturesAnalyzed: 1,
       picksGenerated: 1,
       checkpoint: baseCheckpoint,
-    });
+    }));
 
     const result = await runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z') });
 
@@ -402,7 +377,7 @@ describe('runDailyAnalysis atomic batch + checkpoint (M2)', () => {
 
   it('rolls back everything when the results write fails', async () => {
     transactionWithFailureAt('results');
-    mocks.analysisRun.update.mockResolvedValue({ id: 'run-1', status: 'failed' });
+    mocks.analysisRun.update.mockResolvedValue(createRunRow({ status: 'failed' }));
 
     await expect(runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z') })).rejects.toThrow(
       /injected results failure/,
@@ -416,7 +391,7 @@ describe('runDailyAnalysis atomic batch + checkpoint (M2)', () => {
 
   it('rolls back everything when the checkpoint write fails (after results)', async () => {
     transactionWithFailureAt('checkpoint');
-    mocks.analysisRun.update.mockResolvedValue({ id: 'run-1', status: 'failed' });
+    mocks.analysisRun.update.mockResolvedValue(createRunRow({ status: 'failed' }));
 
     await expect(runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z') })).rejects.toThrow(
       /injected checkpoint failure/,
@@ -435,14 +410,13 @@ describe('runDailyAnalysis atomic batch + checkpoint (M2)', () => {
       batch.map((fixture) => ({ fixture, enrichment: {} })),
     );
     mocks.tx.analysisResult.createMany.mockResolvedValue({ count: 1 });
-    mocks.tx.analysisRun.update.mockResolvedValue({
-      id: 'run-1',
+    mocks.tx.analysisRun.update.mockResolvedValue(createRunRow({
       status: 'running',
       fixturesAnalyzed: 1,
       picksGenerated: 1,
       checkpoint: baseCheckpoint,
-    });
-    mocks.analysisRun.update.mockResolvedValue({ id: 'run-1', status: 'deferred' });
+    }));
+    mocks.analysisRun.update.mockResolvedValue(createRunRow({ status: 'deferred' }));
 
     try {
       await runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z'), force: true });
@@ -468,21 +442,19 @@ describe('runDailyAnalysis atomic batch + checkpoint (M2)', () => {
     );
     mocks.tx.analysisResult.createMany.mockResolvedValue({ count: 1 });
     mocks.tx.analysisRun.update
-      .mockResolvedValueOnce({
-        id: 'run-1',
+      .mockResolvedValueOnce(createRunRow({
         status: 'running',
         fixturesAnalyzed: 1,
         picksGenerated: 1,
         checkpoint: { ...baseCheckpoint, processedFixtureIds: ['fx-1'] },
-      })
-      .mockResolvedValueOnce({
-        id: 'run-1',
+      }))
+      .mockResolvedValueOnce(createRunRow({
         status: 'deferred',
         fixturesAnalyzed: 1,
         picksGenerated: 1,
         checkpoint: { ...baseCheckpoint, processedFixtureIds: ['fx-1'] },
-      });
-    mocks.analysisRun.update.mockResolvedValue({ id: 'run-1', status: 'deferred' });
+      }));
+    mocks.analysisRun.update.mockResolvedValue(createRunRow({ status: 'deferred' }));
 
     await runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z'), force: true });
 
@@ -498,13 +470,12 @@ describe('runDailyAnalysis atomic batch + checkpoint (M2)', () => {
       { fixtureId: 'fx-1', enrichmentQuality: 'PRIMARY_COMPLETE' },
     ]);
     mocks.tx.analysisResult.createMany.mockResolvedValue({ count: 1 });
-    mocks.tx.analysisRun.update.mockResolvedValue({
-      id: 'run-1',
+    mocks.tx.analysisRun.update.mockResolvedValue(createRunRow({
       status: 'completed',
       fixturesAnalyzed: 2,
       picksGenerated: 2,
       checkpoint: { ...baseCheckpoint, processedFixtureIds: ['fx-1', 'fx-b'], fixturesAnalyzed: 2, picksGenerated: 2 },
-    });
+    }));
 
     const result = await runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z') });
 
@@ -524,13 +495,12 @@ describe('runDailyAnalysis atomic batch + checkpoint (M2)', () => {
     mocks.fetchFixtures.mockResolvedValue({ fixtures: [FIXTURE], errors: [] });
     mocks.enrichFixtures.mockResolvedValue([{ fixture: FIXTURE, enrichment: {} }]);
     mocks.tx.analysisResult.createMany.mockResolvedValue({ count: 0 });
-    mocks.tx.analysisRun.update.mockResolvedValue({
-      id: 'run-1',
+    mocks.tx.analysisRun.update.mockResolvedValue(createRunRow({
       status: 'completed',
       fixturesAnalyzed: 1,
       picksGenerated: 0,
       checkpoint: baseCheckpoint,
-    });
+    }));
 
     const result = await runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z'), force: true });
 
@@ -554,20 +524,18 @@ describe('runDailyAnalysis atomic batch + checkpoint (M2)', () => {
       .mockResolvedValueOnce({ count: 1 })
       .mockResolvedValueOnce({ count: 0 });
     mocks.tx.analysisRun.update
-      .mockResolvedValueOnce({
-        id: 'run-1',
+      .mockResolvedValueOnce(createRunRow({
         status: 'running',
         fixturesAnalyzed: 1,
         picksGenerated: 1,
         checkpoint: { ...baseCheckpoint, processedFixtureIds: ['fx-1'] },
-      })
-      .mockResolvedValueOnce({
-        id: 'run-1',
+      }))
+      .mockResolvedValueOnce(createRunRow({
         status: 'completed',
         fixturesAnalyzed: 2,
         picksGenerated: 1,
         checkpoint: { ...baseCheckpoint, processedFixtureIds: ['fx-1', 'fx-b'], fixturesAnalyzed: 2, picksGenerated: 1 },
-      });
+      }));
 
     const result = await runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z'), force: true });
 
@@ -595,31 +563,8 @@ describe('runDailyAnalysis atomic batch + checkpoint (M2)', () => {
 // ============================================================
 describe('runDailyAnalysis M2 transaction boundaries', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
-    budgetState.expireAfterCalls = 1;
-    mocks.redis.set.mockResolvedValue('OK');
-    mocks.redis.del.mockResolvedValue(1);
-    mocks.redis.incr.mockResolvedValue(1);
-    mocks.redis.expire.mockResolvedValue(1);
-    mocks.redis.eval.mockResolvedValue(1);
-    mocks.analysisRun.findMany.mockResolvedValue([]);
-    mocks.analysisRun.findFirst.mockResolvedValue(null);
-    mocks.redis.get.mockImplementation(async (key: string) =>
-      key === 'provider:quota:api-football' ? HEALTHY_QUOTA : null,
-    );
-    mocks.analysisConfig.findMany.mockResolvedValue([]);
-    mocks.analysisResult.findMany.mockResolvedValue([]);
-    mocks.getEnabledLeagues.mockResolvedValue([
-      { leagueName: 'English Premier League', leagueCode: 'PL', isEnabled: true, priority: 1 },
-    ]);
-    mocks.fetchFixtures.mockResolvedValue({ fixtures: [FIXTURE], errors: [] });
-    mocks.enrichFixtures.mockResolvedValue([{ fixture: FIXTURE, enrichment: {} }]);
-    mocks.scoreFixture.mockImplementation((fixture: Fixture) => validOutcome(fixture));
-    mocks.analysisRun.create.mockResolvedValue({ id: 'run-1', status: 'running' });
-    mocks.analysisRun.update.mockResolvedValue({ id: 'run-1', status: 'failed' });
-    mocks.tx.analysisResult.createMany.mockResolvedValue({ count: 1 });
-
-    // Transaction mock that tracks call count and catches errors like real Prisma
+    setupDefaultMocks();
+    // Override transaction mock to properly simulate Prisma behavior
     mocks.transaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => {
       try {
         return await cb(mocks.tx);
@@ -657,13 +602,13 @@ describe('runDailyAnalysis M2 transaction boundaries', () => {
       completedBatches: 0,
       updatedAt: new Date().toISOString(),
     };
-    mocks.tx.analysisRun.update.mockResolvedValue({
-      id: 'run-1',
+    const failedRunRow = createRunRow({
       status: 'failed',
       fixturesAnalyzed: 0,
       picksGenerated: 0,
       checkpoint: exhaustedCheckpoint,
     });
+    mocks.tx.analysisRun.update.mockResolvedValue(failedRunRow);
 
     const result = await runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z'), force: true });
 
@@ -699,7 +644,7 @@ describe('runDailyAnalysis M2 transaction boundaries', () => {
     mocks.tx.analysisRun.update.mockImplementation(async () => {
       throw new Error('injected checkpoint failure');
     });
-    mocks.analysisRun.update.mockResolvedValue({ id: 'run-1', status: 'failed' });
+    mocks.analysisRun.update.mockResolvedValue(createRunRow({ status: 'failed' }));
 
     await expect(runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z'), force: true })).rejects.toThrow('injected checkpoint failure');
 
@@ -724,18 +669,17 @@ describe('runDailyAnalysis M2 transaction boundaries', () => {
     mocks.tx.analysisRun.update.mockImplementation(async (args: { where: { id: string; status?: string }; data: unknown }) => {
       txCallCountLocal += 1;
       if (txCallCountLocal === 1) {
-        return {
-          id: 'run-1',
+        return createRunRow({
           status: 'running',
           fixturesAnalyzed: 1,
           picksGenerated: 1,
           checkpoint: baseCheckpoint,
-        };
+        });
       }
       expect(args.where).toMatchObject({ id: 'run-1', status: 'running' });
       return null;
     });
-    mocks.analysisRun.update.mockResolvedValue({ id: 'run-1', status: 'completed' });
+    mocks.analysisRun.update.mockResolvedValue(createRunRow({ status: 'completed' }));
 
     delete process.env.PROVIDER_ANALYSIS_BATCH_SIZE;
   });
@@ -759,23 +703,21 @@ describe('runDailyAnalysis M2 transaction boundaries', () => {
     mocks.tx.analysisRun.update.mockImplementation(async (args: { where: { id: string; status?: string }; data: unknown }) => {
       updateCallCount += 1;
       if (updateCallCount === 1) {
-        return {
-          id: 'run-1',
+        return createRunRow({
           status: 'running',
           fixturesAnalyzed: 1,
           picksGenerated: 1,
           checkpoint: baseCheckpoint,
-        };
+        });
       }
       expect(args.where).toMatchObject({ id: 'run-1', status: 'running' });
       expect(args.data).toMatchObject({ status: 'deferred' });
-      return {
-        id: 'run-1',
+      return createRunRow({
         status: 'deferred',
         fixturesAnalyzed: 1,
         picksGenerated: 1,
         checkpoint: baseCheckpoint,
-      };
+      });
     });
 
     const result = await runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z'), force: true });
@@ -799,17 +741,16 @@ describe('runDailyAnalysis M2 transaction boundaries', () => {
     mocks.tx.analysisRun.update.mockImplementation(async (args: { where: { id: string; status?: string }; data: unknown }) => {
       updateCallCount += 1;
       if (updateCallCount === 1) {
-        return {
-          id: 'run-1',
+        return createRunRow({
           status: 'running',
           fixturesAnalyzed: 1,
           picksGenerated: 1,
           checkpoint: baseCheckpoint,
-        };
+        });
       }
       throw new Error('injected checkpoint failure');
     });
-    mocks.analysisRun.update.mockResolvedValue({ id: 'run-1', status: 'failed' });
+    mocks.analysisRun.update.mockResolvedValue(createRunRow({ status: 'failed' }));
 
     await expect(runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z'), force: true })).rejects.toThrow('injected checkpoint failure');
 
@@ -831,21 +772,19 @@ describe('runDailyAnalysis M2 transaction boundaries', () => {
     mocks.tx.analysisResult.createMany.mockResolvedValue({ count: 1 });
 
     mocks.tx.analysisRun.update
-      .mockResolvedValueOnce({
-        id: 'run-1',
+      .mockResolvedValueOnce(createRunRow({
         status: 'running',
         fixturesAnalyzed: 1,
         picksGenerated: 1,
         checkpoint: baseCheckpoint,
-      })
-      .mockResolvedValueOnce({
-        id: 'run-1',
+      }))
+      .mockResolvedValueOnce(createRunRow({
         status: 'deferred',
         fixturesAnalyzed: 1,
         picksGenerated: 1,
         checkpoint: baseCheckpoint,
-      });
-    mocks.analysisRun.update.mockResolvedValue({ id: 'run-1', status: 'deferred' });
+      }));
+    mocks.analysisRun.update.mockResolvedValue(createRunRow({ status: 'deferred' }));
 
     const result1 = await runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z'), force: true });
     expect(result1.status).toBe('deferred');
@@ -860,13 +799,12 @@ describe('runDailyAnalysis M2 transaction boundaries', () => {
 
     budgetState.expireAfterCalls = 10;
     mocks.tx.analysisResult.createMany.mockResolvedValue({ count: 1 });
-    mocks.tx.analysisRun.update.mockResolvedValue({
-      id: 'run-1',
+    mocks.tx.analysisRun.update.mockResolvedValue(createRunRow({
       status: 'completed',
       fixturesAnalyzed: 2,
       picksGenerated: 2,
       checkpoint: { ...baseCheckpoint, processedFixtureIds: ['fx-1', 'fx-2'], fixturesAnalyzed: 2, picksGenerated: 2 },
-    });
+    }));
     mocks.analysisRun.findFirst.mockResolvedValue({
       id: 'run-1',
       status: 'deferred',
