@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Use vi.hoisted but create fresh mocks per file to avoid cross-file leakage
 const mocks = vi.hoisted(() => {
@@ -62,8 +62,18 @@ vi.mock('@/lib/analysis/ingestion/budget', async (importOriginal) => {
   };
 });
 
-import { runDailyAnalysis } from '@/lib/analysis/run';
 import type { AnalysisOutcome, Fixture, MarketType } from '@/types/analysis';
+
+let runDailyAnalysis: any;
+
+beforeAll(async () => {
+  // Clear any modules cached by prior test files so vi.mock() factories
+  // below are applied fresh to @/lib/analysis/run and its dependencies.
+  // Prevents cross-file mock pollution from other suites mocking @/lib/prisma.
+  vi.resetModules();
+  const mod = await import('@/lib/analysis/run');
+  runDailyAnalysis = mod.runDailyAnalysis;
+});
 
 vi.mock('@/lib/api/provider-config', () => ({
   getProviderConfig: () => ({
