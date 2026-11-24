@@ -638,7 +638,7 @@ describe('runDailyAnalysis M2 transaction boundaries', () => {
   let txCallCount: number;
 
   beforeEach(() => {
-    vi.resetAllMocks();
+    vi.clearAllMocks();
     budgetState.expireAfterCalls = 1;
     txCallCount = 0;
     mocks.redis.set.mockResolvedValue('OK');
