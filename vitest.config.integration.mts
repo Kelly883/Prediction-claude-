@@ -5,7 +5,7 @@ export default defineConfig({
   test: {
     environment: 'node',
     setupFiles: ['./tests/setup.ts'],
-    exclude: ['**/node_modules/**', '**/dist/**', '**/e2e/**', '**/analysis-db.test.ts'],
+    exclude: ['**/node_modules/**', '**/dist/**', '**/e2e/**'],
     testTimeout: 120000,
     hookTimeout: 120000,
     teardownTimeout: 60000,

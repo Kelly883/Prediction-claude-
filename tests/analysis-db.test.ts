@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { PrismaClient } from '@prisma/client';
 import { Prisma } from '@prisma/client';
+import { redis } from '@/lib/redis';
 import { runDailyAnalysis } from '@/lib/analysis/run';
 import type { Fixture } from '@/types/analysis';
 
@@ -47,6 +48,12 @@ describe('AnalysisResult persistence (live Postgres)', () => {
 
   afterAll(async () => {
     await prisma.$disconnect();
+  });
+
+  // Clean up any running run for this date before each test so tests don't
+  // conflict with the partial unique index on (runDate) WHERE status = 'running'.
+  beforeEach(async () => {
+    await prisma.analysisRun.deleteMany({ where: { runDate } });
   });
 
   it('rejects a second simultaneous running run for the same day (partial unique index)', async () => {
@@ -217,6 +224,20 @@ describe('runDailyAnalysis M2 transaction boundaries (live Postgres)', () => {
     prisma = new PrismaClient({ datasources: { db: { url: testDbUrl() } } });
     await prisma.$connect();
     testRunDate = new Date('2099-12-30T00:00:00.000Z');
+    // Store a healthy quota snapshot in Redis so the ingestion gate does not
+    // block runDailyAnalysis during integration tests. The gate reads
+    // provider:quota:api-football from the shared (in-memory in test) store.
+    await redis.set('provider:quota:api-football', JSON.stringify({
+      provider: 'api-football',
+      plan: 'test',
+      subscriptionEnd: null,
+      dailyLimit: 7500,
+      consumed: 100,
+      remaining: 7400,
+      lastCheckedAt: new Date().toISOString(),
+      status: 'OK',
+      source: 'PROVIDER_STATUS',
+    }));
   });
 
   afterAll(async () => {
