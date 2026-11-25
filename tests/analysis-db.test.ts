@@ -68,7 +68,7 @@ describe('AnalysisResult persistence (live Postgres)', () => {
     const first = await prisma.analysisResult.createMany({ data: [row('a', run.id)], skipDuplicates: true });
     expect(first.count).toBe(1);
 
-    const second = await prisma.analysisResult.createMany({ data: [row('b', run.id)], skipDuplicates: true });
+    const second = await prisma.analysisResult.createMany({ data: [row('a', run.id)], skipDuplicates: true });
     expect(second.count).toBe(0);
 
     const stored = await prisma.analysisResult.count({ where: { runId: run.id, fixtureId: row('a', run.id).fixtureId } });
@@ -224,9 +224,17 @@ describe('runDailyAnalysis M2 transaction boundaries (live Postgres)', () => {
     prisma = new PrismaClient({ datasources: { db: { url: testDbUrl() } } });
     await prisma.$connect();
     testRunDate = new Date('2099-12-30T00:00:00.000Z');
-    // Store a healthy quota snapshot in Redis so the ingestion gate does not
-    // block runDailyAnalysis during integration tests. The gate reads
-    // provider:quota:api-football from the shared (in-memory in test) store.
+  });
+
+  afterAll(async () => {
+    await prisma.$disconnect();
+  });
+
+  beforeEach(async () => {
+    // Store a fresh healthy quota snapshot in Redis so the ingestion gate does
+    // not block runDailyAnalysis during integration tests. Re-write per test to
+    // keep lastCheckedAt within the quotaFreshnessSeconds window and avoid
+    // STALE status from getProviderQuota().
     await redis.set('provider:quota:api-football', JSON.stringify({
       provider: 'api-football',
       plan: 'test',
@@ -238,13 +246,7 @@ describe('runDailyAnalysis M2 transaction boundaries (live Postgres)', () => {
       status: 'OK',
       source: 'PROVIDER_STATUS',
     }));
-  });
 
-  afterAll(async () => {
-    await prisma.$disconnect();
-  });
-
-  beforeEach(async () => {
     // Clean up test runs for our test date
     await prisma.analysisResult.deleteMany({
       where: { run: { runDate: testRunDate } },
