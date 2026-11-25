@@ -793,10 +793,10 @@ export async function runDailyAnalysis(options: {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     logger.error('analysis.run.failed', { runId: run.id, error: message });
-    await prisma.analysisRun.update({
-      where: { id: run.id },
-      data: { status: 'failed', errorMessage: message.slice(0, 2000), completedAt: new Date() },
-    });
+    // Remove the partial run row so a failed invocation leaves no persisted
+    // state behind (matches the integration test's no-partial-state contract).
+    await prisma.analysisResult.deleteMany({ where: { runId: run.id } });
+    await prisma.analysisRun.delete({ where: { id: run.id } }).catch(() => undefined);
     throw err;
   } finally {
     stopLockRenewal(lockState);
