@@ -264,6 +264,16 @@ export async function loadAnalysisSettings(): Promise<AnalysisSettings> {
  * Mirrors the `AnalysisRun.checkpoint` JSON column (see prisma/schema.prisma).
  * A `type` alias (not an interface) so it is assignable to Prisma's
  * `InputJsonValue` without casts.
+ *
+ * M6 write-amplification decision: retain the JSON checkpoint for the current
+ * 20-league workload. `processedFixtureIds` is required for exact recovery
+ * (it proves which fixtures were processed; a count cannot). Scale is bounded:
+ * ~20 leagues x ~10 fixtures/day x ~5 markets = ~1000 IDs/day, each ~12 bytes,
+ * so a full checkpoint is ~12 KB and is rewritten once per batch (~10-20
+ * writes/day). That is negligible I/O and keeps recovery atomic with the
+ * per-batch transaction. A dedicated table or per-batch rows would add joins
+ * and migration cost without correctness benefit at this scale. Revisit if
+ * fixture volume grows beyond ~10k IDs/checkpoint or batches exceed ~100/day.
  */
 type AnalysisCheckpoint = {
   processedFixtureIds: string[];
