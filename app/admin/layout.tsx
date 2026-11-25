@@ -83,7 +83,7 @@ function AdminChrome({ children }: { children: React.ReactNode }) {
       <section className="section-tight">
         <div className="container admin-overview-shell">
           <div className="admin-nav-tabs-wrapper mb-5">
-            <AdminNavTabs permissions={user?.permissions} />
+            <AdminNavTabs permissions={user?.permissions} role={user?.role} />
           </div>
           <VerificationBanner />
           <div className="dashboard-content">{children}</div>

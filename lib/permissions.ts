@@ -61,7 +61,7 @@ export const NAV_PERMISSIONS: Record<string, Permission> = {
   '/admin/audit-logs': PERMISSIONS.pages.auditLogs,
   '/admin/cms': PERMISSIONS.pages.cms,
   '/admin/security': PERMISSIONS.pages.security,
-  '/admin/analysis': PERMISSIONS.pages.analysis,
+  '/superadmin/analysis': PERMISSIONS.pages.analysis,
   '/admin/permissions': PERMISSIONS.admin.grantPermissions,
 };
 

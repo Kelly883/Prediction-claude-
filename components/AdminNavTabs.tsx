@@ -16,25 +16,30 @@ export const ADMIN_NAV_LINKS = [
   { href: '/admin/audit-logs', label: 'Audit Logs' },
   { href: '/admin/cms', label: 'CMS' },
   { href: '/admin/security', label: 'Security' },
-  { href: '/admin/analysis', label: 'Analysis' },
+  { href: '/superadmin/analysis', label: 'Analysis' },
   { href: '/admin/permissions', label: 'Permissions' },
   { href: '/admin/profile', label: 'Profile' },
 ];
 
 type AdminNavTabsProps = {
   permissions?: Permission[];
+  role?: string;
 };
 
-export default function AdminNavTabs({ permissions }: AdminNavTabsProps) {
+export default function AdminNavTabs({ permissions, role }: AdminNavTabsProps) {
   const pathname = usePathname();
-  const hasPermission = (href: string) => {
+  const hasNavPermission = (href: string) => {
     if (!permissions) return true;
     const required = NAV_PERMISSIONS[href];
     if (!required) return true;
+    // Superadmin-only routes are visible exclusively to verified superadmins,
+    // regardless of any page permission a regular admin may hold.
+    if (href.startsWith('/superadmin/')) return role === 'superadmin';
+    if (role === 'superadmin') return true;
     return permissions.includes(required);
   };
 
-  const visibleLinks = ADMIN_NAV_LINKS.filter((item) => hasPermission(item.href));
+  const visibleLinks = ADMIN_NAV_LINKS.filter((item) => hasNavPermission(item.href));
 
   return (
     <nav className="admin-dash-tabs" aria-label="Admin Navigation">
