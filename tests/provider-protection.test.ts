@@ -204,6 +204,122 @@ describe('provider quota monitoring', () => {
       delete process.env.PROVIDER_QUOTA_UNKNOWN_POLICY;
     }
   });
+
+  // ---------------------------------------------------------------------------
+  // readStoredSnapshot validation regression tests
+  // ---------------------------------------------------------------------------
+  describe('readStoredSnapshot validation', () => {
+    const now = new Date('2026-11-22T06:00:00.000Z');
+
+    beforeEach(async () => {
+      await redis.del(QUOTA_KEY);
+    });
+
+    it('rejects malformed JSON string', async () => {
+      await redis.set(QUOTA_KEY, '{not valid json');
+      const quota = await getProviderQuota(now);
+      expect(quota.status).toBe('UNKNOWN');
+      expect((await evaluateQuotaGate(now)).allowed).toBe(false);
+    });
+
+    it('rejects object with incorrect provider', async () => {
+      await redis.set(QUOTA_KEY, {
+        ...unknownQuotaSnapshot(),
+        dailyLimit: 7_500,
+        consumed: 100,
+        remaining: 7_400,
+        status: 'OK',
+        source: 'PROVIDER_STATUS',
+        lastCheckedAt: now.toISOString(),
+        provider: 'wrong-provider',
+      });
+      const quota = await getProviderQuota(now);
+      expect(quota.status).toBe('UNKNOWN');
+      expect((await evaluateQuotaGate(now)).allowed).toBe(false);
+    });
+
+    it('rejects object with unsupported status', async () => {
+      await redis.set(QUOTA_KEY, {
+        ...unknownQuotaSnapshot(),
+        dailyLimit: 7_500,
+        consumed: 100,
+        remaining: 7_400,
+        source: 'PROVIDER_STATUS',
+        lastCheckedAt: now.toISOString(),
+        status: 'INVALID',
+      });
+      const quota = await getProviderQuota(now);
+      expect(quota.status).toBe('UNKNOWN');
+      expect((await evaluateQuotaGate(now)).allowed).toBe(false);
+    });
+
+    it('rejects object with invalid lastCheckedAt', async () => {
+      await redis.set(QUOTA_KEY, {
+        ...unknownQuotaSnapshot(),
+        dailyLimit: 7_500,
+        consumed: 100,
+        remaining: 7_400,
+        status: 'OK',
+        source: 'PROVIDER_STATUS',
+        lastCheckedAt: 'not-a-valid-timestamp',
+      });
+      const quota = await getProviderQuota(now);
+      expect(quota.status).toBe('UNKNOWN');
+      expect((await evaluateQuotaGate(now)).allowed).toBe(false);
+    });
+
+    it('rejects object with missing lastCheckedAt', async () => {
+      const { lastCheckedAt, ...snapshot } = {
+        ...unknownQuotaSnapshot(),
+        dailyLimit: 7_500,
+        consumed: 100,
+        remaining: 7_400,
+        status: 'OK',
+        source: 'PROVIDER_STATUS',
+        lastCheckedAt: now.toISOString(),
+      };
+      await redis.set(QUOTA_KEY, snapshot);
+      const quota = await getProviderQuota(now);
+      expect(quota.status).toBe('UNKNOWN');
+      expect((await evaluateQuotaGate(now)).allowed).toBe(false);
+    });
+
+    it('accepts a valid object snapshot', async () => {
+      await redis.set(QUOTA_KEY, {
+        ...unknownQuotaSnapshot(),
+        dailyLimit: 7_500,
+        consumed: 100,
+        remaining: 7_400,
+        status: 'OK',
+        source: 'PROVIDER_STATUS',
+        lastCheckedAt: now.toISOString(),
+      });
+      const quota = await getProviderQuota(now);
+      expect(quota.status).toBe('OK');
+      expect((await evaluateQuotaGate(now)).allowed).toBe(true);
+    });
+
+    it('accepts a valid JSON-string snapshot', async () => {
+      await redis.set(QUOTA_KEY, JSON.stringify({
+        ...unknownQuotaSnapshot(),
+        dailyLimit: 7_500,
+        consumed: 100,
+        remaining: 7_400,
+        status: 'OK',
+        source: 'PROVIDER_STATUS',
+        lastCheckedAt: now.toISOString(),
+      }));
+      const quota = await getProviderQuota(now);
+      expect(quota.status).toBe('OK');
+      expect((await evaluateQuotaGate(now)).allowed).toBe(true);
+    });
+
+    it('fails closed when snapshot is missing', async () => {
+      const quota = await getProviderQuota(now);
+      expect(quota.status).toBe('UNKNOWN');
+      expect((await evaluateQuotaGate(now)).allowed).toBe(false);
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------

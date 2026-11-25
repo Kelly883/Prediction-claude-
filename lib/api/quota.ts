@@ -303,7 +303,31 @@ export function assessQuota(snapshot: ProviderQuotaSnapshot): QuotaAssessment {
 
 async function readStoredSnapshot(): Promise<ProviderQuotaSnapshot | null> {
   try {
-    return await redis.get<ProviderQuotaSnapshot>(QUOTA_KEY);
+    const raw = await redis.get<unknown>(QUOTA_KEY);
+    if (!raw) return null;
+
+    let snapshot: unknown;
+    if (typeof raw === 'string') {
+      snapshot = JSON.parse(raw);
+    } else if (typeof raw === 'object' && raw !== null) {
+      snapshot = raw;
+    } else {
+      return null;
+    }
+
+    // Validate essential fields before trusting the snapshot.
+    if (typeof snapshot !== 'object' || snapshot === null) {
+      return null;
+    }
+    const obj = snapshot as Record<string, unknown>;
+    if (obj.provider !== 'api-football') return null;
+    if (!['OK', 'STALE', 'UNKNOWN'].includes(obj.status as QuotaStatus)) return null;
+    const lastCheckedAt = obj.lastCheckedAt;
+    if (typeof lastCheckedAt !== 'string' || !Number.isFinite(Date.parse(lastCheckedAt))) {
+      return null;
+    }
+
+    return snapshot as ProviderQuotaSnapshot;
   } catch (err) {
     logger.warn('provider.quota.readFailed', { error: err instanceof Error ? err.message : String(err) });
     return null;
