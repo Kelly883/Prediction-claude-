@@ -242,7 +242,7 @@ describe('runDailyAnalysis M2 transaction boundaries (live Postgres)', () => {
       dailyLimit: 7500,
       consumed: 100,
       remaining: 7400,
-      lastCheckedAt: new Date().toISOString(),
+      lastCheckedAt: new Date('2099-12-30T06:00:00.000Z').toISOString(),
       status: 'OK',
       source: 'PROVIDER_STATUS',
     }));

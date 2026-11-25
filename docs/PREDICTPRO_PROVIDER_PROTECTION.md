@@ -610,29 +610,46 @@ fields.
 ## 14. Required environment variables (Stage 11)
 
 All optional; defaults shown. Documented in [`.env.example`](file:///workspace/.env.example)
-and typed in [`lib/env.ts`](file:///workspace/lib/env.ts).
+and typed in [`lib/env.ts`](file:///workspace/lib/env.ts) and
+[`lib/api/provider-config.ts`](file:///workspace/lib/api/provider-config.ts).
 
 ```
+# --- API-Football distributed rate limiter ---
 PROVIDER_RPS=4
 PROVIDER_RPM=240
 PROVIDER_MAX_WAIT_MS=10000
 PROVIDER_MAX_SLEEP_MS=1000
+
+# --- Football-Data.org distributed rate limiter (independent) ---
 FOOTBALL_DATA_RPS=1
 FOOTBALL_DATA_RPM=10
 FOOTBALL_DATA_MAX_WAIT_MS=10000
 FOOTBALL_DATA_MAX_SLEEP_MS=1000
+
+# --- Daily quota limits (internal safety caps) ---
+FOOTBALL_API_DAILY_LIMIT=1000
+FOOTBALL_DATA_DAILY_LIMIT=100
+
+# --- Daily-quota consumption thresholds (ratio 0..1) ---
 PROVIDER_QUOTA_WARNING_THRESHOLD=0.7
 PROVIDER_QUOTA_CRITICAL_THRESHOLD=0.85
 PROVIDER_QUOTA_STOP_THRESHOLD=0.95
 PROVIDER_QUOTA_FRESHNESS_SECONDS=1800
 PROVIDER_QUOTA_SNAPSHOT_TTL_SECONDS=86400
 PROVIDER_QUOTA_UNKNOWN_POLICY=block
+
+# --- Execution-time budget for the daily analysis run ---
 PROVIDER_ENRICHMENT_CONCURRENCY=10
 PROVIDER_ANALYSIS_MAX_RUNTIME_MS=240000
 PROVIDER_ANALYSIS_BATCH_SIZE=25
+ANALYSIS_MAX_ATTEMPTS=3
+
+# --- Distributed single-flight cache lock ---
 PROVIDER_SINGLE_FLIGHT_LOCK_TTL_MS=15000
 PROVIDER_SINGLE_FLIGHT_WAIT_MS=18000
 PROVIDER_SINGLE_FLIGHT_POLL_MS=150
+
+# --- Endpoint-specific cache TTLs (seconds) ---
 PROVIDER_CACHE_TTL_DEFAULT_SECONDS=86400
 PROVIDER_CACHE_TTL_FIXTURES_SECONDS=7200
 PROVIDER_CACHE_TTL_TEAM_STATS_SECONDS=86400
@@ -641,13 +658,73 @@ PROVIDER_CACHE_TTL_INJURIES_SECONDS=21600
 PROVIDER_CACHE_TTL_ODDS_SECONDS=900
 PROVIDER_CACHE_TTL_SCORERS_SECONDS=43200
 PROVIDER_CACHE_TTL_WEATHER_SECONDS=3600
+
+# --- Circuit breaker (existing) ---
+PROVIDER_CIRCUIT_THRESHOLD=5
+PROVIDER_CIRCUIT_WINDOW_SECONDS=120
+PROVIDER_CIRCUIT_COOLDOWN_SECONDS=60
+
+# --- Bounded retry (existing) ---
+PROVIDER_MAX_RETRIES=2
+PROVIDER_RETRY_BASE_MS=500
+PROVIDER_RETRY_MAX_MS=8000
 ```
 
 Related (pre-existing): `API_FOOTBALL_KEY`, `FOOTBALL_DATA_API_KEY`,
-`UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `CRON_SECRET`,
-`PROVIDER_MAX_RETRIES`, `PROVIDER_RETRY_BASE_MS`, `PROVIDER_RETRY_MAX_MS`,
-`PROVIDER_CIRCUIT_THRESHOLD`, `PROVIDER_CIRCUIT_WINDOW_SECONDS`,
-`PROVIDER_CIRCUIT_COOLDOWN_SECONDS`.
+`UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `CRON_SECRET`.
+
+| Env var | Purpose | Default | Allowed range | Required | Safe in prod? |
+| --- | --- | --- | --- | --- | --- |
+| `PROVIDER_RPS` | API-Football requests per second (internal safety limit, shared across workers) | `4` | positive int | no | yes |
+| `PROVIDER_RPM` | API-Football requests per minute (internal safety limit) | `240` | positive int | no | yes |
+| `PROVIDER_MAX_WAIT_MS` | Max total ms to wait for a rate-limit slot before failing closed | `10000` | positive int | no | yes |
+| `PROVIDER_MAX_SLEEP_MS` | Max single sleep ms between rate-limit re-checks | `1000` | positive int | no | yes |
+| `FOOTBALL_DATA_RPS` | Football-Data.org requests per second (internal safety limit) | `1` | positive int | no | yes |
+| `FOOTBALL_DATA_RPM` | Football-Data.org requests per minute (pinned to free-plan ceiling) | `10` | positive int | no | yes |
+| `FOOTBALL_DATA_MAX_WAIT_MS` | Max total ms to wait for a Football-Data slot | `10000` | positive int | no | yes |
+| `FOOTBALL_DATA_MAX_SLEEP_MS` | Max single sleep ms for Football-Data re-checks | `1000` | positive int | no | yes |
+| `FOOTBALL_API_DAILY_LIMIT` | Internal daily quota cap for API-Football (requests/day) | `1000` | positive int | no | yes — configure per subscription |
+| `FOOTBALL_DATA_DAILY_LIMIT` | Internal daily quota cap for Football-Data.org (requests/day) | `100` | positive int | no | yes — configure per subscription |
+| `PROVIDER_QUOTA_WARNING_THRESHOLD` | Consumed/dailyLimit ratio that triggers a warning (0..1) | `0.7` | 0 < x <= 1 | no | yes |
+| `PROVIDER_QUOTA_CRITICAL_THRESHOLD` | Consumed/dailyLimit ratio that triggers a critical warning (0..1) | `0.85` | 0 < x <= 1 | no | yes |
+| `PROVIDER_QUOTA_STOP_THRESHOLD` | Consumed/dailyLimit ratio that blocks new ingestion (0..1) | `0.95` | 0 < x <= 1 | no | yes |
+| `PROVIDER_QUOTA_FRESHNESS_SECONDS` | Max age (s) of a quota snapshot before it is treated STALE | `1800` | positive int | no | yes |
+| `PROVIDER_QUOTA_SNAPSHOT_TTL_SECONDS` | Redis TTL (s) for the stored quota snapshot | `86400` | positive int | no | yes |
+| `PROVIDER_QUOTA_UNKNOWN_POLICY` | Behaviour when quota cannot be determined: `block` (fail closed) or `warn` | `block` | `block` \| `warn` | no | yes — keep `block` |
+| `PROVIDER_ENRICHMENT_CONCURRENCY` | Max concurrent fixtures during enrichment (bounded by global limiter) | `10` | 1..20 | no | yes |
+| `PROVIDER_ANALYSIS_MAX_RUNTIME_MS` | Wall-clock ceiling (ms) for a single analysis invocation before checkpoint+defer | `240000` | positive int | no | yes — keep below route maxDuration |
+| `PROVIDER_ANALYSIS_BATCH_SIZE` | Fixtures per durable, idempotent ingestion batch | `25` | 1..500 | no | yes |
+| `ANALYSIS_MAX_ATTEMPTS` | Max analysis attempts per fixture before exclusion | `3` | positive int | no | yes |
+| `PROVIDER_SINGLE_FLIGHT_LOCK_TTL_MS` | Redis lock TTL (ms) for single-flight cache locks | `15000` | positive int | no | yes |
+| `PROVIDER_SINGLE_FLIGHT_WAIT_MS` | Max wait (ms) for a non-owner worker on a single-flight lock | `18000` | positive int | no | yes |
+| `PROVIDER_SINGLE_FLIGHT_POLL_MS` | Poll interval (ms) for single-flight lock waiters | `150` | positive int | no | yes |
+| `PROVIDER_CACHE_TTL_DEFAULT_SECONDS` | Default cache TTL (s) for keys with no specific rule | `86400` | positive int | no | yes |
+| `PROVIDER_CACHE_TTL_FIXTURES_SECONDS` | Cache TTL (s) for fixture data | `7200` | positive int | no | yes |
+| `PROVIDER_CACHE_TTL_TEAM_STATS_SECONDS` | Cache TTL (s) for team statistics / standings | `86400` | positive int | no | yes |
+| `PROVIDER_CACHE_TTL_H2H_SECONDS` | Cache TTL (s) for head-to-head history | `86400` | positive int | no | yes |
+| `PROVIDER_CACHE_TTL_INJURIES_SECONDS` | Cache TTL (s) for injuries data | `21600` | positive int | no | yes |
+| `PROVIDER_CACHE_TTL_ODDS_SECONDS` | Cache TTL (s) for odds data | `900` | positive int | no | yes |
+| `PROVIDER_CACHE_TTL_SCORERS_SECONDS` | Cache TTL (s) for top scorers | `43200` | positive int | no | yes |
+| `PROVIDER_CACHE_TTL_WEATHER_SECONDS` | Cache TTL (s) for weather forecast | `3600` | positive int | no | yes |
+| `PROVIDER_CIRCUIT_THRESHOLD` | Circuit-breaker failure threshold (failures per window) | `5` | positive int | no | yes |
+| `PROVIDER_CIRCUIT_WINDOW_SECONDS` | Circuit-breaker failure window (s) | `120` | positive int | no | yes |
+| `PROVIDER_CIRCUIT_COOLDOWN_SECONDS` | Circuit-breaker cooldown (s) once open | `60` | positive int | no | yes |
+| `PROVIDER_MAX_RETRIES` | Max additional retry attempts after the first attempt | `2` | 0..5 | no | yes |
+| `PROVIDER_RETRY_BASE_MS` | Base exponential backoff (ms) for retries | `500` | positive int | no | yes |
+| `PROVIDER_RETRY_MAX_MS` | Max single backoff (ms), never applied to Retry-After | `8000` | positive int | no | yes |
+| `API_FOOTBALL_KEY` | API-Football bearer key (`x-apisports-key` header) | (none) | non-empty string | yes (for API-Football) | no — real secret |
+| `FOOTBALL_DATA_API_KEY` | Football-Data.org bearer key (`X-Auth-Token` header) | (none) | non-empty string | yes (for Football-Data) | no — real secret |
+| `UPSTASH_REDIS_REST_URL` | Upstash Redis REST URL (production REQUIRED) | (none) | URL | no (dev/test), yes (prod) | no — real secret |
+| `UPSTASH_REDIS_REST_TOKEN` | Upstash Redis REST token | (none) | non-empty string | no (dev/test), yes (prod) | no — real secret |
+| `CRON_SECRET` | Secret enforced by `/api/cron/provider-quota` and `/api/cron/daily-analysis` | (none) | >= 32 chars | yes (prod) | no — real secret |
+
+Notes:
+
+* **Internal safety limits** (`PROVIDER_*`, `FOOTBALL_DATA_*`) are **not** claims about provider entitlement. They are intentionally conservative ceilings that bound all traffic across every serverless instance so a burst cannot exhaust the account. They only change through validated server-side env vars; malformed values fall back to conservative defaults and never relax protection.
+* **Daily quota limits** (`FOOTBALL_API_DAILY_LIMIT`, `FOOTBALL_DATA_DAILY_LIMIT`) are internal safety caps, not provider-documented entitlements. The operator must set them per subscription; defaults shown are conservative internal caps.
+* **`PROVIDER_QUOTA_UNKNOWN_POLICY=block`** is the fail-closed default; changing to `warn` lets ingestion proceed when quota cannot be confirmed, which is less safe.
+* **`PROVIDER_ANALYSIS_MAX_RUNTIME_MS`** must sit comfortably **below** the analysis route's `maxDuration` (300 s) to leave a safety margin for checkpoint+defer.
+* Real secrets (`*_KEY`, `UPSTASH_REDIS_*`, `CRON_SECRET`) are intentionally left empty in `.env.example` and must never be committed.
 
 ---
 
