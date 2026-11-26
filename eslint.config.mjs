@@ -20,7 +20,7 @@ export default [
   // that object's `files` (none here) and never applied globally — which
   // caused .next/ build artifacts to be linted.
   {
-    ignores: ['node_modules/**', '.next/**', 'out/**', 'build/**', 'coverage/**'],
+    ignores: ['node_modules/**', '.next/**', 'out/**', 'build/**', 'coverage/**', 'next-env.d.ts'],
   },
   {
     linterOptions: {

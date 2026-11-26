@@ -39,6 +39,11 @@ export async function GET(req: NextRequest) {
     if (maxConfidence) confidenceFilter.lte = Number(maxConfidence);
     if (minConfidence || maxConfidence) where.confidence = confidenceFilter;
 
+    // Only results belonging to completed runs are reviewable. Results from
+    // failed, running, pending or deferred runs remain inspectable through the
+    // run detail/audit view, but never enter the normal results list.
+    where.run = { status: 'completed' };
+
     const [results, total] = await Promise.all([
       prisma.analysisResult.findMany({
         where,

@@ -4,7 +4,7 @@ import path from 'path';
 export default defineConfig({
   test: {
     environment: 'node',
-    setupFiles: ['./tests/setup.ts'],
+    setupFiles: ['./tests/integration-setup.ts'],
     exclude: ['**/node_modules/**', '**/dist/**', '**/e2e/**'],
     include: ['tests/analysis-db.test.ts'],
     testTimeout: 120000,

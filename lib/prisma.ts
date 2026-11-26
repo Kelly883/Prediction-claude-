@@ -249,7 +249,7 @@ function createClientWrapper(): any {
 
   const modelCache: Record<string, any> = {};
 
-  return new Proxy(realClient || {}, {
+  const wrapper = new Proxy(realClient || {}, {
     get(target, prop: string) {
       if (prop === '$transaction') {
         return async (arg: any) => {
@@ -257,7 +257,7 @@ function createClientWrapper(): any {
             return Promise.all(arg);
           }
           if (typeof arg === 'function') {
-            return arg(proxyClient);
+            return arg(wrapper);
           }
           return [];
         };
@@ -316,11 +316,18 @@ function createClientWrapper(): any {
       return resultModel;
     },
   });
+
+  return wrapper;
 }
 
-const proxyClient = globalForPrisma.prisma ?? createClientWrapper();
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = proxyClient;
-
-export const prisma = proxyClient as unknown as PrismaClient;
+let prismaExport: any;
+if (process.env.INTEGRATION_TEST === 'true') {
+  prismaExport = new PrismaClient({ log: [] });
+} else {
+  const proxyClient = globalForPrisma.prisma ?? createClientWrapper();
+  if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = proxyClient;
+  prismaExport = proxyClient;
+}
+export const prisma = prismaExport as unknown as PrismaClient;
 
 

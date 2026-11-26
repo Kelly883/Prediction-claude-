@@ -3,19 +3,21 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 // Use vi.hoisted but create fresh mocks per file to avoid cross-file leakage
 const mocks = vi.hoisted(() => {
   return {
-    analysisRun: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn(), findMany: vi.fn() },
+    analysisRun: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn(), updateMany: vi.fn(), findUnique: vi.fn(), findMany: vi.fn() },
     analysisResult: { createMany: vi.fn(), findMany: vi.fn() },
     analysisConfig: { findMany: vi.fn() },
+    user: { findMany: vi.fn() },
     transaction: vi.fn(),
     redis: { get: vi.fn(), set: vi.fn(), del: vi.fn(), incr: vi.fn(), expire: vi.fn(), eval: vi.fn() },
     tx: {
-      analysisResult: { createMany: vi.fn() },
-      analysisRun: { update: vi.fn() },
+      analysisResult: { createMany: vi.fn(), findUnique: vi.fn() },
+      analysisRun: { update: vi.fn(), updateMany: vi.fn() },
     },
     fetchFixtures: vi.fn(),
     enrichFixtures: vi.fn(),
     getEnabledLeagues: vi.fn(),
     scoreFixture: vi.fn(),
+    sendEmail: vi.fn(),
   };
 });
 
@@ -26,10 +28,12 @@ vi.mock('@/lib/prisma', () => ({
     analysisRun: mocks.analysisRun,
     analysisResult: mocks.analysisResult,
     analysisConfig: mocks.analysisConfig,
+    user: mocks.user,
     $transaction: mocks.transaction,
   },
 }));
 vi.mock('@/lib/redis', () => ({ redis: mocks.redis }));
+vi.mock('@/lib/email', () => ({ sendEmail: mocks.sendEmail }));
 vi.mock('@/lib/analysis/ingestion/fixtures', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/analysis/ingestion/fixtures')>();
   return {
@@ -194,7 +198,13 @@ function setupDefaultMocks() {
   mocks.transaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(mocks.tx));
   mocks.analysisRun.create.mockResolvedValue({ id: 'run-1', status: 'running' });
   mocks.analysisRun.update.mockResolvedValue(createRunRow({ status: 'failed' }));
+  mocks.analysisRun.updateMany.mockResolvedValue({ count: 1 });
+  mocks.transaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(mocks.tx));
   mocks.tx.analysisResult.createMany.mockResolvedValue({ count: 1 });
+  mocks.tx.analysisRun.updateMany.mockResolvedValue({ count: 1 });
+  mocks.tx.analysisResult.findUnique.mockResolvedValue(null);
+  mocks.sendEmail.mockResolvedValue(undefined);
+  mocks.user.findMany.mockResolvedValue([]);
 }
 
 // ============================================================
@@ -230,13 +240,16 @@ describe('runDailyAnalysis persistence', () => {
 
   it('rolls back and marks the run failed when result persistence throws', async () => {
     mocks.tx.analysisResult.createMany.mockRejectedValue(new Error('duplicate key value'));
-    mocks.analysisRun.update.mockResolvedValue(createRunRow({ status: 'failed' }));
+    mocks.analysisRun.updateMany.mockResolvedValue({ count: 1 });
 
     await expect(runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z') })).rejects.toThrow('duplicate key value');
 
     expect(mocks.tx.analysisRun.update).not.toHaveBeenCalled();
-    expect(mocks.analysisRun.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ status: 'failed' }) }),
+    expect(mocks.analysisRun.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: 'run-1', status: 'running' }),
+        data: expect.objectContaining({ status: 'failed' }),
+      }),
     );
   });
 
@@ -389,28 +402,34 @@ describe('runDailyAnalysis atomic batch + checkpoint (M2)', () => {
 
   it('rolls back everything when the results write fails', async () => {
     transactionWithFailureAt('results');
-    mocks.analysisRun.update.mockResolvedValue(createRunRow({ status: 'failed' }));
+    mocks.analysisRun.updateMany.mockResolvedValue({ count: 1 });
 
     await expect(runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z') })).rejects.toThrow(
       /injected results failure/,
     );
 
     expect(mocks.tx.analysisRun.update).not.toHaveBeenCalled();
-    expect(mocks.analysisRun.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ status: 'failed' }) }),
+    expect(mocks.analysisRun.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: 'run-1', status: 'running' }),
+        data: expect.objectContaining({ status: 'failed' }),
+      }),
     );
   });
 
   it('rolls back everything when the checkpoint write fails (after results)', async () => {
     transactionWithFailureAt('checkpoint');
-    mocks.analysisRun.update.mockResolvedValue(createRunRow({ status: 'failed' }));
+    mocks.analysisRun.updateMany.mockResolvedValue({ count: 1 });
 
     await expect(runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z') })).rejects.toThrow(
       /injected checkpoint failure/,
     );
 
-    expect(mocks.analysisRun.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ status: 'failed' }) }),
+    expect(mocks.analysisRun.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: 'run-1', status: 'running' }),
+        data: expect.objectContaining({ status: 'failed' }),
+      }),
     );
   });
 
@@ -592,6 +611,7 @@ describe('runDailyAnalysis M2 transaction boundaries', () => {
   it('exhausted-attempt transition succeeds with checkpoint in transaction', async () => {
     process.env.PROVIDER_ANALYSIS_BATCH_SIZE = '1';
     process.env.PROVIDER_ANALYSIS_MAX_ATTEMPTS = '3';
+    budgetState.expireAfterCalls = 100;
     mocks.fetchFixtures.mockResolvedValue({ fixtures: [FIXTURE, { ...FIXTURE, id: 'fx-2' }], errors: [] });
     mocks.enrichFixtures.mockImplementation(async (batch: Fixture[]) =>
       batch.map((fixture) => ({ fixture, enrichment: {} })),
@@ -620,13 +640,17 @@ describe('runDailyAnalysis M2 transaction boundaries', () => {
       picksGenerated: 0,
       checkpoint: exhaustedCheckpoint,
     });
-    mocks.tx.analysisRun.update.mockResolvedValue(failedRunRow);
+    mocks.tx.analysisRun.updateMany.mockResolvedValue({ count: 1 });
+    mocks.analysisRun.findUnique.mockResolvedValue({ fixturesAnalyzed: 0, picksGenerated: 0 });
+    mocks.user.findMany.mockResolvedValue([{ id: 'sup-1', email: 'sup@test.example', name: 'Sup' }]);
 
     const result = await runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z'), force: true });
 
     expect(result.status).toBe('failed');
+    expect(result.fixturesAnalyzed).toBe(0);
+    expect(result.picksGenerated).toBe(0);
     expect(mocks.transaction).toHaveBeenCalledTimes(1);
-    const updateCall = mocks.tx.analysisRun.update.mock.calls[0][0] as {
+    const updateCall = mocks.tx.analysisRun.updateMany.mock.calls[0][0] as {
       where: { id: string; status: string };
       data: { status: string; errorMessage: string; checkpoint: unknown };
     };
@@ -634,6 +658,81 @@ describe('runDailyAnalysis M2 transaction boundaries', () => {
     expect(updateCall.data.status).toBe('failed');
     expect(updateCall.data.errorMessage).toContain('exhausted');
     expect(updateCall.data.checkpoint).toBeDefined();
+    expect(mocks.sendEmail).toHaveBeenCalledTimes(1);
+    delete process.env.PROVIDER_ANALYSIS_BATCH_SIZE;
+    delete process.env.PROVIDER_ANALYSIS_MAX_ATTEMPTS;
+  });
+
+  // Test A: concurrent terminal transition — another worker already moved the run out of `running`
+
+  it('exhausted transition with count 0 returns current run state without notifying', async () => {
+    process.env.PROVIDER_ANALYSIS_BATCH_SIZE = '1';
+    process.env.PROVIDER_ANALYSIS_MAX_ATTEMPTS = '3';
+    budgetState.expireAfterCalls = 100;
+    mocks.fetchFixtures.mockResolvedValue({ fixtures: [FIXTURE, { ...FIXTURE, id: 'fx-2' }], errors: [] });
+    mocks.enrichFixtures.mockImplementation(async (batch: Fixture[]) =>
+      batch.map((fixture) => ({ fixture, enrichment: {} })),
+    );
+    mocks.redis.get.mockImplementation(async (key: string) => {
+      if (key === 'provider:quota:api-football') return HEALTHY_QUOTA;
+      if (key.startsWith('analysis:fixture:attempts:')) return '3';
+      return null;
+    });
+    mocks.analysisConfig.findMany.mockResolvedValue([
+      { key: 'confidence_threshold', value: '70' },
+      { key: 'market_weights', value: '{}' },
+      { key: 'data_source_priorities', value: '[]' },
+    ]);
+
+    // Another worker already transitioned the run to `completed`.
+    mocks.tx.analysisRun.updateMany.mockResolvedValue({ count: 0 });
+    mocks.analysisRun.findUnique.mockResolvedValue({
+      status: 'completed',
+      fixturesAnalyzed: 5,
+      picksGenerated: 2,
+    });
+
+    const result = await runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z'), force: true });
+
+    expect(result.status).toBe('completed');
+    expect(result.fixturesAnalyzed).toBe(5);
+    expect(result.picksGenerated).toBe(2);
+    expect(mocks.analysisRun.findUnique).toHaveBeenCalledWith({
+      where: { id: 'run-1' },
+      select: { status: true, fixturesAnalyzed: true, picksGenerated: true },
+    });
+    // No failure notification because we did not cause the transition.
+    expect(mocks.sendEmail).not.toHaveBeenCalled();
+    delete process.env.PROVIDER_ANALYSIS_BATCH_SIZE;
+    delete process.env.PROVIDER_ANALYSIS_MAX_ATTEMPTS;
+  });
+
+  // Test C: current run missing after count 0 — handle safely without inventing a status
+
+  it('exhausted transition with missing current run throws without notifying', async () => {
+    process.env.PROVIDER_ANALYSIS_BATCH_SIZE = '1';
+    process.env.PROVIDER_ANALYSIS_MAX_ATTEMPTS = '3';
+    budgetState.expireAfterCalls = 100;
+    mocks.fetchFixtures.mockResolvedValue({ fixtures: [FIXTURE, { ...FIXTURE, id: 'fx-2' }], errors: [] });
+    mocks.enrichFixtures.mockImplementation(async (batch: Fixture[]) =>
+      batch.map((fixture) => ({ fixture, enrichment: {} })),
+    );
+    mocks.redis.get.mockImplementation(async (key: string) => {
+      if (key === 'provider:quota:api-football') return HEALTHY_QUOTA;
+      if (key.startsWith('analysis:fixture:attempts:')) return '3';
+      return null;
+    });
+    mocks.analysisConfig.findMany.mockResolvedValue([
+      { key: 'confidence_threshold', value: '70' },
+      { key: 'market_weights', value: '{}' },
+      { key: 'data_source_priorities', value: '[]' },
+    ]);
+
+    mocks.tx.analysisRun.updateMany.mockResolvedValue({ count: 0 });
+    mocks.analysisRun.findUnique.mockResolvedValue(null);
+
+    await expect(runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z'), force: true })).rejects.toThrow(/no longer exists/);
+    expect(mocks.sendEmail).not.toHaveBeenCalled();
     delete process.env.PROVIDER_ANALYSIS_BATCH_SIZE;
     delete process.env.PROVIDER_ANALYSIS_MAX_ATTEMPTS;
   });
@@ -653,52 +752,22 @@ describe('runDailyAnalysis M2 transaction boundaries', () => {
       { key: 'analysisMaxAttempts', value: '3' },
     ]);
 
-    mocks.tx.analysisRun.update.mockImplementation(async () => {
-      throw new Error('injected checkpoint failure');
-    });
-    mocks.analysisRun.update.mockResolvedValue(createRunRow({ status: 'failed' }));
+    mocks.tx.analysisRun.updateMany.mockRejectedValue(new Error('injected checkpoint failure'));
+    mocks.analysisRun.updateMany.mockResolvedValue({ count: 1 });
 
     await expect(runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z'), force: true })).rejects.toThrow('injected checkpoint failure');
 
-    expect(mocks.analysisRun.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ status: 'failed' }) }),
+    expect(mocks.tx.analysisRun.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: 'run-1', status: 'running' }),
+        data: expect.objectContaining({ status: 'failed' }),
+      }),
     );
     delete process.env.PROVIDER_ANALYSIS_BATCH_SIZE;
+    delete process.env.PROVIDER_ANALYSIS_MAX_ATTEMPTS;
   });
 
   // --- Lock-loss path tests ---
-
-  it('lock-loss transition uses conditional update with status=running', async () => {
-    process.env.PROVIDER_ANALYSIS_BATCH_SIZE = '1';
-    budgetState.expireAfterCalls = 2;
-    mocks.fetchFixtures.mockResolvedValue({ fixtures: [FIXTURE, { ...FIXTURE, id: 'fx-2' }], errors: [] });
-    mocks.enrichFixtures.mockImplementation(async (batch: Fixture[]) =>
-      batch.map((fixture) => ({ fixture, enrichment: {} })),
-    );
-    mocks.tx.analysisResult.createMany.mockResolvedValue({ count: 1 });
-
-    let txCallCountLocal = 0;
-    mocks.tx.analysisRun.update.mockImplementation(async (args: { where: { id: string; status?: string }; data: unknown }) => {
-      txCallCountLocal += 1;
-      if (txCallCountLocal === 1) {
-        return createRunRow({
-          status: 'running',
-          fixturesAnalyzed: 1,
-          picksGenerated: 1,
-          checkpoint: baseCheckpoint,
-        });
-      }
-      expect(args.where).toMatchObject({ id: 'run-1', status: 'running' });
-      return null;
-    });
-    mocks.analysisRun.update.mockResolvedValue(createRunRow({ status: 'completed' }));
-
-    delete process.env.PROVIDER_ANALYSIS_BATCH_SIZE;
-  });
-
-  it('lock loss prevents subsequent batch processing', async () => {
-    expect(true).toBe(true);
-  });
 
   // --- Deferred transition tests ---
 
@@ -762,14 +831,18 @@ describe('runDailyAnalysis M2 transaction boundaries', () => {
       }
       throw new Error('injected checkpoint failure');
     });
-    mocks.analysisRun.update.mockResolvedValue(createRunRow({ status: 'failed' }));
+    mocks.analysisRun.updateMany.mockResolvedValue({ count: 1 });
 
     await expect(runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z'), force: true })).rejects.toThrow('injected checkpoint failure');
 
-    expect(mocks.analysisRun.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ status: 'failed' }) }),
+    expect(mocks.analysisRun.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: 'run-1', status: 'running' }),
+        data: expect.objectContaining({ status: 'failed' }),
+      }),
     );
     delete process.env.PROVIDER_ANALYSIS_BATCH_SIZE;
+    delete process.env.PROVIDER_ANALYSIS_MAX_ATTEMPTS;
   });
 
   // --- Idempotency and concurrency tests ---
@@ -835,7 +908,283 @@ describe('runDailyAnalysis M2 transaction boundaries', () => {
     delete process.env.PROVIDER_ANALYSIS_BATCH_SIZE;
   });
 
-  it('concurrent state changes are handled safely via conditional updates', async () => {
-    expect(true).toBe(true);
+  // --- Failure-state safety (completed-run eligibility + error isolation) ---
+
+  it('catch block cannot overwrite a completed run and does not mask the original error', async () => {
+    mocks.scoreFixture.mockImplementation(() => {
+      throw new Error('boom');
+    });
+    // The run is already terminal, so the conditional failure transition
+    // matches nothing and must not notify or mask the original error.
+    mocks.analysisRun.updateMany.mockResolvedValueOnce({ count: 0 });
+
+    await expect(runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z'), force: true })).rejects.toThrow('boom');
+    expect(mocks.sendEmail).not.toHaveBeenCalled();
+    delete process.env.PROVIDER_ANALYSIS_BATCH_SIZE;
   });
+
+  it('failure-recording database error does not mask the original analysis error', async () => {
+    mocks.scoreFixture.mockImplementation(() => {
+      throw new Error('boom');
+    });
+    mocks.analysisRun.updateMany.mockRejectedValue(new Error('db down'));
+
+    await expect(runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z'), force: true })).rejects.toThrow('boom');
+    expect(mocks.sendEmail).not.toHaveBeenCalled();
+    delete process.env.PROVIDER_ANALYSIS_BATCH_SIZE;
+  });
+
+  it('notification failure does not mask the original analysis error', async () => {
+    mocks.scoreFixture.mockImplementation(() => {
+      throw new Error('boom');
+    });
+    mocks.analysisRun.updateMany.mockResolvedValue({ count: 1 });
+    mocks.user.findMany.mockResolvedValue([{ id: 'sup-1', email: 'sup@test.example', name: 'Sup' }]);
+    mocks.sendEmail.mockRejectedValue(new Error('smtp down'));
+
+    await expect(runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z'), force: true })).rejects.toThrow('boom');
+    // One failed recipient still results in a send attempt.
+    expect(mocks.sendEmail).toHaveBeenCalledTimes(1);
+    delete process.env.PROVIDER_ANALYSIS_BATCH_SIZE;
+  });
+
+  // --- Lock-loss transitions ---
+
+  it('lock-lost worker cannot overwrite a run that already reached a terminal state', async () => {
+    vi.useFakeTimers();
+    try {
+      process.env.PROVIDER_ANALYSIS_BATCH_SIZE = '1';
+      budgetState.expireAfterCalls = 100;
+      mocks.fetchFixtures.mockResolvedValue({ fixtures: [FIXTURE, { ...FIXTURE, id: 'fx-2' }], errors: [] });
+      mocks.enrichFixtures.mockImplementation(async () => {
+        // Advance past the 30s renewal interval so the lock is lost mid-run.
+        await vi.advanceTimersByTimeAsync(35_000);
+        return [{ fixture: FIXTURE, enrichment: {} }];
+      });
+      mocks.scoreFixture.mockImplementation((fixture) => validOutcome(fixture));
+      mocks.tx.analysisResult.createMany.mockResolvedValue({ count: 1 });
+      let txUpdateCalls = 0;
+      mocks.tx.analysisRun.update.mockImplementation(async () => {
+        txUpdateCalls += 1;
+        return createRunRow({ status: txUpdateCalls === 1 ? 'running' : 'completed' });
+      });
+      // First batch commits, then the renewal fails and the lock is lost.
+      mocks.redis.eval.mockResolvedValueOnce(0);
+      // The run is already completed: conditional failure transition matches nothing.
+      mocks.analysisRun.updateMany.mockResolvedValueOnce({ count: 0 });
+      mocks.analysisRun.findUnique.mockResolvedValue({ status: 'completed', fixturesAnalyzed: 1, picksGenerated: 1 });
+
+      const result = await runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z'), force: true });
+
+      expect(result.status).toBe('completed');
+      expect(mocks.analysisRun.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ id: 'run-1', status: 'running' }) }),
+      );
+      expect(mocks.sendEmail).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('lock-lost worker transitions a still-running run to failed and notifies', async () => {
+    vi.useFakeTimers();
+    try {
+      process.env.PROVIDER_ANALYSIS_BATCH_SIZE = '1';
+      budgetState.expireAfterCalls = 100;
+      mocks.fetchFixtures.mockResolvedValue({ fixtures: [FIXTURE, { ...FIXTURE, id: 'fx-2' }], errors: [] });
+      mocks.enrichFixtures.mockImplementation(async () => {
+        await vi.advanceTimersByTimeAsync(35_000);
+        return [{ fixture: FIXTURE, enrichment: {} }];
+      });
+      mocks.scoreFixture.mockImplementation((fixture) => validOutcome(fixture));
+      mocks.tx.analysisResult.createMany.mockResolvedValue({ count: 1 });
+      mocks.tx.analysisRun.update.mockResolvedValue(createRunRow({ status: 'running' }));
+      mocks.redis.eval.mockResolvedValueOnce(0);
+      mocks.analysisRun.updateMany.mockResolvedValue({ count: 1 });
+      mocks.analysisRun.findUnique.mockResolvedValue({ fixturesAnalyzed: 1, picksGenerated: 1 });
+      mocks.user.findMany.mockResolvedValue([{ id: 'sup-1', email: 'sup@test.example', name: 'Sup' }]);
+      mocks.sendEmail.mockResolvedValue(undefined);
+
+      const result = await runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z'), force: true });
+
+      expect(result.status).toBe('failed');
+      expect(result.errors).toContain('analysis lock lost mid-run');
+      expect(mocks.analysisRun.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ id: 'run-1', status: 'running' }),
+          data: expect.objectContaining({ status: 'failed' }),
+        }),
+      );
+      expect(mocks.sendEmail).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('lock-lost preserves partial progress and stops further batches', async () => {
+    vi.useFakeTimers();
+    try {
+      process.env.PROVIDER_ANALYSIS_BATCH_SIZE = '1';
+      budgetState.expireAfterCalls = 100;
+      mocks.fetchFixtures.mockResolvedValue({ fixtures: [FIXTURE, { ...FIXTURE, id: 'fx-2' }], errors: [] });
+      mocks.enrichFixtures.mockImplementation(async (batch: any[]) => {
+        await vi.advanceTimersByTimeAsync(35_000);
+        return batch.map((f: any) => ({ fixture: f, enrichment: {} }));
+      });
+      mocks.scoreFixture.mockImplementation((fixture: any) => validOutcome(fixture));
+      mocks.tx.analysisResult.createMany.mockResolvedValue({ count: 1 });
+      let updateCalls = 0;
+      mocks.tx.analysisRun.update.mockImplementation(async (args: any) => {
+        updateCalls += 1;
+        return createRunRow({ status: 'running', fixturesAnalyzed: updateCalls, picksGenerated: updateCalls, checkpoint: baseCheckpoint });
+      });
+      mocks.redis.eval.mockResolvedValueOnce(0);
+      mocks.analysisRun.updateMany.mockResolvedValueOnce({ count: 1 });
+      mocks.analysisRun.findUnique.mockResolvedValueOnce({ fixturesAnalyzed: 1, picksGenerated: 1 });
+      mocks.user.findMany.mockResolvedValue([{ id: 'sup-1', email: 'sup@test.example', name: 'Sup' }]);
+      mocks.sendEmail.mockResolvedValue(undefined);
+
+      const result = await runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z'), force: true });
+
+      expect(result.status).toBe('failed');
+      expect(mocks.enrichFixtures).toHaveBeenCalledTimes(1);
+      const enrichedIds = mocks.enrichFixtures.mock.calls[0][0].map((x: any) => x.id);
+      expect(enrichedIds).toEqual(['fx-1']);
+      expect(mocks.scoreFixture).toHaveBeenCalledTimes(1);
+      expect(mocks.scoreFixture).toHaveBeenCalledWith(expect.objectContaining({ id: 'fx-1' }), expect.anything(), expect.anything());
+      expect(mocks.tx.analysisResult.createMany).toHaveBeenCalledTimes(1);
+      const createManyArg = mocks.tx.analysisResult.createMany.mock.calls[0][0];
+      expect(createManyArg.data).toEqual([expect.objectContaining({ runId: 'run-1', fixtureId: 'fx-1' })]);
+      expect(mocks.tx.analysisRun.update).toHaveBeenCalled();
+      const firstUpdateArg = mocks.tx.analysisRun.update.mock.calls[0][0];
+      const firstCp = firstUpdateArg.data.checkpoint;
+      expect(firstCp).toMatchObject({
+        processedFixtureIds: ['fx-1'],
+        fixturesAnalyzed: 1,
+        picksGenerated: 1,
+        completedBatches: 1,
+      });
+      expect(firstUpdateArg.data.fixturesAnalyzed).toBe(1);
+      expect(firstUpdateArg.data.picksGenerated).toBe(1);
+      expect(mocks.analysisRun.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ id: 'run-1', status: 'running' }) }),
+      );
+      const lockLossArg = mocks.analysisRun.updateMany.mock.calls[0][0];
+      expect(lockLossArg.data).not.toHaveProperty('checkpoint');
+      expect(lockLossArg.data).not.toHaveProperty('fixturesAnalyzed');
+      expect(result.fixturesAnalyzed).toBe(1);
+    } finally {
+      delete process.env.PROVIDER_ANALYSIS_BATCH_SIZE;
+      vi.useRealTimers();
+    }
+  });
+
+  it('lock-lost missing run after count 0 throws and does not notify', async () => {
+    vi.useFakeTimers();
+    try {
+      process.env.PROVIDER_ANALYSIS_BATCH_SIZE = '1';
+      budgetState.expireAfterCalls = 100;
+      mocks.fetchFixtures.mockResolvedValue({ fixtures: [FIXTURE, { ...FIXTURE, id: 'fx-2' }], errors: [] });
+      mocks.enrichFixtures.mockImplementation(async () => {
+        await vi.advanceTimersByTimeAsync(35_000);
+        return [{ fixture: FIXTURE, enrichment: {} }];
+      });
+      mocks.scoreFixture.mockImplementation((fixture) => validOutcome(fixture));
+      mocks.tx.analysisResult.createMany.mockResolvedValue({ count: 1 });
+      mocks.tx.analysisRun.update.mockResolvedValue(createRunRow({ status: 'running' }));
+      mocks.redis.eval.mockResolvedValueOnce(0);
+      mocks.analysisRun.updateMany.mockResolvedValueOnce({ count: 0 });
+      mocks.analysisRun.updateMany.mockResolvedValue({ count: 0 });
+      mocks.analysisRun.findUnique.mockResolvedValueOnce(null);
+      mocks.user.findMany.mockResolvedValue([{ id: 'sup-1', email: 'sup@test.example', name: 'Sup' }]);
+
+      await expect(runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z'), force: true })).rejects.toThrow(/no longer exists/);
+      expect(mocks.sendEmail).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('lock-lost missing run after count 1 throws and does not notify', async () => {
+    vi.useFakeTimers();
+    try {
+      process.env.PROVIDER_ANALYSIS_BATCH_SIZE = '1';
+      budgetState.expireAfterCalls = 100;
+      mocks.fetchFixtures.mockResolvedValue({ fixtures: [FIXTURE, { ...FIXTURE, id: 'fx-2' }], errors: [] });
+      mocks.enrichFixtures.mockImplementation(async () => {
+        await vi.advanceTimersByTimeAsync(35_000);
+        return [{ fixture: FIXTURE, enrichment: {} }];
+      });
+      mocks.scoreFixture.mockImplementation((fixture) => validOutcome(fixture));
+      mocks.tx.analysisResult.createMany.mockResolvedValue({ count: 1 });
+      mocks.tx.analysisRun.update.mockResolvedValue(createRunRow({ status: 'running' }));
+      mocks.redis.eval.mockResolvedValueOnce(0);
+      mocks.analysisRun.updateMany.mockResolvedValueOnce({ count: 1 });
+      mocks.analysisRun.updateMany.mockResolvedValue({ count: 0 });
+      mocks.analysisRun.findUnique.mockResolvedValueOnce(null);
+      mocks.user.findMany.mockResolvedValue([{ id: 'sup-1', email: 'sup@test.example', name: 'Sup' }]);
+
+      await expect(runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z'), force: true })).rejects.toThrow(/no longer exists/);
+      expect(mocks.sendEmail).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('lock-lost returns persisted counters differing from in-memory', async () => {
+    vi.useFakeTimers();
+    try {
+      process.env.PROVIDER_ANALYSIS_BATCH_SIZE = '1';
+      budgetState.expireAfterCalls = 100;
+      mocks.fetchFixtures.mockResolvedValue({ fixtures: [FIXTURE, { ...FIXTURE, id: 'fx-2' }], errors: [] });
+      mocks.enrichFixtures.mockImplementation(async () => {
+        await vi.advanceTimersByTimeAsync(35_000);
+        return [{ fixture: FIXTURE, enrichment: {} }];
+      });
+      mocks.scoreFixture.mockImplementation((fixture) => validOutcome(fixture));
+      mocks.tx.analysisResult.createMany.mockResolvedValue({ count: 1 });
+      mocks.tx.analysisRun.update.mockResolvedValue(createRunRow({ status: 'running', fixturesAnalyzed: 1, picksGenerated: 1 }));
+      mocks.redis.eval.mockResolvedValueOnce(0);
+      mocks.analysisRun.updateMany.mockResolvedValueOnce({ count: 1 });
+      mocks.analysisRun.findUnique.mockResolvedValueOnce({ fixturesAnalyzed: 9, picksGenerated: 7 });
+      mocks.user.findMany.mockResolvedValue([{ id: 'sup-1', email: 'sup@test.example', name: 'Sup' }]);
+      mocks.sendEmail.mockResolvedValue(undefined);
+
+      const result = await runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z'), force: true });
+      expect(result.status).toBe('failed');
+      expect(result.fixturesAnalyzed).toBe(9);
+      expect(result.picksGenerated).toBe(7);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('lock-lost notification failure does not mask recorded failure', async () => {
+    vi.useFakeTimers();
+    try {
+      process.env.PROVIDER_ANALYSIS_BATCH_SIZE = '1';
+      budgetState.expireAfterCalls = 100;
+      mocks.fetchFixtures.mockResolvedValue({ fixtures: [FIXTURE, { ...FIXTURE, id: 'fx-2' }], errors: [] });
+      mocks.enrichFixtures.mockImplementation(async () => {
+        await vi.advanceTimersByTimeAsync(35_000);
+        return [{ fixture: FIXTURE, enrichment: {} }];
+      });
+      mocks.scoreFixture.mockImplementation((fixture) => validOutcome(fixture));
+      mocks.tx.analysisResult.createMany.mockResolvedValue({ count: 1 });
+      mocks.tx.analysisRun.update.mockResolvedValue(createRunRow({ status: 'running' }));
+      mocks.redis.eval.mockResolvedValueOnce(0);
+      mocks.analysisRun.updateMany.mockResolvedValueOnce({ count: 1 });
+      mocks.analysisRun.findUnique.mockResolvedValueOnce({ fixturesAnalyzed: 1, picksGenerated: 1 });
+      mocks.user.findMany.mockResolvedValue([{ id: 'sup-1', email: 'sup@test.example', name: 'Sup' }]);
+      mocks.sendEmail.mockRejectedValue(new Error('smtp down'));
+
+      const result = await runDailyAnalysis({ now: new Date('2026-11-22T06:00:00.000Z'), force: true });
+      expect(result.status).toBe('failed');
+      expect(result.fixturesAnalyzed).toBe(1);
+      expect(result.picksGenerated).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
 });

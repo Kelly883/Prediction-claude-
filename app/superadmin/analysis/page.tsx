@@ -24,6 +24,7 @@ export default async function SuperAdminAnalysisPage() {
       include: { _count: { select: { results: true } } },
     }),
     prisma.analysisResult.findMany({
+      where: { run: { status: 'completed' } },
       orderBy: [{ confidence: 'desc' }, { kickoff: 'asc' }],
       take: 10,
     }),

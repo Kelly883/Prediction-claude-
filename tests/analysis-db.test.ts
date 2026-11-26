@@ -79,13 +79,16 @@ describe('AnalysisResult persistence (live Postgres)', () => {
     const run = await prisma.analysisRun.create({ data: { runDate, status: 'running', startedAt: new Date() } });
     const isolatedFixture = `${fixtureId}-rollback`;
     await expect(
-      prisma.$transaction(async (tx) => {
-        await tx.analysisResult.createMany({
-          data: [{ ...row('c', run.id), fixtureId: isolatedFixture }],
-          skipDuplicates: true,
-        });
-        throw new Error('forced failure');
-      }),
+      prisma.$transaction(
+        async (tx) => {
+          await tx.analysisResult.createMany({
+            data: [{ ...row('c', run.id), fixtureId: isolatedFixture }],
+            skipDuplicates: true,
+          });
+          throw new Error('forced failure');
+        },
+        { maxWait: 10_000, timeout: 30_000 },
+      ),
     ).rejects.toThrow('forced failure');
 
     const stored = await prisma.analysisResult.count({ where: { runId: run.id, fixtureId: isolatedFixture } });
@@ -363,9 +366,13 @@ describe('runDailyAnalysis M2 transaction boundaries (live Postgres)', () => {
       }),
     ).rejects.toThrow('injected enrichment failure');
 
-    // Verify no partial state persisted
+    // Verify the failed run is retained for audit, but no partial results persisted
     const runs = await prisma.analysisRun.findMany({ where: { runDate: testRunDate } });
-    expect(runs).toHaveLength(0);
+    expect(runs).toHaveLength(1);
+    expect(runs[0].status).toBe('failed');
+    expect(runs[0].errorMessage).toContain('injected enrichment failure');
+    const results = await prisma.analysisResult.findMany({ where: { runId: runs[0].id } });
+    expect(results).toHaveLength(0);
   });
 
   it('Failure after result persistence but before checkpoint update rolls back results', async () => {
