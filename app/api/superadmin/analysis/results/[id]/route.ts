@@ -38,12 +38,24 @@ export async function PATCH(req: NextRequest, context: Context) {
       throw new ApiError(400, 'dismissalReason is required when dismissing a pick');
     }
 
-    const existing = await prisma.analysisResult.findUnique({ where: { id } });
+    const existing = await prisma.analysisResult.findUnique({ where: { id }, include: { run: true } });
     if (!existing) throw new ApiError(404, 'Analysis result not found');
     if (existing.status === 'published') throw new ApiError(409, 'Published picks cannot be reviewed');
 
-    const updated = await prisma.analysisResult.update({
-      where: { id },
+    // A pick may only be approved when its parent run reached a completed
+    // terminal state. Results from failed, running, pending or deferred runs
+    // must never become approvable. Dismissal remains available for any
+    // non-published result, including results from failed runs.
+    if (dto.status === 'approved' && existing.run.status !== 'completed') {
+      throw new ApiError(409, `Cannot approve a result whose parent run is ${existing.run.status}`);
+    }
+
+    // Optimistic concurrency guard: only transition the result if its status is
+    // still what we observed, so a concurrent state change cannot be silently
+    // overwritten. A count of 0 means another request changed it first —
+    // surface a conflict instead of acting on stale data.
+    const updated = await prisma.analysisResult.updateMany({
+      where: { id, status: existing.status },
       data: {
         status: dto.status,
         reviewedById: admin.sub,
@@ -51,6 +63,12 @@ export async function PATCH(req: NextRequest, context: Context) {
         dismissalReason: dto.status === 'dismissed' ? dto.dismissalReason : null,
       },
     });
+    if (updated.count === 0) {
+      throw new ApiError(409, 'This pick was already reviewed by another request');
+    }
+
+    const current = await prisma.analysisResult.findUnique({ where: { id } });
+    if (!current) throw new ApiError(404, 'Analysis result not found');
 
     await writeAudit({
       actorId: admin.sub,
@@ -64,7 +82,7 @@ export async function PATCH(req: NextRequest, context: Context) {
       },
     });
 
-    return NextResponse.json(updated);
+    return NextResponse.json(current);
   } catch (err) {
     return errorResponse(err);
   }

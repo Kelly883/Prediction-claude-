@@ -87,7 +87,7 @@ export async function enrichFixtures(
     try {
       const weather = fetchWeatherOverride
         ? await fetchWeatherOverride()
-        : await fetchWeather(fixture.venueLatitude, fixture.venueLongitude);
+        : await fetchWeather(fixture.venueLatitude, fixture.venueLongitude, fixture.kickoff);
       if (weather) enrichment = { ...enrichment, weather };
     } catch (err) {
       errors.push(`weather: ${err instanceof Error ? err.message : String(err)}`);

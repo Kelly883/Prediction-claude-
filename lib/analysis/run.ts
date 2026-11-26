@@ -13,6 +13,7 @@ import { dateOnly, fetchFixtures, getEnabledLeagues } from './ingestion/fixtures
 import { evaluateIngestionGate } from './ingestion/gating';
 import { assessAllLeagueReadiness, summarizeReadiness } from './ingestion/readiness';
 import { createRunBudget, estimateRuntimeMs, runtimeInputs } from './ingestion/budget';
+import { sendEmail } from '@/lib/email';
 import type { AnalysisSettings, Fixture, FixtureEnrichment } from '@/types/analysis';
 
 // ---------------------------------------------------------------------------
@@ -215,6 +216,80 @@ export function isSuccessfullyAnalysed(outcome: { enrichmentQuality?: string | n
   return true;
 }
 
+/**
+ * Best-effort superadmin alert for a failed analysis run.
+ *
+ * Email delivery is intentionally non-fatal: missing Resend/APP_URL config or a
+ * transient send failure must never cause the analysis run itself to fail or
+ * retry. An in-app notification table does not exist yet, so email is the only
+ * alert channel available (§5 of the Phase 2 PRD).
+ */
+async function notifySuperadminsOfAnalysisFailure({
+  runId,
+  day,
+  reason,
+  errors,
+}: {
+  runId: string;
+  day: string;
+  reason: string;
+  errors?: string[];
+}): Promise<void> {
+  let superadmins: { id: string; email: string | null; name: string | null }[];
+  try {
+    superadmins = await prisma.user.findMany({
+      where: { role: 'superadmin', deletedAt: null },
+      select: { id: true, email: true, name: true },
+    });
+  } catch (err) {
+    logger.warn('analysis.notify.superadminQueryFailed', {
+      runId,
+      day,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return;
+  }
+
+  const appUrl = process.env.APP_URL ?? '';
+  const runsUrl = appUrl ? `${appUrl.replace(/\/$/, '')}/superadmin/analysis/runs/${runId}` : '';
+
+  const detailLines = (errors ?? [])
+    .slice(0, 10)
+    .map((e) => `• ${e}`)
+    .join('\n') || '• No detailed error recorded.';
+  const body = `
+Daily match analysis failed for ${day}.
+
+Run: ${runId}
+Reason: ${reason}
+${runsUrl ? `View run: ${runsUrl}` : ''}
+
+Errors:
+${detailLines}
+
+This is an automated alert from PredictPro. Confidence scores are model outputs, not proof of winning probability.
+`.trim();
+
+  await Promise.all(
+    superadmins.map((admin) => {
+      if (!admin.email) return Promise.resolve();
+      return sendEmail({
+        to: admin.email,
+        subject: `[PredictPro] Daily analysis failed — ${day}`,
+        text: body,
+        html: `<pre>${body.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>`,
+      }).catch((err) => {
+        logger.warn('analysis.notify.superadminEmailFailed', {
+          runId,
+          day,
+          adminId: admin.id,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+    }),
+  );
+}
+
 export interface AnalysisDependencies {
   fetchFixtures?: typeof fetchFixtures;
   enrichFixtures?: typeof enrichFixtures;
@@ -396,7 +471,7 @@ export async function runDailyAnalysis(options: {
     }
   }
 
-  let run: { id: string };
+  let run: { id: string } | null = null;
   if (resumeRunId) {
     // Resume a deferred run: flip it back to `running` (the Redis day-lock
     // serialises resumes) and continue from durable progress below.
@@ -580,8 +655,11 @@ export async function runDailyAnalysis(options: {
       };
       // Atomic status transition guarded by the current `running` state so a
       // concurrent worker that already finalised the run is not clobbered.
-      const runRow = await prisma.$transaction((tx) =>
-        tx.analysisRun.update({
+      // `updateMany()` returns `{ count }` instead of throwing when no row
+      // matches, so a concurrent state transition is handled here rather than
+      // surfacing an unnecessary database error in the catch block.
+      const result = await prisma.$transaction((tx) =>
+        tx.analysisRun.updateMany({
           where: { id: run.id, status: 'running' },
           data: {
             status: 'failed',
@@ -591,12 +669,40 @@ export async function runDailyAnalysis(options: {
           },
         }),
       );
+
+      if (result.count === 0) {
+        const current = await prisma.analysisRun.findUnique({
+          where: { id: run.id },
+          select: { status: true, fixturesAnalyzed: true, picksGenerated: true },
+        });
+        if (!current) {
+          throw new Error(`analysis run ${run.id} no longer exists`);
+        }
+        return {
+          runId: run.id,
+          status: current.status as DailyRunResult['status'],
+          fixturesAnalyzed: current.fixturesAnalyzed,
+          picksGenerated: current.picksGenerated,
+          errors: [...errors, 'concurrent run state transition'],
+        };
+      }
+
+      const updated = await prisma.analysisRun.findUnique({
+        where: { id: run.id },
+        select: { fixturesAnalyzed: true, picksGenerated: true },
+      });
       void incrProviderMetric('ingestion:exhausted');
+      await notifySuperadminsOfAnalysisFailure({
+        runId: run.id,
+        day,
+        reason: 'All fixtures exhausted the analysis retry allowance (total provider failure).',
+        errors,
+      });
       return {
         runId: run.id,
         status: 'failed',
-        fixturesAnalyzed: runRow.fixturesAnalyzed,
-        picksGenerated: runRow.picksGenerated,
+        fixturesAnalyzed: updated?.fixturesAnalyzed ?? cumulativeFixtures,
+        picksGenerated: updated?.picksGenerated ?? cumulativePicks,
         errors,
       };
     }
@@ -719,15 +825,51 @@ export async function runDailyAnalysis(options: {
     // H2: if ownership was lost mid-run, stop here — do not commit further
     // batches and do not report a successful/partial completion.
     if (lockState.lost) {
-      const runRow = await prisma.analysisRun.update({
-        where: { id: run.id },
+      const runRow = await prisma.analysisRun.updateMany({
+        where: { id: run.id, status: 'running' },
         data: { status: 'failed', errorMessage: 'analysis lock lost mid-run; ownership revoked', completedAt: new Date() },
       });
+      if (runRow.count === 0) {
+        const current = await prisma.analysisRun.findUnique({
+          where: { id: run.id },
+          select: { status: true, fixturesAnalyzed: true, picksGenerated: true },
+        });
+        if (!current) {
+          throw new Error(`analysis run ${run.id} no longer exists`);
+        }
+        return {
+          runId: run.id,
+          status: current.status as DailyRunResult['status'],
+          fixturesAnalyzed: current.fixturesAnalyzed,
+          picksGenerated: current.picksGenerated,
+          errors: [...errors, 'analysis lock lost mid-run; run already transitioned'],
+        };
+      }
+      const updated = await prisma.analysisRun.findUnique({
+        where: { id: run.id },
+        select: { fixturesAnalyzed: true, picksGenerated: true },
+      });
+      if (!updated) {
+        throw new Error(`analysis run ${run.id} no longer exists`);
+      }
+      try {
+        await notifySuperadminsOfAnalysisFailure({
+          runId: run.id,
+          day,
+          reason: 'Analysis lock lost mid-run; ownership revoked.',
+          errors,
+        });
+      } catch (notifyErr) {
+        logger.error('analysis.notify.failure', {
+          runId: run.id,
+          error: notifyErr instanceof Error ? notifyErr.message : String(notifyErr),
+        });
+      }
       return {
         runId: run.id,
         status: 'failed',
-        fixturesAnalyzed: runRow.fixturesAnalyzed,
-        picksGenerated: runRow.picksGenerated,
+        fixturesAnalyzed: updated.fixturesAnalyzed,
+        picksGenerated: updated.picksGenerated,
         errors: [...errors, 'analysis lock lost mid-run'],
       };
     }
@@ -791,13 +933,49 @@ export async function runDailyAnalysis(options: {
       errors,
     };
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const original = err instanceof Error ? err : new Error(String(err));
+    const message = original.message;
     logger.error('analysis.run.failed', { runId: run.id, error: message });
-    // Remove the partial run row so a failed invocation leaves no persisted
-    // state behind (matches the integration test's no-partial-state contract).
-    await prisma.analysisResult.deleteMany({ where: { runId: run.id } });
-    await prisma.analysisRun.delete({ where: { id: run.id } }).catch(() => undefined);
-    throw err;
+
+    // Record the failure only if the run is still running: never overwrite a
+    // run that another worker has already moved to a terminal state. If the
+    // run was never created (early failure), there is nothing to transition.
+    let failureRecorded = false;
+    if (run) {
+      try {
+        const runRow = await prisma.analysisRun.updateMany({
+          where: { id: run.id, status: 'running' },
+          data: { status: 'failed', errorMessage: message.slice(0, 2000), completedAt: new Date() },
+        });
+        failureRecorded = runRow.count === 1;
+      } catch (recordErr) {
+      // A failure-recording error must never mask the original analysis error.
+      logger.error('analysis.run.failureRecordingFailed', {
+        runId: run.id,
+        error: recordErr instanceof Error ? recordErr.message : String(recordErr),
+      });
+    }
+    }
+
+    // Best-effort superadmin notification, isolated so a notification failure
+    // (including a single bad recipient) never masks the original error.
+    if (failureRecorded) {
+      try {
+        await notifySuperadminsOfAnalysisFailure({
+          runId: run.id,
+          day,
+          reason: 'Analysis run threw an unhandled error.',
+          errors: [message],
+        });
+      } catch (notifyErr) {
+        logger.error('analysis.notify.failure', {
+          runId: run.id,
+          error: notifyErr instanceof Error ? notifyErr.message : String(notifyErr),
+        });
+      }
+    }
+
+    throw original;
   } finally {
     stopLockRenewal(lockState);
     if (hasLock) {
