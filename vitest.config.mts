@@ -2,6 +2,10 @@ import { defineConfig } from 'vitest/config';
 import path from 'path';
 
 export default defineConfig({
+  // tsconfig sets `jsx: "preserve"` (required by Next.js). Vitest's bundler would
+  // otherwise leave JSX untransformed and fail to parse component (.tsx) tests.
+  // Force the automatic runtime for the test transform only.
+  oxc: { jsx: 'react-jsx' },
   test: {
     environment: 'node',
     setupFiles: ['./tests/setup.ts'],

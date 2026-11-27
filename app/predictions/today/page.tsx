@@ -13,6 +13,8 @@ export const metadata: Metadata = buildMetadata({
   pathname: '/predictions/today',
 });
 
+export const dynamic = 'force-dynamic';
+
 export default async function TodayPredictionsPage() {
   const now = new Date();
   const bounds = utcDayBounds(now);

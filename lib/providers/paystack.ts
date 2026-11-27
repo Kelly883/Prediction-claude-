@@ -1,4 +1,4 @@
-import { ProviderInitError } from './init-error';
+import { ProviderInitError, isDefinitiveRejection } from './init-error';
 
 const BASE_URL = 'https://api.paystack.co';
 
@@ -18,9 +18,10 @@ interface InitializeParams {
 }
 
 export async function paystackInitialize(params: InitializeParams): Promise<{ authorizationUrl: string }> {
-  // A network/timeout failure throws here and propagates as an *uncertain*
-  // outcome. A completed HTTP response that the provider rejects is a
-  // *definitive* rejection (ProviderInitError.definitive === true).
+  // A network/timeout/connection-reset failure throws here (fetch rejects) and
+  // propagates as an *uncertain* outcome. A completed HTTP response is
+  // classified by status: only 4xx (except 408/429) is a definitive rejection;
+  // 408/429/5xx and malformed/incomplete 2xx bodies are uncertain.
   const res = await fetch(`${BASE_URL}/transaction/initialize`, {
     method: 'POST',
     headers: headers(),
@@ -34,10 +35,19 @@ export async function paystackInitialize(params: InitializeParams): Promise<{ au
   });
 
   const data = await res.json().catch(() => null);
-  if (!res.ok || !data?.status || !data?.data?.authorization_url) {
-    throw new ProviderInitError(`Paystack initialize failed: ${data?.message ?? res.statusText}`, true);
+
+  if (res.ok) {
+    if (!data?.data?.authorization_url) {
+      // 2xx but no usable session: a checkout may have been created — uncertain.
+      throw new ProviderInitError('Paystack initialize: incomplete success response (no authorization_url); outcome uncertain', false);
+    }
+    return { authorizationUrl: data.data.authorization_url };
   }
-  return { authorizationUrl: data.data.authorization_url };
+
+  throw new ProviderInitError(
+    `Paystack initialize failed: ${data?.message ?? res.statusText} (HTTP ${res.status})`,
+    isDefinitiveRejection(res.status),
+  );
 }
 
 interface ChargeAuthorizationParams {
