@@ -31,7 +31,15 @@ export const UpdatePlanSchema = CreatePlanSchema.partial();
 
 export const CmsSectionUpdateSchema = z.object({
   key: z.string().min(1).max(120),
-  content: z.object({ heading: z.string().max(200).optional(), body: z.string().max(10000).optional() }),
+  content: z.object({
+    heading: z.string().max(200).optional(),
+    body: z.string().max(10000).optional(),
+    // Stored inside the existing `content` JSON (no schema/migration needed).
+    // `order` drives the Configured Blocks sort; `enabled` is the public
+    // visibility toggle. Both are optional so existing rows keep working.
+    order: z.number().int().optional(),
+    enabled: z.boolean().optional(),
+  }),
 });
 
 export const InitializePaymentSchema = z.object({

@@ -12,7 +12,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ page
       return NextResponse.json({ error: 'Too many requests, try again shortly' }, { status: 429 });
     }
     const { page } = await params;
-    const sections = await prisma.cmsSection.findMany({ where: { page } });
+    const sections = await prisma.cmsSection.findMany({ where: { page }, orderBy: { updatedAt: 'asc' } });
     return NextResponse.json(sections);
   } catch (err) {
     return errorResponse(err);
