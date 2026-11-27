@@ -5,6 +5,7 @@ import { getFxRate } from './fx';
 import { ApiError } from './rbac';
 import { paystackInitialize } from './providers/paystack';
 import { flutterwaveInitialize } from './providers/flutterwave';
+import { ProviderInitError } from './providers/init-error';
 import { timingSafeStringEqual } from './timing-safe';
 import { encryptPaymentToken } from './encryption';
 import { writeAudit } from './audit';
@@ -62,30 +63,51 @@ export async function initializePayment(
   const reference = `pp_${idempotencyKey}`;
   const callbackUrl = `${requireAppUrl()}/payments/callback?provider=${provider}`;
 
-  let checkoutUrl: string;
-  if (provider === 'paystack') {
-    const { authorizationUrl } = await paystackInitialize({
-      email: user.email,
-      amountMinorUnits: toMinorUnits(amount, currency),
-      currency,
-      reference,
-      callbackUrl,
-    });
-    checkoutUrl = authorizationUrl;
-  } else {
-    const { paymentLink } = await flutterwaveInitialize({
-      txRef: reference,
-      amount,
-      currency,
-      redirectUrl: callbackUrl,
-      customerEmail: user.email,
-    });
-    checkoutUrl = paymentLink;
-  }
-
+  // P-02: Persist the internal pending transaction BEFORE contacting the
+  // provider. If this insert fails we must not create a provider checkout —
+  // otherwise a customer could pay against a reference we have no record of,
+  // and the webhook could never activate the subscription.
   const tx = await prisma.transaction.create({
     data: { userId, planId, provider, providerReference: reference, idempotencyKey, amount, currency, fxRateUsed, status: 'pending' },
   });
+
+  let checkoutUrl: string;
+  try {
+    if (provider === 'paystack') {
+      const { authorizationUrl } = await paystackInitialize({
+        email: user.email,
+        amountMinorUnits: toMinorUnits(amount, currency),
+        currency,
+        reference,
+        callbackUrl,
+      });
+      checkoutUrl = authorizationUrl;
+    } else {
+      const { paymentLink } = await flutterwaveInitialize({
+        txRef: reference,
+        amount,
+        currency,
+        redirectUrl: callbackUrl,
+        customerEmail: user.email,
+      });
+      checkoutUrl = paymentLink;
+    }
+  } catch (err) {
+    // A definitive provider rejection (the provider replied and refused) means
+    // this attempt can never be paid, so mark the existing row failed. A
+    // network/timeout error is *uncertain* — the checkout may or may not have
+    // been created — so the pending record is preserved for investigation and
+    // recovery, and is never deleted.
+    if (err instanceof ProviderInitError && err.definitive) {
+      await prisma.transaction
+        .update({
+          where: { id: tx.id },
+          data: { status: 'failed', completedAt: new Date(), rawPayload: { providerInitError: err.message } as any },
+        })
+        .catch(() => {});
+    }
+    throw err;
+  }
 
   return { transactionId: tx.id, amount, currency, checkoutUrl };
 }

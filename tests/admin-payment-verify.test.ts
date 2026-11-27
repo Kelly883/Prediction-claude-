@@ -167,7 +167,7 @@ describe('POST /api/admin/payments/verify', () => {
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.status).toBe('success');
-    expect(mockFlutterwave.flutterwaveVerifyTransaction).toHaveBeenCalledWith({ txRef: 'abc123' });
+    expect(mockFlutterwave.flutterwaveVerifyTransaction).toHaveBeenCalledWith({ txRef: 'pp_abc123' });
   });
 
   it('returns 400 when provider verification fails', async () => {
