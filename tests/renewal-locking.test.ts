@@ -81,10 +81,13 @@ vi.mock('@/lib/prisma', () => ({
 
 vi.mock('@/lib/providers/paystack', () => ({
   paystackChargeAuthorization: vi.fn().mockResolvedValue({ success: true, raw: { id: 123 } }),
+  // No prior charge on record → stale-processing reclaim may proceed to charge.
+  paystackVerifyTransaction: vi.fn().mockResolvedValue({ verified: false, conclusive: true, status: 'failed', raw: {} }),
 }));
 
 vi.mock('@/lib/providers/flutterwave', () => ({
   flutterwaveChargeToken: vi.fn().mockResolvedValue({ success: true, raw: { id: 456 } }),
+  flutterwaveVerifyTransaction: vi.fn().mockResolvedValue({ verified: false, conclusive: true, status: 'failed', raw: {} }),
 }));
 
 vi.mock('@/lib/email', () => ({

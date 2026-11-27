@@ -30,6 +30,7 @@ enum RenewalStatus {
   idle
   processing
   failed
+  reconciliation_required
 }
 
 enum PaymentProvider {

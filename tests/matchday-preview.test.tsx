@@ -91,7 +91,10 @@ describe('MatchdayPreview (real /api/public/fixtures shape)', () => {
   it('renders the actual API response structure without throwing', async () => {
     (globalThis as any).fetch = mockFetch([actualFixture]);
     const view = await mountAsync(<MatchdayPreview />);
-    expect(view.container.textContent).toContain('Arsenal vs Chelsea');
+    // New design renders home/away teams separately with VS separator
+    expect(view.container.textContent).toContain('Arsenal');
+    expect(view.container.textContent).toContain('Chelsea');
+    expect(view.container.textContent).toContain('VS');
     expect(view.container.textContent).toContain("Today's Fixtures");
     view.unmount();
   });
@@ -106,7 +109,9 @@ describe('MatchdayPreview (real /api/public/fixtures shape)', () => {
   it('does not crash when /api/me returns 401 (logged-out visitor)', async () => {
     (globalThis as any).fetch = mockFetch([actualFixture], { meAuthenticated: false });
     const view = await mountAsync(<MatchdayPreview />);
-    expect(view.container.textContent).toContain('Arsenal vs Chelsea');
+    expect(view.container.textContent).toContain('Arsenal');
+    expect(view.container.textContent).toContain('Chelsea');
+    expect(view.container.textContent).toContain('VS');
     view.unmount();
   });
 });
@@ -114,7 +119,9 @@ describe('MatchdayPreview (real /api/public/fixtures shape)', () => {
 describe('FixtureCard defensive rendering', () => {
   it('renders when league information is absent', () => {
     const view = mount(<FixtureCard fixture={actualFixture as any} isEntitled={false} />);
-    expect(view.container.textContent).toContain('Arsenal vs Chelsea');
+    expect(view.container.textContent).toContain('Arsenal');
+    expect(view.container.textContent).toContain('Chelsea');
+    expect(view.container.textContent).toContain('VS');
     view.unmount();
   });
 
@@ -144,8 +151,11 @@ describe('FixtureCard defensive rendering', () => {
 
   it('renders a valid fixture with items and kickoff correctly', () => {
     const view = mount(<FixtureCard fixture={actualFixture as any} isEntitled={false} />);
-    expect(view.container.textContent).toContain('Arsenal vs Chelsea');
-    expect(view.container.textContent).toContain('27 Nov');
+    expect(view.container.textContent).toContain('Arsenal');
+    expect(view.container.textContent).toContain('Chelsea');
+    expect(view.container.textContent).toContain('VS');
+    // Time is displayed next to VS separator (15:00 UTC = 16:00 or 15:00 local)
+    expect(view.container.textContent).toMatch(/\d{2}:\d{2}/);
     view.unmount();
   });
 
