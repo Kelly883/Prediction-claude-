@@ -88,6 +88,15 @@ export interface VerifyTransactionParams {
 
 export interface VerifiedPaystackTransaction {
   verified: boolean;
+  /**
+   * True only when the provider returned a reliable, COMPLETE transaction
+   * record (HTTP 2xx + `status: true` + `data`) whose `reference` matches the
+   * requested reference and which carries amount/currency/status. When false the
+   * outcome is INCONCLUSIVE (5xx, network/timeout, malformed/partial body, or a
+   * record for a different reference) and callers must NOT treat it as a
+   * definitive payment failure or success.
+   */
+  conclusive: boolean;
   reference: string;
   amount: number;
   currency: string;
@@ -107,6 +116,7 @@ export async function paystackVerifyTransaction(
   if (!params.reference) {
     return {
       verified: false,
+      conclusive: false,
       reference: '',
       amount: 0,
       currency: '',
@@ -122,8 +132,11 @@ export async function paystackVerifyTransaction(
 
   const data = await res.json().catch(() => ({}));
   if (!res.ok || data.status !== true || !data.data) {
+    // Non-2xx (incl. 5xx), rate-limit, or an incomplete/malformed body: the
+    // outcome is INCONCLUSIVE. Never report this as a definitive failure.
     return {
       verified: false,
+      conclusive: false,
       reference: params.reference,
       amount: 0,
       currency: '',
@@ -133,12 +146,25 @@ export async function paystackVerifyTransaction(
   }
 
   const txData = data.data;
+  // A record is only CONCLUSIVE when it is complete AND actually corresponds to
+  // the reference we asked about. A partial 2xx body (missing reference/amount/
+  // currency/status) or a record for a different reference must NOT be treated
+  // as a reliable success/failure — it is inconclusive.
+  const referenceOk =
+    typeof txData.reference === 'string' &&
+    txData.reference.length > 0 &&
+    txData.reference === params.reference;
+  const amountOk = Number.isFinite(Number(txData.amount));
+  const currencyOk = typeof txData.currency === 'string' && txData.currency.length > 0;
+  const statusOk = typeof txData.status === 'string' && txData.status.length > 0;
+  const conclusive = referenceOk && amountOk && currencyOk && statusOk;
   return {
     verified: true,
-    reference: txData.reference,
-    amount: Number(txData.amount) / 100,
-    currency: txData.currency,
-    status: txData.status,
+    conclusive,
+    reference: typeof txData.reference === 'string' ? txData.reference : '',
+    amount: amountOk ? Number(txData.amount) / 100 : 0,
+    currency: currencyOk ? txData.currency : '',
+    status: statusOk ? txData.status : 'unknown',
     customerEmail: txData.customer?.email,
     reusableAuthorization: extractReusableAuthorization(txData),
     raw: data,

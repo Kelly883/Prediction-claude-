@@ -23,6 +23,13 @@ export async function GET(req: NextRequest) {
           orderBy: { matchDateTime: 'asc' },
           take: 6,
         },
+        analysisResult: {
+          select: {
+            league: true,
+            homeTeam: true,
+            awayTeam: true,
+          },
+        },
       },
     });
 
@@ -32,6 +39,9 @@ export async function GET(req: NextRequest) {
       scheduledAt: post.scheduledAt,
       status: post.status,
       matchCount: post.items.length,
+      league: post.analysisResult?.league ?? null,
+      homeTeam: post.analysisResult?.homeTeam ?? null,
+      awayTeam: post.analysisResult?.awayTeam ?? null,
       items: post.items.map((item) => ({
         id: item.id,
         match: item.match,

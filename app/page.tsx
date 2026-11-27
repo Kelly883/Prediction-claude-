@@ -68,9 +68,15 @@ export default async function HomePage() {
           <p style={{ fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.18em', fontSize: 12, color: '#18C964', fontWeight: 600, margin: '0 0 12px' }}>
             Trusted by matchday subscribers
           </p>
-          <p style={{ fontSize: 14, color: 'var(--chalk-muted)', lineHeight: 1.6, marginBottom: 32, maxWidth: 560 }}>
-            Over {tipCount.toLocaleString()} published prediction posts available through subscriptions.
-          </p>
+          {tipCount > 0 && (
+            <p style={{ fontSize: 14, color: 'var(--chalk-muted)', lineHeight: 1.6, marginBottom: 32, maxWidth: 560 }}>
+              {tipCount === 1
+                ? '1 published prediction post available through subscriptions.'
+                : tipCount <= 20
+                  ? `${tipCount} published prediction posts available through subscriptions.`
+                  : 'More than 20 published prediction posts available through subscriptions.'}
+            </p>
+          )}
           <BenefitsSection />
         </div>
       </section>
