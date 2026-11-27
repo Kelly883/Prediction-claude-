@@ -1,8 +1,16 @@
+import { Metadata } from 'next';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import { prisma } from '@/lib/prisma';
+import { buildMetadata } from '@/lib/seo/metadata';
+import { breadcrumbJsonLd, ORG_JSON_LD } from '@/lib/seo/structured-data';
 
-export const metadata = { title: 'Prediction Archive — PredictPro' };
+export const metadata: Metadata = buildMetadata({
+  title: 'Prediction Archive — PredictPro',
+  description: 'Browse completed football predictions with verified results. Transparent archive showing won and lost predictions with booking codes.',
+  pathname: '/archive',
+});
+
 export const dynamic = 'force-dynamic';
 
 export default async function PublicArchivePage() {
@@ -12,8 +20,22 @@ export default async function PublicArchivePage() {
     include: { items: true },
   });
 
+  const breadcrumbs = breadcrumbJsonLd([
+    { name: 'Home', href: '/' },
+    { name: 'Prediction Archive', href: '/archive' },
+  ]);
+
   return (
     <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(ORG_JSON_LD) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbs) }}
+      />
+
       <Header />
       <section className="section">
         <div className="container" style={{ maxWidth: 960 }}>
@@ -28,7 +50,7 @@ export default async function PublicArchivePage() {
           ) : (
             <div style={{ display: 'grid', gap: 16 }}>
               {posts.map((post) => (
-                <div
+                <article
                   key={post.id}
                   style={{
                     padding: 20,
@@ -54,9 +76,9 @@ export default async function PublicArchivePage() {
                         {post.outcome}
                       </span>
                     </div>
-                    <span className="mono" style={{ fontSize: 12, color: 'var(--chalk-muted)' }}>
+                    <time className="mono" style={{ fontSize: 12, color: 'var(--chalk-muted)' }} dateTime={post.scheduledAt.toISOString()}>
                       {new Date(post.scheduledAt).toLocaleDateString()}
-                    </span>
+                    </time>
                   </div>
 
                   {post.bookingCode && (
@@ -75,7 +97,7 @@ export default async function PublicArchivePage() {
                       ))}
                     </div>
                   ) : null}
-                </div>
+                </article>
               ))}
             </div>
           )}
