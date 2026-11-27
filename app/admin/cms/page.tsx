@@ -25,6 +25,8 @@ export default function AdminCmsPage() {
   const [body, setBody] = useState('');
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
   function load() {
     setLoading(true);
@@ -36,6 +38,8 @@ export default function AdminCmsPage() {
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
+    setError('');
+    setSuccess('');
     setSaving(true);
     try {
       await apiJson(`/api/admin/cms/${page}`, {
@@ -43,22 +47,29 @@ export default function AdminCmsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key, content: { heading, body } }),
       });
+      setSuccess(`Saved "${key}".`);
       setKey('');
       setHeading('');
       setBody('');
       load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save section.');
     } finally {
       setSaving(false);
     }
   }
 
   function editSection(s: Section) {
+    setError('');
+    setSuccess('');
     setKey(s.key);
     setHeading(s.content.heading ?? '');
     setBody(s.content.body ?? '');
   }
 
   function resetForm() {
+    setError('');
+    setSuccess('');
     setKey('');
     setHeading('');
     setBody('');
@@ -211,6 +222,22 @@ export default function AdminCmsPage() {
               className="admin-textarea"
             />
           </div>
+
+          {error && (
+            <div className="p-3 rounded-lg bg-[rgba(239,68,68,0.12)] border border-[rgba(239,68,68,0.4)] text-sm text-[#fca5a5]">
+              {error}
+            </div>
+          )}
+          {success && (
+            <div className="p-3 rounded-lg bg-[rgba(16,185,129,0.12)] border border-[rgba(16,185,129,0.4)] text-sm text-[#6ee7b7]">
+              {success}
+            </div>
+          )}
+          {!canEditCms && (
+            <div className="p-3 rounded-lg bg-[var(--pitch)] border border-[rgba(245,179,53,0.2)] text-xs text-[var(--chalk-muted)]">
+              You do not have permission to edit the CMS. Saving is disabled.
+            </div>
+          )}
 
           <div className="flex items-center gap-3 pt-2">
             <button

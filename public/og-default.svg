@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0B1C17"/>
+      <stop offset="100%" style="stop-color:#07110F"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#16A34A"/>
+      <stop offset="100%" style="stop-color:#4ADE80"/>
+    </gradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <circle cx="600" cy="315" r="120" fill="none" stroke="url(#accent)" stroke-width="3" opacity="0.3"/>
+  <circle cx="600" cy="315" r="80" fill="none" stroke="url(#accent)" stroke-width="4"/>
+  <text x="600" y="480" font-family="system-ui, sans-serif" font-size="32" font-weight="700" fill="#F3F5EC" text-anchor="middle" letter-spacing="0.05em">PREDICTPRO</text>
+  <text x="600" y="520" font-family="system-ui, sans-serif" font-size="18" fill="#7A8A77" text-anchor="middle">Verified Football Predictions</text>
+</svg>
