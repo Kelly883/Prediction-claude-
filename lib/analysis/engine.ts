@@ -87,11 +87,18 @@ export function scoreFixture(
   add('PLAYER_SCORER', scorePlayerScorer);
 
   const evidenceLabel = evidenceLabelForQuality(enrichment.dataQuality ?? 'INSUFFICIENT_DATA');
+  const best = scores.length > 0
+    ? scores.reduce((max, cur) => {
+        const curConf = Number.isFinite(cur.confidence) ? cur.confidence : -1;
+        const maxConf = Number.isFinite(max.confidence) ? max.confidence : -1;
+        return curConf > maxConf ? cur : max;
+      })
+    : undefined;
   return {
     fixture,
     scores,
-    best: scores[0],
-    topFactors: scores[0] ? topFactors(scores[0].factors, 3) : [],
+    best,
+    topFactors: best ? topFactors(best.factors, 3) : [],
     eligibility,
     evidenceLabel,
     dataQuality: enrichment.dataQuality,

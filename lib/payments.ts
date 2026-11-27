@@ -11,7 +11,11 @@ import { encryptPaymentToken } from './encryption';
 import { writeAudit } from './audit';
 import { getEnv, requireAppUrl, requirePaystack, requireFlutterwave } from '@/lib/env';
 
-const REDACTED_PAYLOAD_KEYS = new Set([
+// Keys that carry reusable payment credentials (or subtrees that contain them)
+// must never be persisted in cleartext. `authorization`/`card` are dropped as
+// whole subtrees so a nested `authorization_code` / `token` cannot survive under
+// an alternative property name.
+const SENSITIVE_PAYLOAD_KEYS = new Set([
   'authorization_code',
   'card_token',
   'token',
@@ -21,23 +25,48 @@ const REDACTED_PAYLOAD_KEYS = new Set([
   'pin',
   'otp',
   'raw',
+  'authorization',
+  'card',
+  'reusableauthorization',
+  'reusabletoken',
+  'signature',
 ]);
 
+/**
+ * Read-path defence-in-depth: replaces sensitive values with a marker so legacy
+ * rows that may still contain cleartext credentials are masked on the way out.
+ * This is NOT the primary control — writes are sanitized via
+ * `sanitizeRawPayload` so cleartext never lands in the database in the first place.
+ */
 export function redactPayload(payload: unknown): unknown {
   if (!payload || typeof payload !== 'object') return payload;
   if (Array.isArray(payload)) return payload.map(redactPayload);
 
   const clone: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(payload as Record<string, unknown>)) {
-    if (REDACTED_PAYLOAD_KEYS.has(key.toLowerCase())) {
+    if (SENSITIVE_PAYLOAD_KEYS.has(key.toLowerCase())) {
       clone[key] = '[redacted]';
       continue;
     }
-    if (value && typeof value === 'object' && !Array.isArray(value)) {
-      clone[key] = redactPayload(value);
-    } else {
-      clone[key] = value;
-    }
+    clone[key] = redactPayload(value);
+  }
+  return clone;
+}
+
+/**
+ * Write-path control (F-01): recursively DROPS any key that carries a reusable
+ * payment credential (or a subtree that contains one) before the payload is
+ * persisted to `Transaction.rawPayload`. Ordinary, non-sensitive metadata
+ * (event, reference, amount, currency, status, customer email, etc.) is kept.
+ */
+export function sanitizeRawPayload(payload: unknown): unknown {
+  if (!payload || typeof payload !== 'object') return payload;
+  if (Array.isArray(payload)) return payload.map(sanitizeRawPayload);
+
+  const clone: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(payload as Record<string, unknown>)) {
+    if (SENSITIVE_PAYLOAD_KEYS.has(key.toLowerCase())) continue;
+    clone[key] = sanitizeRawPayload(value);
   }
   return clone;
 }
@@ -102,7 +131,7 @@ export async function initializePayment(
       await prisma.transaction
         .update({
           where: { id: tx.id },
-          data: { status: 'failed', completedAt: new Date(), rawPayload: { providerInitError: err.message } as any },
+          data: { status: 'failed', completedAt: new Date(), rawPayload: sanitizeRawPayload({ providerInitError: err.message }) as any },
         })
         .catch(() => {});
     }
@@ -178,7 +207,7 @@ export async function handleVerifiedWebhook(params: {
       data: {
         status: 'failed',
         completedAt: now,
-        rawPayload: params.rawPayload as any,
+        rawPayload: sanitizeRawPayload(params.rawPayload) as any,
       },
     });
     throw new ApiError(400, 'Transaction verification mismatch (amount, currency, or customer)');
@@ -197,7 +226,7 @@ export async function handleVerifiedWebhook(params: {
       data: {
         status: params.status,
         completedAt: now,
-        rawPayload: params.rawPayload as any,
+        rawPayload: sanitizeRawPayload(params.rawPayload) as any,
       },
     });
 

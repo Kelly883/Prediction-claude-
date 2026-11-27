@@ -5,9 +5,8 @@ const globalForPrisma = globalThis as unknown as {
   inMemoryDb?: Record<string, any[]>;
 };
 
-// Initialize store for local environment without mock data
-if (!globalForPrisma.inMemoryDb) {
-  globalForPrisma.inMemoryDb = {
+function createEmptyInMemoryDb(): Record<string, any[]> {
+  return {
     User: [],
     Plan: [],
     Subscription: [],
@@ -22,6 +21,11 @@ if (!globalForPrisma.inMemoryDb) {
     UserSession: [],
     PasswordResetToken: [],
   };
+}
+
+// Initialize the in-memory store used only by explicitly isolated unit tests.
+if (!globalForPrisma.inMemoryDb) {
+  globalForPrisma.inMemoryDb = createEmptyInMemoryDb();
 }
 
 function matchFilter(record: any, where: any): boolean {
@@ -238,8 +242,17 @@ function createInMemoryModel(modelName: string) {
 }
 
 function createClientWrapper(): any {
+  const databaseUrl = process.env.DATABASE_URL;
+  const hasDatabaseUrl = typeof databaseUrl === 'string' && databaseUrl.trim() !== '';
+  // In-memory persistence is permitted ONLY for explicitly isolated unit-test
+  // runs that do not configure DATABASE_URL. Every other environment without a
+  // configured database must fail closed instead of silently returning
+  // successful-looking results from the in-memory store.
+  const isIsolatedUnitTest =
+    process.env.NODE_ENV === 'test' || process.env.IN_MEMORY_DB === 'true';
+
   let realClient: any = null;
-  if (process.env.DATABASE_URL && process.env.DATABASE_URL.trim() !== '') {
+  if (hasDatabaseUrl) {
     try {
       realClient = new PrismaClient({ log: [] });
     } catch {
@@ -249,12 +262,38 @@ function createClientWrapper(): any {
 
   const modelCache: Record<string, any> = {};
 
+  const failClosed = (): never => {
+    throw new Error(
+      '[Prisma] DATABASE_URL is not configured; database access is disabled. ' +
+        'Set DATABASE_URL to a valid PostgreSQL connection string to enable persistence.'
+    );
+  };
+
   const wrapper = new Proxy(realClient || {}, {
     get(target, prop: string) {
+      // Symbols (e.g. Symbol.toStringTag, thenable probes) must not be treated
+      // as model names.
+      if (typeof prop !== 'string') {
+        return (target as any)[prop];
+      }
+
       if (prop === '$transaction') {
         return async (arg: any) => {
+          if (realClient) {
+            // Delegate to the real Prisma transaction API for both the array
+            // and callback forms; the callback receives the tx-scoped client.
+            if (Array.isArray(arg)) {
+              return realClient.$transaction(arg);
+            }
+            if (typeof arg === 'function') {
+              return realClient.$transaction(arg);
+            }
+            return realClient.$transaction([]);
+          }
+          // No real client: in-memory is allowed only for isolated unit tests.
+          if (!isIsolatedUnitTest) failClosed();
           if (Array.isArray(arg)) {
-            return Promise.all(arg);
+            return Promise.all(arg.map((fn) => fn(wrapper)));
           }
           if (typeof arg === 'function') {
             return arg(wrapper);
@@ -263,6 +302,12 @@ function createClientWrapper(): any {
         };
       }
       if (prop === '$connect' || prop === '$disconnect') {
+        if (realClient) return realClient[prop]?.bind(realClient);
+        // Fail closed at connection-initialization time (when $connect is
+        // actually called), not during property access.
+        if (prop === '$connect' && !isIsolatedUnitTest) {
+          return async () => failClosed();
+        }
         return async () => {};
       }
 
@@ -292,24 +337,29 @@ function createClientWrapper(): any {
 
       let resultModel: any;
       if (realClient && target[prop]) {
-        // Wrap real model calls with fallback
+        // A real database is configured: always delegate to Prisma and propagate
+        // the original error. Never fall back to in-memory after connection,
+        // query, P2002 or transaction failures.
         resultModel = new Proxy(target[prop], {
           get(modelTarget, method: string) {
             return async (...args: any[]) => {
-              try {
-                return await modelTarget[method](...args);
-              } catch (err: any) {
-                console.warn(`[Prisma Database fallback for ${prop}.${method}]:`, err?.message || err);
-                if (inMemoryModel[method as keyof typeof inMemoryModel]) {
-                  return await (inMemoryModel as any)[method](...args);
-                }
-                throw err;
-              }
+              return await modelTarget[method](...args);
             };
           },
         });
-      } else {
+      } else if (isIsolatedUnitTest) {
         resultModel = inMemoryModel;
+      } else {
+        // No real client and not an isolated unit test: fail closed on any
+        // actual database operation instead of returning in-memory results.
+        resultModel = new Proxy(
+          {},
+          {
+            get() {
+              return async () => failClosed();
+            },
+          }
+        );
       }
 
       modelCache[prop] = resultModel;
@@ -329,5 +379,15 @@ if (process.env.INTEGRATION_TEST === 'true') {
   prismaExport = proxyClient;
 }
 export const prisma = prismaExport as unknown as PrismaClient;
+
+/**
+ * Test-only helper. Clears the cached wrapper and resets the in-memory store so
+ * that tests sharing the real wrapper cannot contaminate one another. It is
+ * never invoked during normal (non-test) operation.
+ */
+export function __resetPrismaForTests(): void {
+  delete globalForPrisma.prisma;
+  globalForPrisma.inMemoryDb = createEmptyInMemoryDb();
+}
 
 

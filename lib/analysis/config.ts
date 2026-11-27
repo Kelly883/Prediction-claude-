@@ -61,6 +61,9 @@ export function validateConfigUpdate(key: string, value: unknown): unknown {
     if (total <= 0) {
       throw new Error(`market_weights.${market} must have a positive total`);
     }
+    if (Math.abs(total - 1.0) > 0.001) {
+      throw new Error(`market_weights.${market} must sum to 1.0 (got ${total.toFixed(4)})`);
+    }
   }
   return weights;
 }

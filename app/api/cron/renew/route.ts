@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { prisma } from '@/lib/prisma';
-import { resolvePrice, toMinorUnits } from '@/lib/payments';
+import { resolvePrice, toMinorUnits, sanitizeRawPayload } from '@/lib/payments';
 import { paystackChargeAuthorization } from '@/lib/providers/paystack';
 import { flutterwaveChargeToken } from '@/lib/providers/flutterwave';
 import { sendRenewalReminderEmail, getAppUrl } from '@/lib/email';
@@ -217,7 +217,7 @@ export async function GET(req: NextRequest) {
             fxRateUsed,
             status: 'success',
             completedAt: now,
-            rawPayload: chargeResult.raw as any,
+            rawPayload: sanitizeRawPayload(chargeResult.raw) as any,
           },
         });
 

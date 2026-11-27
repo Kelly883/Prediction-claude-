@@ -90,6 +90,15 @@ describe('initializePayment (P-02 ordering & failure handling)', () => {
     expect(mockPrisma.transaction.update).not.toHaveBeenCalled();
   });
 
+  it('PRESERVES the pending transaction on an UNCERTAIN ProviderInitError (e.g. 5xx/429/408)', async () => {
+    mockPaystack.paystackInitialize.mockRejectedValue(new ProviderInitError('ambiguous (HTTP 503)', false));
+
+    await expect(initializePayment('user-1', 'plan-1', 'paystack')).rejects.toThrow('ambiguous');
+
+    // definitive === false → must NOT mark failed; pending is preserved.
+    expect(mockPrisma.transaction.update).not.toHaveBeenCalled();
+  });
+
   it('retries create distinct references/transactions (no duplicate reference reuse)', async () => {
     let n = 0;
     const refs: string[] = [];

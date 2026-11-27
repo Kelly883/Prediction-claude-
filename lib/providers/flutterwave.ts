@@ -1,4 +1,4 @@
-import { ProviderInitError } from './init-error';
+import { ProviderInitError, isDefinitiveRejection } from './init-error';
 
 const BASE_URL = 'https://api.flutterwave.com/v3';
 
@@ -18,8 +18,10 @@ interface InitializeParams {
 }
 
 export async function flutterwaveInitialize(params: InitializeParams): Promise<{ paymentLink: string }> {
-  // Network/timeout failures throw and propagate as *uncertain*; a completed
-  // HTTP response the provider rejects is a *definitive* rejection.
+  // Network/timeout/connection-reset failures throw (fetch rejects) and are
+  // *uncertain*. A completed HTTP response is classified by status: only 4xx
+  // (except 408/429) is definitive; 408/429/5xx and malformed/incomplete 2xx
+  // bodies are uncertain (a session may already exist).
   const res = await fetch(`${BASE_URL}/payments`, {
     method: 'POST',
     headers: headers(),
@@ -33,10 +35,19 @@ export async function flutterwaveInitialize(params: InitializeParams): Promise<{
   });
 
   const data = await res.json().catch(() => null);
-  if (!res.ok || data?.status !== 'success' || !data?.data?.link) {
-    throw new ProviderInitError(`Flutterwave initialize failed: ${data?.message ?? res.statusText}`, true);
+
+  if (res.ok) {
+    if (data?.status !== 'success' || !data?.data?.link) {
+      // 2xx but no usable session: a checkout may have been created — uncertain.
+      throw new ProviderInitError('Flutterwave initialize: incomplete success response (no payment link); outcome uncertain', false);
+    }
+    return { paymentLink: data.data.link };
   }
-  return { paymentLink: data.data.link };
+
+  throw new ProviderInitError(
+    `Flutterwave initialize failed: ${data?.message ?? res.statusText} (HTTP ${res.status})`,
+    isDefinitiveRejection(res.status),
+  );
 }
 
 interface ChargeTokenParams {
