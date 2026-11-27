@@ -51,9 +51,9 @@ export async function POST(req: NextRequest) {
     if (provider === 'paystack') {
       verification = await paystackVerifyTransaction({ reference });
     } else if (provider === 'flutterwave') {
-      const txRefMatch = reference.match(/^(?:pp_)?(.+)$/);
-      const txRef = txRefMatch ? txRefMatch[1] : reference;
-      verification = await flutterwaveVerifyTransaction({ txRef });
+      // P-01: use the exact original provider reference (e.g. "pp_<uuid>")
+      // that was sent as tx_ref at initialization — never strip/reconstruct.
+      verification = await flutterwaveVerifyTransaction({ txRef: tx.providerReference });
     } else {
       throw new ApiError(400, 'Unsupported provider');
     }

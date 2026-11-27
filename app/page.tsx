@@ -24,9 +24,21 @@ export const metadata: Metadata = {
 export const dynamic = 'force-dynamic';
 
 export default async function HomePage() {
-  const tipCount = await getPublishedTipCount();
-  const homepageSections = await getCmsSections('homepage');
-  const announcement = homepageSections.announcement as { heading?: string; body?: string } | undefined;
+  // Defensive: the homepage must render even if a data source fails. Each
+  // helper already catches internally, but we guard the whole load so an
+  // unexpected throw (e.g. a null CMS payload) can never blank the page.
+  let tipCount = 0;
+  let announcement: { heading?: string; body?: string } | undefined;
+  try {
+    const [count, homepageSections] = await Promise.all([
+      getPublishedTipCount(),
+      getCmsSections('homepage'),
+    ]);
+    tipCount = count;
+    announcement = homepageSections.announcement as { heading?: string; body?: string } | undefined;
+  } catch (err) {
+    console.error('[home] Failed to load homepage data; rendering with fallbacks.', err);
+  }
 
   const breadcrumbs = breadcrumbJsonLd([{ name: 'Home', href: '/' }]);
 

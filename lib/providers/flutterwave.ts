@@ -1,3 +1,5 @@
+import { ProviderInitError } from './init-error';
+
 const BASE_URL = 'https://api.flutterwave.com/v3';
 
 function headers() {
@@ -16,6 +18,8 @@ interface InitializeParams {
 }
 
 export async function flutterwaveInitialize(params: InitializeParams): Promise<{ paymentLink: string }> {
+  // Network/timeout failures throw and propagate as *uncertain*; a completed
+  // HTTP response the provider rejects is a *definitive* rejection.
   const res = await fetch(`${BASE_URL}/payments`, {
     method: 'POST',
     headers: headers(),
@@ -28,9 +32,9 @@ export async function flutterwaveInitialize(params: InitializeParams): Promise<{
     }),
   });
 
-  const data = await res.json();
-  if (!res.ok || data.status !== 'success') {
-    throw new Error(`Flutterwave initialize failed: ${data.message ?? res.statusText}`);
+  const data = await res.json().catch(() => null);
+  if (!res.ok || data?.status !== 'success' || !data?.data?.link) {
+    throw new ProviderInitError(`Flutterwave initialize failed: ${data?.message ?? res.statusText}`, true);
   }
   return { paymentLink: data.data.link };
 }

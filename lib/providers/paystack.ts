@@ -1,3 +1,5 @@
+import { ProviderInitError } from './init-error';
+
 const BASE_URL = 'https://api.paystack.co';
 
 function headers() {
@@ -16,6 +18,9 @@ interface InitializeParams {
 }
 
 export async function paystackInitialize(params: InitializeParams): Promise<{ authorizationUrl: string }> {
+  // A network/timeout failure throws here and propagates as an *uncertain*
+  // outcome. A completed HTTP response that the provider rejects is a
+  // *definitive* rejection (ProviderInitError.definitive === true).
   const res = await fetch(`${BASE_URL}/transaction/initialize`, {
     method: 'POST',
     headers: headers(),
@@ -28,9 +33,9 @@ export async function paystackInitialize(params: InitializeParams): Promise<{ au
     }),
   });
 
-  const data = await res.json();
-  if (!res.ok || !data.status) {
-    throw new Error(`Paystack initialize failed: ${data.message ?? res.statusText}`);
+  const data = await res.json().catch(() => null);
+  if (!res.ok || !data?.status || !data?.data?.authorization_url) {
+    throw new ProviderInitError(`Paystack initialize failed: ${data?.message ?? res.statusText}`, true);
   }
   return { authorizationUrl: data.data.authorization_url };
 }
