@@ -10,6 +10,8 @@ function makeFakeDb() {
   const transactions = new Map<string, any>();
   let failNextTransaction = false;
 
+  const now = () => new Date();
+
   const matchesOr = (sub: any, or: any[]) =>
     or.some((cond: any) => {
       if (cond.renewalStatus && sub.renewalStatus !== cond.renewalStatus) return false;
@@ -36,31 +38,90 @@ function makeFakeDb() {
         if (where.status && sub.status !== where.status) return { count: 0 };
         if (where.autoRenew !== undefined && sub.autoRenew !== where.autoRenew) return { count: 0 };
         if (where.OR && !matchesOr(sub, where.OR)) return { count: 0 };
-        subscriptions.set(where.id, { ...sub, ...data, updatedAt: new Date() });
+        subscriptions.set(where.id, { ...sub, ...data, updatedAt: now() });
         return { count: 1 };
       }),
       update: vi.fn(async ({ where, data }: any) => {
         const sub = subscriptions.get(where.id);
-        const updated = { ...sub, ...data, updatedAt: new Date() };
+        const updated = { ...sub, ...data, updatedAt: now() };
         subscriptions.set(where.id, updated);
         return updated;
       }),
     },
     transaction: {
-      findUnique: vi.fn(async ({ where }: any) =>
-        [...transactions.values()].find((t) => t.providerReference === where.providerReference) ?? null
-      ),
+      findUnique: vi.fn(async ({ where }: any) => {
+        // Support composite unique lookup: { provider_providerTransactionId: { provider, providerTransactionId } }
+        if (where.provider_providerTransactionId) {
+          const { provider, providerTransactionId } = where.provider_providerTransactionId;
+          return [...transactions.values()].find(
+            (t) => t.provider === provider && t.providerTransactionId === providerTransactionId
+          ) ?? null;
+        }
+        // Support obligationId lookup
+        if (where.obligationId) {
+          return [...transactions.values()].find((t) => t.obligationId === where.obligationId) ?? null;
+        }
+        if (where.providerReference) {
+          return [...transactions.values()].find((t) => t.providerReference === where.providerReference) ?? null;
+        }
+        return transactions.get(where.id) ?? null;
+      }),
       create: vi.fn(async ({ data }: any) => {
-        if (transactions.has(data.providerReference)) {
+        // Check unique constraints
+        if (data.providerReference && [...transactions.values()].some((t) => t.providerReference === data.providerReference)) {
           const e: any = new Error('Unique constraint failed');
           e.code = 'P2002';
           throw e;
         }
-        const record = { id: `tx-${transactions.size + 1}`, ...data };
-        transactions.set(data.providerReference, record);
+        if (data.obligationId && [...transactions.values()].some((t) => t.obligationId === data.obligationId)) {
+          const e: any = new Error('Unique constraint failed on obligationId');
+          e.code = 'P2002';
+          throw e;
+        }
+        if (data.providerTransactionId && [...transactions.values()].some((t) => t.provider === data.provider && t.providerTransactionId === data.providerTransactionId)) {
+          const e: any = new Error('Unique constraint failed on provider_providerTransactionId');
+          e.code = 'P2002';
+          throw e;
+        }
+        const id = `tx-${transactions.size + 1}`;
+        const record = { id, ...data, createdAt: now(), updatedAt: now() };
+        transactions.set(id, record);
         return record;
       }),
+      update: vi.fn(async ({ where, data }: any) => {
+        const existing = [...transactions.values()].find((t) => t.id === where.id);
+        if (!existing) return null;
+        const updated = { ...existing, ...data, updatedAt: now() };
+        transactions.set(updated.id, updated);
+        return updated;
+      }),
     },
+    $executeRawUnsafe: vi.fn(async (sql: string, ...params: any[]) => {
+      // Simulate: UPDATE "Subscription" SET "endAt" = GREATEST("endAt", $1) + ($2 * interval '1 day'), ...
+      if (sql.includes('UPDATE "Subscription"')) {
+        const [nowVal, durationDays, subId] = params;
+        const sub = subscriptions.get(subId);
+        if (sub && sub.status === 'active') {
+          const currentEnd = sub.endAt ? new Date(sub.endAt).getTime() : 0;
+          const nowTime = new Date(nowVal).getTime();
+          const baseEnd = Math.max(currentEnd, nowTime);
+          const newEnd = new Date(baseEnd + Number(durationDays) * 24 * 60 * 60 * 1000);
+          subscriptions.set(subId, {
+            ...sub,
+            endAt: newEnd,
+            updatedAt: new Date(nowVal),
+            renewalStatus: 'idle',
+            renewalLockedAt: null,
+            renewalReference: null,
+            renewalAttempts: 0,
+            lastRenewalError: null,
+          });
+          return { count: 1 };
+        }
+        return { count: 0 };
+      }
+      return { count: 0 };
+    }),
     $transaction: vi.fn(async (fn: any) => {
       if (failNextTransaction) {
         failNextTransaction = false;
@@ -69,7 +130,7 @@ function makeFakeDb() {
       return fn(db);
     }),
     _seed(sub: any) {
-      subscriptions.set(sub.id, sub);
+      subscriptions.set(sub.id, { ...sub, updatedAt: sub.updatedAt ?? now() });
     },
     _getSub: (id: string) => subscriptions.get(id),
     _getTransactions: () => [...transactions.values()],
@@ -94,10 +155,12 @@ vi.mock('@/lib/prisma', () => ({
 vi.mock('@/lib/providers/paystack', () => ({
   paystackChargeAuthorization: vi.fn(),
   paystackVerifyTransaction: vi.fn(),
+  extractProviderTransactionId: vi.fn((raw) => raw?.data?.id ?? null),
 }));
 vi.mock('@/lib/providers/flutterwave', () => ({
   flutterwaveChargeToken: vi.fn(),
   flutterwaveVerifyTransaction: vi.fn(),
+  extractProviderTransactionId: vi.fn((raw) => raw?.data?.id ?? null),
 }));
 vi.mock('@/lib/email', () => ({
   sendRenewalReminderEmail: vi.fn().mockResolvedValue(true),
@@ -154,9 +217,9 @@ beforeEach(() => {
   process.env.CRON_SECRET = 'test_cron_secret';
   process.env.RENEWAL_LOCK_TIMEOUT_SECONDS = '900';
   delete process.env.RENEWAL_RECOVERY_INTERVAL_SECONDS;
-  chargePz.mockReset().mockResolvedValue({ success: true, raw: { id: 1 } });
+  chargePz.mockReset().mockResolvedValue({ success: true, raw: { data: { id: 'txn_1' } } });
   verifyPz.mockReset().mockResolvedValue({ verified: false, conclusive: false, status: 'failed', raw: {} });
-  chargeFlw.mockReset().mockResolvedValue({ success: true, raw: { id: 2 } });
+  chargeFlw.mockReset().mockResolvedValue({ success: true, raw: { data: { id: 'txn_2' } } });
   verifyFlw.mockReset().mockResolvedValue({ verified: false, conclusive: false, status: 'failed', raw: {} });
 });
 

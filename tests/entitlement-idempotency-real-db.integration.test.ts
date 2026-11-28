@@ -19,7 +19,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 const testDatabaseUrl = process.env.TEST_DATABASE_URL?.trim();
 const runRealDbTests = Boolean(testDatabaseUrl);
 
-if (runRealDbTests) {
+if (testDatabaseUrl) {
   process.env.DATABASE_URL = testDatabaseUrl;
   process.env.DIRECT_URL = testDatabaseUrl;
   // Increase interactive transaction timeout to 60 seconds (Neon default is 5s)

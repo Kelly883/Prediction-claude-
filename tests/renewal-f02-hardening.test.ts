@@ -9,6 +9,16 @@ const DAY = 24 * 60 * 60 * 1000;
 function makeFakeDb() {
   const subs = new Map<string, any>();
   const txs = new Map<string, any>();
+  const now = () => new Date();
+
+  const matchesOr = (sub: any, or: any[]) =>
+    or.some((cond: any) => {
+      if (cond.renewalStatus && sub.renewalStatus !== cond.renewalStatus) return false;
+      if (cond.renewalLockedAt?.lt && !(sub.renewalLockedAt && sub.renewalLockedAt < cond.renewalLockedAt.lt)) return false;
+      if (cond.updatedAt?.lt && !(sub.updatedAt && sub.updatedAt < cond.updatedAt.lt)) return false;
+      return true;
+    });
+
   const db: any = {
     _beforeTx: null as null | (() => void),
     subscription: {
@@ -45,30 +55,95 @@ function makeFakeDb() {
           });
           if (!ok) return { count: 0 };
         }
-        subs.set(where.id, { ...s, ...data, updatedAt: new Date() });
+        subs.set(where.id, { ...s, ...data, updatedAt: now() });
         return { count: 1 };
       }),
       update: vi.fn(async ({ where, data }: any) => {
         const s = subs.get(where.id);
-        const u = { ...s, ...data, updatedAt: new Date() };
+        const u = { ...s, ...data, updatedAt: now() };
         subs.set(where.id, u);
         return u;
       }),
     },
     transaction: {
-      findUnique: vi.fn(async ({ where }: any) => [...txs.values()].find((t) => t.providerReference === where.providerReference) ?? null),
+      findUnique: vi.fn(async ({ where }: any) => {
+        // Support composite unique lookup: { provider_providerTransactionId: { provider, providerTransactionId } }
+        if (where.provider_providerTransactionId) {
+          const { provider, providerTransactionId } = where.provider_providerTransactionId;
+          return [...txs.values()].find(
+            (t) => t.provider === provider && t.providerTransactionId === providerTransactionId
+          ) ?? null;
+        }
+        // Support obligationId lookup
+        if (where.obligationId) {
+          return [...txs.values()].find((t) => t.obligationId === where.obligationId) ?? null;
+        }
+        if (where.providerReference) {
+          return [...txs.values()].find((t) => t.providerReference === where.providerReference) ?? null;
+        }
+        return txs.get(where.id) ?? null;
+      }),
       create: vi.fn(async ({ data }: any) => {
-        const r = { id: `tx-${txs.size + 1}`, ...data };
-        txs.set(data.providerReference, r);
+        // Check unique constraints
+        if (data.providerReference && [...txs.values()].some((t) => t.providerReference === data.providerReference)) {
+          const e: any = new Error('Unique constraint failed');
+          e.code = 'P2002';
+          throw e;
+        }
+        if (data.obligationId && [...txs.values()].some((t) => t.obligationId === data.obligationId)) {
+          const e: any = new Error('Unique constraint failed on obligationId');
+          e.code = 'P2002';
+          throw e;
+        }
+        if (data.providerTransactionId && [...txs.values()].some((t) => t.provider === data.provider && t.providerTransactionId === data.providerTransactionId)) {
+          const e: any = new Error('Unique constraint failed on provider_providerTransactionId');
+          e.code = 'P2002';
+          throw e;
+        }
+        const r = { id: `tx-${txs.size + 1}`, ...data, createdAt: now(), updatedAt: now() };
+        txs.set(r.id, r);
         return r;
       }),
+      update: vi.fn(async ({ where, data }: any) => {
+        const existing = [...txs.values()].find((t) => t.id === where.id);
+        if (!existing) return null;
+        const updated = { ...existing, ...data, updatedAt: now() };
+        txs.set(updated.id, updated);
+        return updated;
+      }),
     },
+    $executeRawUnsafe: vi.fn(async (sql: string, ...params: any[]) => {
+      // Simulate: UPDATE "Subscription" SET "endAt" = GREATEST("endAt", $1) + ($2 * interval '1 day'), ...
+      if (sql.includes('UPDATE "Subscription"')) {
+        const [nowVal, durationDays, subId] = params;
+        const s = subs.get(subId);
+        if (s && s.status === 'active') {
+          const currentEnd = s.endAt ? new Date(s.endAt).getTime() : 0;
+          const nowTime = new Date(nowVal).getTime();
+          const baseEnd = Math.max(currentEnd, nowTime);
+          const newEnd = new Date(baseEnd + Number(durationDays) * 24 * 60 * 60 * 1000);
+          subs.set(subId, {
+            ...s,
+            endAt: newEnd,
+            updatedAt: new Date(nowVal),
+            renewalStatus: 'idle',
+            renewalLockedAt: null,
+            renewalReference: null,
+            renewalAttempts: 0,
+            lastRenewalError: null,
+          });
+          return { count: 1 };
+        }
+        return { count: 0 };
+      }
+      return { count: 0 };
+    }),
     $transaction: vi.fn(async (fn: any) => {
       if (db._beforeTx) db._beforeTx();
       return fn(db);
     }),
     _seed(s: any) {
-      subs.set(s.id, s);
+      subs.set(s.id, { ...s, updatedAt: s.updatedAt ?? now() });
     },
     _getSub: (id: string) => subs.get(id),
     _getTxs: () => [...txs.values()],
@@ -85,10 +160,12 @@ vi.mock('@/lib/prisma', () => ({
 vi.mock('@/lib/providers/paystack', () => ({
   paystackChargeAuthorization: vi.fn(),
   paystackVerifyTransaction: vi.fn(),
+  extractProviderTransactionId: vi.fn((raw) => raw?.data?.id ?? null),
 }));
 vi.mock('@/lib/providers/flutterwave', () => ({
   flutterwaveChargeToken: vi.fn(),
   flutterwaveVerifyTransaction: vi.fn(),
+  extractProviderTransactionId: vi.fn((raw) => raw?.data?.id ?? null),
 }));
 vi.mock('@/lib/email', () => ({
   sendRenewalReminderEmail: vi.fn().mockResolvedValue(true),
@@ -135,7 +212,7 @@ beforeEach(() => {
   process.env.CRON_SECRET = 'test_cron_secret';
   process.env.RENEWAL_LOCK_TIMEOUT_SECONDS = '900';
   delete process.env.RENEWAL_RECOVERY_INTERVAL_SECONDS;
-  chargePz.mockReset().mockResolvedValue({ success: true, raw: { id: 1 } });
+  chargePz.mockReset().mockResolvedValue({ success: true, raw: { data: { id: 'txn_1' } } });
   verifyPz.mockReset().mockResolvedValue({ verified: false, conclusive: false, status: 'failed', raw: {} });
 });
 
