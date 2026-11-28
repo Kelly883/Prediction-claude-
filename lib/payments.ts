@@ -317,6 +317,14 @@ async function activateOrRenewSubscription(
       },
     });
     await db.transaction.update({ where: { id: transactionId }, data: { subscriptionId: sub.id } });
+    if (renewalToken) {
+      await writeAudit({
+        actorId: userId,
+        action: 'payment.authorization_updated',
+        targetId: transactionId,
+        metadata: { provider },
+      });
+    }
     return;
   }
 
