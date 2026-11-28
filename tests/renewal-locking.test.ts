@@ -5,12 +5,25 @@ function makeFakeDb() {
   const subscriptions = new Map<string, any>();
   const transactions = new Map<string, any>();
 
+  const now = () => new Date();
+
+  const matchesOrConditions = (sub: any, orConditions: any[]) => {
+    return orConditions.some((cond: any) => {
+      if (cond.renewalStatus && sub.renewalStatus !== cond.renewalStatus) return false;
+      if (cond.renewalLockedAt?.lt && !(sub.renewalLockedAt && sub.renewalLockedAt < cond.renewalLockedAt.lt)) return false;
+      if (cond.updatedAt?.lt && !(sub.updatedAt && sub.updatedAt < cond.updatedAt.lt)) return false;
+      return true;
+    });
+  };
+
   const db: any = {
     subscription: {
       findMany: vi.fn(async ({ where }: any) => {
         return [...subscriptions.values()].filter((sub) => {
           if (where.status && sub.status !== where.status) return false;
           if (where.autoRenew !== undefined && sub.autoRenew !== where.autoRenew) return false;
+          if (where.endAt?.lte && !(sub.endAt <= where.endAt.lte)) return false;
+          if (where.OR && !matchesOrConditions(sub, where.OR)) return false;
           return true;
         });
       }),
@@ -24,45 +37,99 @@ function makeFakeDb() {
         if (!sub) return { count: 0 };
         if (where.status && sub.status !== where.status) return { count: 0 };
         if (where.autoRenew !== undefined && sub.autoRenew !== where.autoRenew) return { count: 0 };
+        if (where.endAt?.lte && !(sub.endAt <= where.endAt.lte)) return { count: 0 };
 
         // Check OR condition for lock eligibility
-        if (where.OR) {
-          const matchesOr = where.OR.some((cond: any) => {
-            if (cond.renewalStatus && sub.renewalStatus !== cond.renewalStatus) return false;
-            if (cond.renewalLockedAt?.lt && !(sub.renewalLockedAt < cond.renewalLockedAt.lt)) return false;
-            return true;
-          });
-          if (!matchesOr) return { count: 0 };
-        }
+        if (where.OR && !matchesOrConditions(sub, where.OR)) return { count: 0 };
 
-        const updated = { ...sub, ...data };
+        const updated = { ...sub, ...data, updatedAt: now() };
         subscriptions.set(where.id, updated);
         return { count: 1 };
       }),
       update: vi.fn(async ({ where, data }: any) => {
         const sub = subscriptions.get(where.id);
-        const updated = { ...sub, ...data };
+        const updated = { ...sub, ...data, updatedAt: now() };
         subscriptions.set(where.id, updated);
         return updated;
       }),
     },
     transaction: {
       findUnique: vi.fn(async ({ where }: any) => {
+        // Support composite unique lookup: { provider_providerTransactionId: { provider, providerTransactionId } }
+        if (where.provider_providerTransactionId) {
+          const { provider, providerTransactionId } = where.provider_providerTransactionId;
+          return [...transactions.values()].find(
+            (t) => t.provider === provider && t.providerTransactionId === providerTransactionId
+          ) ?? null;
+        }
+        // Support obligationId lookup
+        if (where.obligationId) {
+          return [...transactions.values()].find((t) => t.obligationId === where.obligationId) ?? null;
+        }
         if (where.providerReference) {
           return [...transactions.values()].find((t) => t.providerReference === where.providerReference) ?? null;
         }
         return transactions.get(where.id) ?? null;
       }),
       create: vi.fn(async ({ data }: any) => {
+        // Check unique constraints
+        if (data.providerReference && [...transactions.values()].some((t) => t.providerReference === data.providerReference)) {
+          const e: any = new Error('Unique constraint failed on providerReference');
+          e.code = 'P2002';
+          throw e;
+        }
+        if (data.obligationId && [...transactions.values()].some((t) => t.obligationId === data.obligationId)) {
+          const e: any = new Error('Unique constraint failed on obligationId');
+          e.code = 'P2002';
+          throw e;
+        }
+        if (data.providerTransactionId && [...transactions.values()].some((t) => t.provider === data.provider && t.providerTransactionId === data.providerTransactionId)) {
+          const e: any = new Error('Unique constraint failed on provider_providerTransactionId');
+          e.code = 'P2002';
+          throw e;
+        }
         const id = `tx-${transactions.size + 1}`;
-        const record = { id, ...data };
+        const record = { id, ...data, createdAt: now(), updatedAt: now() };
         transactions.set(id, record);
         return record;
       }),
+      update: vi.fn(async ({ where, data }: any) => {
+        const existing = [...transactions.values()].find((t) => t.id === where.id);
+        if (!existing) return null;
+        const updated = { ...existing, ...data, updatedAt: now() };
+        transactions.set(updated.id, updated);
+        return updated;
+      }),
     },
+    $executeRawUnsafe: vi.fn(async (sql: string, ...params: any[]) => {
+      // Simulate: UPDATE "Subscription" SET "endAt" = GREATEST("endAt", $1) + ($2 * interval '1 day'), ...
+      if (sql.includes('UPDATE "Subscription"')) {
+        const [nowVal, durationDays, subId] = params;
+        const sub = subscriptions.get(subId);
+        if (sub && sub.status === 'active') {
+          const currentEnd = sub.endAt ? new Date(sub.endAt).getTime() : 0;
+          const nowTime = new Date(nowVal).getTime();
+          const baseEnd = Math.max(currentEnd, nowTime);
+          const newEnd = new Date(baseEnd + Number(durationDays) * 24 * 60 * 60 * 1000);
+          subscriptions.set(subId, {
+            ...sub,
+            endAt: newEnd,
+            updatedAt: new Date(nowVal),
+            renewalStatus: 'idle',
+            renewalLockedAt: null,
+            renewalReference: null,
+            renewalAttempts: 0,
+            lastRenewalError: null,
+          });
+          return { count: 1 };
+        }
+        return { count: 0 };
+      }
+      return { count: 0 };
+    }),
     $transaction: vi.fn(async (fn: any) => fn(db)),
     _seed(sub: any) {
-      subscriptions.set(sub.id, sub);
+      subscriptions.set(sub.id, { ...sub, updatedAt: sub.updatedAt ?? now() });
     },
     _getSub: (id: string) => subscriptions.get(id),
     _getTransactions: () => [...transactions.values()],
@@ -80,14 +147,16 @@ vi.mock('@/lib/prisma', () => ({
 }));
 
 vi.mock('@/lib/providers/paystack', () => ({
-  paystackChargeAuthorization: vi.fn().mockResolvedValue({ success: true, raw: { id: 123 } }),
+  paystackChargeAuthorization: vi.fn().mockResolvedValue({ success: true, raw: { data: { id: 'txn_123' } } }),
   // No prior charge on record → stale-processing reclaim may proceed to charge.
   paystackVerifyTransaction: vi.fn().mockResolvedValue({ verified: false, conclusive: true, status: 'failed', raw: {} }),
+  extractProviderTransactionId: vi.fn((raw) => raw?.data?.id ?? null),
 }));
 
 vi.mock('@/lib/providers/flutterwave', () => ({
-  flutterwaveChargeToken: vi.fn().mockResolvedValue({ success: true, raw: { id: 456 } }),
+  flutterwaveChargeToken: vi.fn().mockResolvedValue({ success: true, raw: { data: { id: 'txn_456' } } }),
   flutterwaveVerifyTransaction: vi.fn().mockResolvedValue({ verified: false, conclusive: true, status: 'failed', raw: {} }),
+  extractProviderTransactionId: vi.fn((raw) => raw?.data?.id ?? null),
 }));
 
 vi.mock('@/lib/email', () => ({
@@ -116,6 +185,7 @@ describe('Subscription Auto-Renewal Locking & Concurrency', () => {
       renewalAttempts: 0,
       renewalStatus: 'idle',
       renewalLockedAt: null,
+      updatedAt: new Date(),
       renewalReference: null,
       plan: { id: 'plan-1', name: 'VIP Pass', durationDays: 30, priceNGN: 5000, priceUSDOverride: null, fxMarkupPercent: null },
       user: { id: 'user-1', email: 'test@example.com', country: 'NG' },
@@ -166,6 +236,7 @@ describe('Subscription Auto-Renewal Locking & Concurrency', () => {
       renewalAttempts: 0,
       renewalStatus: 'processing',
       renewalLockedAt: thirtyMinsAgo,
+      updatedAt: thirtyMinsAgo,
       renewalReference: `renew_sub-stuck_${endAt.getTime()}_att1`,
       plan: { id: 'plan-1', name: 'VIP Pass', durationDays: 30, priceNGN: 5000, priceUSDOverride: null, fxMarkupPercent: null },
       user: { id: 'user-1', email: 'test@example.com', country: 'NG' },
@@ -202,6 +273,7 @@ describe('Subscription Auto-Renewal Locking & Concurrency', () => {
       renewalAttempts: 0,
       renewalStatus: 'processing',
       renewalLockedAt: twoMinsAgo,
+      updatedAt: twoMinsAgo,
       renewalReference: `renew_sub-active-lock_${endAt.getTime()}_att1`,
       plan: { id: 'plan-1', name: 'VIP Pass', durationDays: 30, priceNGN: 5000, priceUSDOverride: null, fxMarkupPercent: null },
       user: { id: 'user-1', email: 'test@example.com', country: 'NG' },

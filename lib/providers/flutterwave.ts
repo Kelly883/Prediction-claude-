@@ -9,6 +9,18 @@ function headers() {
   };
 }
 
+// Explicit request timeout (ms). A timeout aborts the fetch → the promise
+// rejects (AbortError) → callers treat it as INCONCLUSIVE/unknown (never a
+// definitive failure, never an attempt increment). Invalid env falls back safe.
+const DEFAULT_REQUEST_TIMEOUT_MS = 20_000;
+function requestTimeoutMs(): number {
+  const raw = Number(process.env.PAYMENT_REQUEST_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_REQUEST_TIMEOUT_MS;
+}
+function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
+  return fetch(url, { ...init, signal: AbortSignal.timeout(requestTimeoutMs()) });
+}
+
 interface InitializeParams {
   txRef: string;
   amount: number; // major units — Flutterwave, unlike Paystack, wants e.g. 5000.00 not 500000
@@ -22,7 +34,7 @@ export async function flutterwaveInitialize(params: InitializeParams): Promise<{
   // *uncertain*. A completed HTTP response is classified by status: only 4xx
   // (except 408/429) is definitive; 408/429/5xx and malformed/incomplete 2xx
   // bodies are uncertain (a session may already exist).
-  const res = await fetch(`${BASE_URL}/payments`, {
+  const res = await fetchWithTimeout(`${BASE_URL}/payments`, {
     method: 'POST',
     headers: headers(),
     body: JSON.stringify({
@@ -65,7 +77,7 @@ interface ChargeResult {
 
 /** Used by the renewal cron to charge a tokenized card on file. */
 export async function flutterwaveChargeToken(params: ChargeTokenParams): Promise<ChargeResult> {
-  const res = await fetch(`${BASE_URL}/tokenized-charges`, {
+  const res = await fetchWithTimeout(`${BASE_URL}/tokenized-charges`, {
     method: 'POST',
     headers: headers(),
     body: JSON.stringify({
@@ -118,7 +130,7 @@ export async function flutterwaveVerifyTransaction(
     ? `${BASE_URL}/transactions/${params.id}/verify`
     : `${BASE_URL}/transactions/verify_by_reference?tx_ref=${encodeURIComponent(params.txRef!)}`;
 
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     method: 'GET',
     headers: headers(),
   });
@@ -150,9 +162,13 @@ export async function flutterwaveVerifyTransaction(
   const currencyOk = typeof txData.currency === 'string' && txData.currency.length > 0;
   const statusOk = typeof txData.status === 'string' && txData.status.length > 0;
   const conclusive = referenceOk && amountOk && currencyOk && statusOk;
-  return {
-    verified: true,
-    conclusive,
+    return {
+      // `verified` is true ONLY for a reliable, COMPLETE record — it mirrors
+      // `conclusive` so callers can never mistake an incomplete 2xx record for a
+      // verified payment (F-02.4: incomplete records must not be reported as
+      // verified).
+      verified: conclusive,
+      conclusive,
     txRef: typeof txData.tx_ref === 'string' ? txData.tx_ref : '',
     amount: amountOk ? Number(txData.amount) : 0,
     currency: currencyOk ? txData.currency : '',
@@ -169,4 +185,13 @@ export async function flutterwaveVerifyTransaction(
  */
 export function extractReusableToken(webhookBody: any): string | null {
   return webhookBody?.data?.card?.token ?? null;
+}
+
+/**
+ * Extracts the provider's transaction ID from a Flutterwave response.
+ * Works for tokenized-charges response, verify response, and webhook payload.
+ * All contain the transaction ID at `data.id`.
+ */
+export function extractProviderTransactionId(rawResponse: any): string | null {
+  return rawResponse?.data?.id ?? null;
 }

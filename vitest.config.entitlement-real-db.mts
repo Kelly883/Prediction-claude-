@@ -1,0 +1,15 @@
+import { defineConfig } from 'vitest/config';
+
+export default defineConfig({
+  test: {
+    environment: 'node',
+    setupFiles: ['./tests/renewal-integration-setup.ts'],
+    include: ['tests/entitlement-idempotency-real-db.integration.test.ts'],
+    exclude: ['**/node_modules/**', '**/dist/**', '**/e2e/**'],
+    testTimeout: 120000,
+    hookTimeout: 120000,
+    teardownTimeout: 60000,
+    maxWorkers: 1,
+  },
+  resolve: { alias: { '@': import.meta.dirname } },
+});

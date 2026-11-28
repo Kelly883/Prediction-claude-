@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import crypto from 'crypto';
 import { prisma } from '@/lib/prisma';
-import { resolvePrice, toMinorUnits, sanitizeRawPayload } from '@/lib/payments';
+import { resolvePrice, toMinorUnits, extractPzProviderTransactionId, extractFwProviderTransactionId, applyEntitlementIfNotApplied, canonicalObligationId } from '@/lib/payments';
 import {
   paystackChargeAuthorization,
   paystackVerifyTransaction,
@@ -22,15 +21,22 @@ export const maxDuration = 60;
 
 const LOOKAHEAD_HOURS = 24; // pick up renewals due within the next 24h, plus any still in a retry grace period
 const MAX_RENEWAL_ATTEMPTS = 3; // DEFINITIVE-failure budget only (unknown outcomes never consume it)
+// Parse a positive integer env var (seconds). Missing/invalid (NaN/Infinity/<=0)
+// falls back to a safe default so a bad config can never disable or pin the
+// throttle/lease.
+function envPositiveSeconds(name: string, defaultSeconds: number): number {
+  const raw = Number(process.env[name]);
+  return Number.isFinite(raw) && raw > 0 ? raw : defaultSeconds;
+}
 // Operational bound for the INITIAL (high-frequency) reconciliation window.
 // After this window the cron keeps reconciling, but at a lower frequency
 // (RECOVERY_INTERVAL_MS) so an unresolved payment is never permanently stranded.
-const RECONCILE_MAX_AGE_MS = Number(process.env.RENEWAL_RECONCILE_MAX_AGE_SECONDS ?? 7 * 24 * 60 * 60) * 1000;
+const RECONCILE_MAX_AGE_MS = envPositiveSeconds('RENEWAL_RECONCILE_MAX_AGE_SECONDS', 7 * 24 * 60 * 60) * 1000;
 // Lower-frequency recovery cadence applied AFTER the initial window. Bounds how
 // often providers are called, not the ability to eventually recover.
-const RECOVERY_INTERVAL_MS = Number(process.env.RENEWAL_RECOVERY_INTERVAL_SECONDS ?? 6 * 60 * 60) * 1000;
+const RECOVERY_INTERVAL_MS = envPositiveSeconds('RENEWAL_RECOVERY_INTERVAL_SECONDS', 6 * 60 * 60) * 1000;
 // Configurable lease timeout for stuck 'processing' renewals (defaults to 15 minutes / 900 seconds)
-const RENEWAL_LOCK_TIMEOUT_SECONDS = Number(process.env.RENEWAL_LOCK_TIMEOUT_SECONDS ?? 15 * 60);
+const RENEWAL_LOCK_TIMEOUT_SECONDS = envPositiveSeconds('RENEWAL_LOCK_TIMEOUT_SECONDS', 15 * 60);
 
 /**
  * Renewal cron with F-02 protections.
@@ -49,7 +55,6 @@ const RENEWAL_LOCK_TIMEOUT_SECONDS = Number(process.env.RENEWAL_LOCK_TIMEOUT_SEC
  * The stable reference is reused across retries so the provider sees one identity.
  */
 export async function GET(req: NextRequest) {
-  const requestId = getRequestId(req);
   const authHeader = req.headers.get('authorization');
   const expected = `Bearer ${process.env.CRON_SECRET}`;
   if (!process.env.CRON_SECRET || !authHeader || !timingSafeStringEqual(authHeader, expected)) {
@@ -73,7 +78,7 @@ export async function GET(req: NextRequest) {
         { renewalStatus: 'reconciliation_required' },
         {
           renewalStatus: 'processing',
-          renewalLockedAt: { lt: staleLockThreshold },
+          updatedAt: { lt: staleLockThreshold },
         },
       ],
     },
@@ -134,12 +139,13 @@ export async function GET(req: NextRequest) {
     const reference = stableRenewalReference(sub, periodEpoch);
     const priorStatus = sub.renewalStatus;
 
-    // 2. POST-WINDOW THROTTLE. During the initial reconciliation window we
-    //    reconcile on every run. After RECONCILE_MAX_AGE_MS we keep reconciling
-    //    but only once per RECOVERY_INTERVAL_MS (bounded request frequency, never
-    //    a permanent stop). `renewalLockedAt` anchors the window; `updatedAt`
-    //    tracks the last attempt (every attempt mutates the row). Throttled rows
-    //    are skipped BEFORE the claim so `updatedAt` is not refreshed.
+    // 2. POST-WINDOW THROTTLE. During the initial reconciliation window
+    //    (anchor age <= RECONCILE_MAX_AGE_MS) we reconcile on every run. After it
+    //    we reconcile at most once per RECOVERY_INTERVAL_MS. The ANCHOR is
+    //    `renewalLockedAt` (first-uncertain time, preserved); the last attempt is
+    //    `updatedAt`. Throttled rows are skipped BEFORE the claim so `updatedAt`
+    //    is not refreshed. Recovery is never permanently disabled and an
+    //    unresolved payment is never auto-expired.
     if (priorStatus === 'reconciliation_required' && sub.renewalLockedAt) {
       const anchorAge = now.getTime() - sub.renewalLockedAt.getTime();
       if (anchorAge > RECONCILE_MAX_AGE_MS) {
@@ -150,9 +156,10 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // 3. ATOMIC CLAIM. For a `reconciliation_required` row we PRESERVE the
-    //    original renewalLockedAt (it marks when the reconciliation window began);
-    //    for every other state we (re)start the lease at `now`.
+    // 3. ATOMIC CLAIM. The exclusive LEASE is `updatedAt` (Prisma sets it to now
+    //    on this update); the stale-processing clause keys on `updatedAt`, so a
+    //    freshly-claimed row is NOT immediately re-claimable by a concurrent
+    //    worker. `renewalLockedAt` is preserved as the reconciliation anchor.
     const claim = await prisma.subscription.updateMany({
       where: {
         id: sub.id,
@@ -164,12 +171,15 @@ export async function GET(req: NextRequest) {
           { renewalStatus: 'reconciliation_required' },
           {
             renewalStatus: 'processing',
-            renewalLockedAt: { lt: staleLockThreshold },
+            updatedAt: { lt: staleLockThreshold },
           },
         ],
       },
       data: {
         renewalStatus: 'processing',
+        // Preserve the reconciliation anchor (first-uncertain time) for the
+        // post-window throttle; the exclusive LEASE is `updatedAt` (set to now by
+        // Prisma on this update), so a freshly-claimed row is not stale.
         renewalLockedAt: priorStatus === 'reconciliation_required' ? sub.renewalLockedAt : now,
         renewalReference: reference,
       },
@@ -185,6 +195,7 @@ export async function GET(req: NextRequest) {
       // once and reused for both charge and post-verification validation. Inside
       // the try so an FX/price failure is treated as an uncertain outcome.
       const { amount, currency, fxRateUsed } = await resolvePrice(plan, subUser.country);
+      const fxRateUsedNull = fxRateUsed ?? null;
 
       // 3. Idempotency safeguard: a successful transaction for this stable
       //    reference means the charge already happened — advance, never re-charge.
@@ -287,23 +298,48 @@ export async function GET(req: NextRequest) {
       }
 
       // 6. Charge succeeded: persist transaction and advance subscription atomically.
+      // Extract provider transaction ID for cross-path idempotency.
+      const providerTransactionId =
+        sub.renewalProvider === 'paystack'
+          ? extractPzProviderTransactionId(chargeResult.raw)
+          : extractFwProviderTransactionId(chargeResult.raw);
+
+      // Resolve the canonical obligation identity from the subscription's
+      // stored billingObligationId. This is immutable during a period's
+      // lifetime and does not depend on the mutable endAt, so webhook and cron
+      // always converge on the same identity for the same billing period.
+      let obligationId = sub.billingObligationId;
+      if (!obligationId) {
+        // Legacy subscription without a stored obligation ID: derive from the
+        // current endAt (start of the new period) and persist it within the
+        // transaction below.
+        obligationId = canonicalObligationId(sub.id, sub.endAt.getTime());
+      }
+
       await prisma.$transaction(async (db) => {
-        await db.transaction.create({
-          data: {
-            userId: sub.userId,
-            subscriptionId: sub.id,
-            provider: sub.renewalProvider!,
-            providerReference: reference,
-            idempotencyKey: crypto.randomUUID(),
-            amount,
-            currency,
-            fxRateUsed,
-            status: 'success',
-            completedAt: now,
-            rawPayload: sanitizeRawPayload(chargeResult.raw) as any,
-          },
+        // Persist the obligation ID on the subscription if it wasn't already set.
+        if (!sub.billingObligationId) {
+          await db.subscription.update({
+            where: { id: sub.id },
+            data: { billingObligationId: obligationId },
+          });
+        }
+
+        await applyEntitlementIfNotApplied(db, {
+          userId: sub.userId,
+          subscriptionId: sub.id,
+          plan: { id: plan.id, durationDays: plan.durationDays },
+          provider: sub.renewalProvider!,
+          providerReference: reference,
+          obligationId,
+          providerTransactionId,
+          amount,
+          currency,
+          fxRateUsed: fxRateUsedNull,
+          renewalToken: null, // Cron doesn't receive new renewal token from charge
+          rawPayload: chargeResult.raw,
+          now,
         });
-        await advanceSubscription(db, sub, plan, now);
       });
 
       results.renewed++;
@@ -337,28 +373,6 @@ function stableRenewalReference(
   return `${prefix}att${sub.renewalAttempts + 1}`;
 }
 
-async function advanceSubscription(
-  db: any,
-  sub: { id: string; endAt: Date },
-  plan: { durationDays: number },
-  now: Date,
-) {
-  const durationMs = plan.durationDays * 24 * 60 * 60 * 1000;
-  const newEnd = new Date(Math.max(sub.endAt.getTime(), now.getTime()) + durationMs);
-  await db.subscription.update({
-    where: { id: sub.id },
-    data: {
-      endAt: newEnd,
-      renewalAttempts: 0,
-      lastRenewalError: null,
-      renewalReminderSentAt: null,
-      renewalStatus: 'idle',
-      renewalLockedAt: null,
-      renewalReference: null,
-    },
-  });
-}
-
 async function applyRenewalSuccess(
   sub: any,
   plan: any,
@@ -368,26 +382,44 @@ async function applyRenewalSuccess(
   provider: PaymentProvider,
 ) {
   const { amount, currency, fxRateUsed } = await resolvePrice(plan, sub.user.country);
+  const fxRateUsedNull = fxRateUsed ?? null;
+  // Extract provider transaction ID from verification response for cross-path idempotency
+  const providerTransactionId =
+    provider === 'paystack'
+      ? extractPzProviderTransactionId(rawPayload)
+      : extractFwProviderTransactionId(rawPayload);
+
+  // Resolve the canonical obligation identity from the subscription's
+  // stored billingObligationId. This is immutable during a period's
+  // lifetime and does not depend on the mutable endAt.
+  let obligationId = sub.billingObligationId;
+  if (!obligationId) {
+    obligationId = canonicalObligationId(sub.id, sub.endAt.getTime());
+  }
+
   await prisma.$transaction(async (db) => {
-    const existing = await db.transaction.findUnique({ where: { providerReference: reference } });
-    if (!existing) {
-      await db.transaction.create({
-        data: {
-          userId: sub.userId,
-          subscriptionId: sub.id,
-          provider,
-          providerReference: reference,
-          idempotencyKey: crypto.randomUUID(),
-          amount,
-          currency,
-          fxRateUsed,
-          status: 'success',
-          completedAt: now,
-          rawPayload: sanitizeRawPayload(rawPayload) as any,
-        },
+    if (!sub.billingObligationId) {
+      await db.subscription.update({
+        where: { id: sub.id },
+        data: { billingObligationId: obligationId },
       });
     }
-    await advanceSubscription(db, sub, plan, now);
+
+    await applyEntitlementIfNotApplied(db, {
+      userId: sub.userId,
+      subscriptionId: sub.id,
+      plan: { id: plan.id, durationDays: plan.durationDays },
+      provider,
+      providerReference: reference,
+      obligationId,
+      providerTransactionId,
+      amount,
+      currency,
+      fxRateUsed: fxRateUsedNull,
+      renewalToken: null,
+      rawPayload,
+      now,
+    });
   });
 }
 

@@ -213,6 +213,10 @@ describe('Paystack Webhook End-to-End Idempotency & Route Security', () => {
     const initialSubs = fakeDb._getSubscriptions();
     const originalEndAt = initialSubs[0].endAt;
 
+    // Clear mock call history so the replay assertion only checks the
+    // second delivery (the first delivery legitimately sets billingObligationId).
+    fakeDb.subscription.update.mockClear();
+
     // Second delivery of same identical webhook
     const res2 = await POST(createSignedRequest(payload));
     const json2 = await res2.json();
@@ -253,10 +257,11 @@ describe('Paystack Webhook End-to-End Idempotency & Route Security', () => {
     expect(json1.status).toBe('success');
     expect(json2.status).toBe('success');
 
-    // Exactly one subscription created, zero duplicate extensions
+    // Exactly one subscription created; one billingObligationId update
+    // (set by the winning webhook on the new subscription).
     expect(fakeDb._subscriptionCount()).toBe(1);
     expect(fakeDb.subscription.create).toHaveBeenCalledTimes(1);
-    expect(fakeDb.subscription.update).not.toHaveBeenCalled();
+    expect(fakeDb.subscription.update).toHaveBeenCalledTimes(1);
   });
 
   it('rejects webhook with expected amount mismatch', async () => {

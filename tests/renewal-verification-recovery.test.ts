@@ -14,6 +14,7 @@ function makeFakeDb() {
     or.some((cond: any) => {
       if (cond.renewalStatus && sub.renewalStatus !== cond.renewalStatus) return false;
       if (cond.renewalLockedAt?.lt && !(sub.renewalLockedAt && sub.renewalLockedAt < cond.renewalLockedAt.lt)) return false;
+      if (cond.updatedAt?.lt && !(sub.updatedAt && sub.updatedAt < cond.updatedAt.lt)) return false;
       return true;
     });
 

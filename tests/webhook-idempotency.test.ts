@@ -139,6 +139,10 @@ describe('handleVerifiedWebhook Paystack Idempotency & Concurrency', () => {
     const initialSubs = fakeDb._getSubscriptions();
     const initialEndAt = initialSubs[0].endAt;
 
+    // Clear mock call history so the replay assertion only checks the
+    // second delivery (the first delivery legitimately sets billingObligationId).
+    fakeDb.subscription.update.mockClear();
+
     // Second delivery of same webhook
     const replayResult = await handleVerifiedWebhook({
       providerReference: 'ref-paystack-123',

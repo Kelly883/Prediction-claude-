@@ -36,10 +36,15 @@ export default function ResultsPreview() {
     let cancelled = false;
     async function load() {
       try {
-        const res = await fetch('/api/public/predictions/archive', { next: { revalidate: 300 } });
+        const res = await fetch('/api/public/predictions/archive?page=1&pageSize=6', {
+          next: { revalidate: 300 },
+        });
         if (!res.ok) throw new Error('Failed to load results');
         const data = await res.json();
-        if (!cancelled) setPosts(Array.isArray(data) ? data : []);
+        // Backward compatible: the public archive API now returns a paginated
+        // object, but older deployments may still return a plain array.
+        const posts = Array.isArray(data) ? data : (data.posts ?? []);
+        if (!cancelled) setPosts(posts);
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Unable to load results.');
       }
